@@ -158,51 +158,47 @@ func (s *Service) generateSummary(ctx context.Context, card cards.Card, userInpu
 }
 
 func BuildPrompt(card cards.Card, userInput string, retrieved []memory.SearchResult) (string, string) {
-	var system strings.Builder
-	system.WriteString("You are ")
-	system.WriteString(card.Name)
-	system.WriteString(".\n\nIdentity:\n")
-	system.WriteString("- Archetype: ")
-	system.WriteString(fallback(card.Archetype, "persistent card entity"))
-	system.WriteString("\n")
+	domainLine := ""
 	if len(card.Domain) > 0 {
-		system.WriteString("- Domain: ")
-		system.WriteString(strings.Join(card.Domain, ", "))
-		system.WriteString("\n")
+		domainLine = "- Domain: " + strings.Join(card.Domain, ", ") + "\n"
 	}
-	system.WriteString("\nPersonality rules:\n")
-	system.WriteString("- Tone: ")
-	system.WriteString(fallback(card.Personality.Tone, "consistent and stylized"))
-	system.WriteString("\n")
-	for _, rule := range card.Personality.StyleRules {
-		system.WriteString("- ")
-		system.WriteString(rule)
-		system.WriteString("\n")
-	}
-	system.WriteString("- Keep responses concise.\n")
-	system.WriteString("- Stay in character.\n")
-	if card.Constraints.KnowledgeScope != "" {
-		system.WriteString("\nKnowledge scope:\n- ")
-		system.WriteString(card.Constraints.KnowledgeScope)
-		system.WriteString("\n")
-	}
-	system.WriteString("\nDo not behave like a generic assistant. Respond as the same persistent entity every time.")
 
-	var user strings.Builder
-	user.WriteString("Relevant memories:\n")
-	if len(retrieved) == 0 {
-		user.WriteString("- none\n")
-	} else {
+	styleRules := ""
+	for _, rule := range card.Personality.StyleRules {
+		styleRules += "- " + rule + "\n"
+	}
+
+	knowledgeScope := ""
+	if card.Constraints.KnowledgeScope != "" {
+		knowledgeScope = "\nKnowledge scope:\n- " + card.Constraints.KnowledgeScope + "\n"
+	}
+
+	systemPrompt := "You are " + card.Name + ".\n\nIdentity:\n" +
+		"- Archetype: " + fallback(card.Archetype, "persistent card entity") + "\n" +
+		domainLine +
+		"\nPersonality rules:\n" +
+		"- Tone: " + fallback(card.Personality.Tone, "consistent and stylized") + "\n" +
+		styleRules +
+		"- Keep responses concise.\n" +
+		"- Stay in character. Respond in a normal conversational tone. Be inspired by your character but don't over fit to it." +
+		knowledgeScope +
+		"\nDo not behave like a generic assistant. Respond as the same persistent entity every time. Avoid common phrases, like 'How may I help you'"
+
+	relevantMemories := "- none\n"
+	if len(retrieved) > 0 {
+		relevantMemories = ""
 		for _, item := range retrieved {
-			user.WriteString("- ")
-			user.WriteString(item.Memory.Summary)
-			user.WriteString("\n")
+			relevantMemories += "- " + item.Memory.Summary + "\n"
 		}
 	}
-	user.WriteString("\nUser says:\n")
-	user.WriteString(strings.TrimSpace(userInput))
-	user.WriteString("\n\nRespond in character.")
-	return system.String(), user.String()
+
+	userPrompt := "Relevant memories:\n" +
+		relevantMemories +
+		"\nUser says:\n" +
+		strings.TrimSpace(userInput) +
+		"\n\nRespond in character."
+
+	return systemPrompt, userPrompt
 }
 
 func fallback(value, defaultValue string) string {
