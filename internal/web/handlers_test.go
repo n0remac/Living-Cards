@@ -11,6 +11,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/cards"
 	"github.com/n0remac/Living-Card/internal/chat"
 	"github.com/n0remac/Living-Card/internal/memory"
+	"github.com/n0remac/Living-Card/internal/ollama"
 	"github.com/n0remac/Living-Card/internal/profile"
 )
 
@@ -20,7 +21,7 @@ func TestCardsListHandler(t *testing.T) {
 	mux := http.NewServeMux()
 	Register(mux, Dependencies{
 		Cards: fakeCardStore{
-			cards: []cards.Card{{CardID: "ember", Name: "Ember"}},
+			cards: []cards.Card{testWebCard("ember", "Ember")},
 		},
 		Memory:  fakeMemoryStore{},
 		Chat:    fakeChatService{},
@@ -40,6 +41,112 @@ func TestCardsListHandler(t *testing.T) {
 	if len(payload) != 1 || payload[0].CardID != "ember" {
 		t.Fatalf("payload = %#v", payload)
 	}
+	if len(payload[0].Components) != 1 || payload[0].Components[0].ID != cards.ChatFormComponentType {
+		t.Fatalf("payload[0].Components = %#v", payload[0].Components)
+	}
+}
+
+func TestCardResourceHandlerIncludesComponents(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards: fakeCardStore{
+			cards: []cards.Card{testWebCard("ember", "Ember")},
+		},
+		Memory:  fakeMemoryStore{},
+		Chat:    fakeChatService{},
+		Profile: &fakeProfileStore{},
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/cards/ember", nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload cards.Card
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(payload.Components) != 1 || payload.Components[0].Type != cards.ChatFormComponentType {
+		t.Fatalf("payload.Components = %#v", payload.Components)
+	}
+}
+
+func TestCardCanvasHandlerRendersComponents(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards: fakeCardStore{
+			cards: []cards.Card{testWebCard("ember", "Ember")},
+		},
+		Memory:  fakeMemoryStore{},
+		Chat:    fakeChatService{},
+		Profile: &fakeProfileStore{},
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/cards/ember/canvas", nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	for _, marker := range []string{
+		`data-component-id="chat-form"`,
+		`data-component-type="chat-form"`,
+		`data-client-initializer="initChatForm"`,
+		`id="chat-form-component"`,
+		`id="chat-input"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("canvas missing %s: %s", marker, body)
+		}
+	}
+}
+
+func TestCardCanvasHandlerReturnsNotFoundForInvalidCard(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards:   fakeCardStore{},
+		Memory:  fakeMemoryStore{},
+		Chat:    fakeChatService{},
+		Profile: &fakeProfileStore{},
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/cards/missing/canvas", nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", recorder.Code)
+	}
+}
+
+func TestCardCanvasHandlerReturnsServerErrorForUnknownComponentType(t *testing.T) {
+	t.Parallel()
+
+	card := testWebCard("ember", "Ember")
+	card.Components[0].Type = "missing-type"
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards: fakeCardStore{
+			cards: []cards.Card{card},
+		},
+		Memory:  fakeMemoryStore{},
+		Chat:    fakeChatService{},
+		Profile: &fakeProfileStore{},
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/cards/ember/canvas", nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", recorder.Code)
+	}
 }
 
 func TestChatFormHandlerReturnsValidResponse(t *testing.T) {
@@ -48,7 +155,7 @@ func TestChatFormHandlerReturnsValidResponse(t *testing.T) {
 	mux := http.NewServeMux()
 	Register(mux, Dependencies{
 		Cards: fakeCardStore{
-			cards: []cards.Card{{CardID: "ember", Name: "Ember"}},
+			cards: []cards.Card{testWebCard("ember", "Ember")},
 		},
 		Memory: fakeMemoryStore{},
 		Chat: fakeChatService{
@@ -101,7 +208,7 @@ func TestChatFormHandlerRejectsMalformedRequest(t *testing.T) {
 	mux := http.NewServeMux()
 	Register(mux, Dependencies{
 		Cards: fakeCardStore{
-			cards: []cards.Card{{CardID: "ember", Name: "Ember"}},
+			cards: []cards.Card{testWebCard("ember", "Ember")},
 		},
 		Memory:  fakeMemoryStore{},
 		Chat:    fakeChatService{},
@@ -116,13 +223,99 @@ func TestChatFormHandlerRejectsMalformedRequest(t *testing.T) {
 	}
 }
 
+func TestComponentActionReturnsNotFoundForMissingComponentInstance(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards: fakeCardStore{
+			cards: []cards.Card{testWebCard("ember", "Ember")},
+		},
+		Memory:  fakeMemoryStore{},
+		Chat:    fakeChatService{},
+		Profile: &fakeProfileStore{},
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/cards/ember/components/missing/actions/send", strings.NewReader(`{"message":"hi"}`))
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", recorder.Code)
+	}
+}
+
+func TestComponentActionReturnsNotFoundForUnsupportedAction(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards: fakeCardStore{
+			cards: []cards.Card{testWebCard("ember", "Ember")},
+		},
+		Memory:  fakeMemoryStore{},
+		Chat:    fakeChatService{},
+		Profile: &fakeProfileStore{},
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/cards/ember/components/chat-form/actions/unknown", strings.NewReader(`{"message":"hi"}`))
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", recorder.Code)
+	}
+}
+
+func TestComponentActionReturnsMethodNotAllowedForWrongMethod(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards: fakeCardStore{
+			cards: []cards.Card{testWebCard("ember", "Ember")},
+		},
+		Memory:  fakeMemoryStore{},
+		Chat:    fakeChatService{},
+		Profile: &fakeProfileStore{},
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/cards/ember/components/chat-form/actions/send", nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", recorder.Code)
+	}
+}
+
+func TestComponentActionReturnsServerErrorForUnknownComponentType(t *testing.T) {
+	t.Parallel()
+
+	card := testWebCard("ember", "Ember")
+	card.Components[0].Type = "missing-type"
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards: fakeCardStore{
+			cards: []cards.Card{card},
+		},
+		Memory:  fakeMemoryStore{},
+		Chat:    fakeChatService{},
+		Profile: &fakeProfileStore{},
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/cards/ember/components/chat-form/actions/send", strings.NewReader(`{"message":"hi"}`))
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", recorder.Code)
+	}
+}
+
 func TestOldChatHandlerRouteIsNotFound(t *testing.T) {
 	t.Parallel()
 
 	mux := http.NewServeMux()
 	Register(mux, Dependencies{
 		Cards: fakeCardStore{
-			cards: []cards.Card{{CardID: "ember", Name: "Ember"}},
+			cards: []cards.Card{testWebCard("ember", "Ember")},
 		},
 		Memory:  fakeMemoryStore{},
 		Chat:    fakeChatService{},
@@ -211,7 +404,7 @@ func TestPageReferencesFrontendBundle(t *testing.T) {
 	}
 }
 
-func TestPageIncludesHeaderAndChatFormComponentMounts(t *testing.T) {
+func TestPageIncludesHeaderAndCardCanvasMounts(t *testing.T) {
 	t.Parallel()
 
 	mux := http.NewServeMux()
@@ -232,17 +425,88 @@ func TestPageIncludesHeaderAndChatFormComponentMounts(t *testing.T) {
 	for _, marker := range []string{
 		`id="app-header"`,
 		`id="reload-cards-btn"`,
-		`id="chat-form-component"`,
-		`id="conversation-status"`,
-		`id="card-meta"`,
-		`id="transcript"`,
-		`id="chat-form"`,
-		`id="chat-input"`,
-		`id="send-btn"`,
+		`id="card-canvas"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("page missing %s: %s", marker, body)
 		}
+	}
+}
+
+func TestPatchProposalHandlerReturnsProposal(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards:       fakeCardStore{},
+		Memory:      fakeMemoryStore{},
+		Chat:        fakeChatService{},
+		Profile:     &fakeProfileStore{},
+		Patch:       fakePatchClient{response: "diff --git a/view.go b/view.go"},
+		PatchModel:  "test-model",
+		ProjectRoot: projectRoot(),
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/components/chat-form/patch-proposals", strings.NewReader(`{"instruction":"make the button clearer"}`))
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		ComponentType string   `json:"component_type"`
+		ContextFiles  []string `json:"context_files"`
+		Proposal      string   `json:"proposal"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if payload.ComponentType != "chat-form" || payload.Proposal == "" || len(payload.ContextFiles) == 0 {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
+func TestPatchProposalHandlerRejectsUnknownComponentType(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards:       fakeCardStore{},
+		Memory:      fakeMemoryStore{},
+		Chat:        fakeChatService{},
+		Profile:     &fakeProfileStore{},
+		Patch:       fakePatchClient{response: "diff"},
+		PatchModel:  "test-model",
+		ProjectRoot: projectRoot(),
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/components/missing/patch-proposals", strings.NewReader(`{"instruction":"change it"}`))
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", recorder.Code)
+	}
+}
+
+func TestPatchProposalHandlerRejectsEmptyInstruction(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Cards:       fakeCardStore{},
+		Memory:      fakeMemoryStore{},
+		Chat:        fakeChatService{},
+		Profile:     &fakeProfileStore{},
+		Patch:       fakePatchClient{response: "diff"},
+		PatchModel:  "test-model",
+		ProjectRoot: projectRoot(),
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/components/chat-form/patch-proposals", strings.NewReader(`{"instruction":" "}`))
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", recorder.Code)
 	}
 }
 
@@ -310,6 +574,21 @@ func (f fakeCardStore) List() []cards.Card {
 	return append([]cards.Card(nil), f.cards...)
 }
 
+func testWebCard(cardID, name string) cards.Card {
+	return cards.Card{
+		CardID:    cardID,
+		Name:      name,
+		Archetype: "guardian",
+		Personality: cards.Personality{
+			Tone: "calm",
+		},
+		Constraints: cards.Constraints{
+			KnowledgeScope: "mythic",
+		},
+		Components: cards.DefaultComponents(),
+	}
+}
+
 func (f fakeCardStore) Get(cardID string) (cards.Card, bool) {
 	for _, card := range f.cards {
 		if card.CardID == cardID {
@@ -328,6 +607,17 @@ func (fakeMemoryStore) ListByCard(context.Context, string, string, int) ([]memor
 type fakeChatService struct {
 	result chat.Result
 	err    error
+}
+
+type fakePatchClient struct {
+	response string
+}
+
+func (f fakePatchClient) Chat(context.Context, string, []ollama.ChatMessage) (string, error) {
+	if f.response == "" {
+		return "diff --git a/file b/file", nil
+	}
+	return f.response, nil
 }
 
 func (f fakeChatService) Chat(context.Context, chat.Request) (chat.Result, error) {

@@ -33,9 +33,9 @@ func run() error {
 		}
 	}
 
-	cardStore, err := cards.NewStore(cfg.CardsDir)
+	cardStore, err := cards.NewStaticStore()
 	if err != nil {
-		return fmt.Errorf("load cards: %w", err)
+		return fmt.Errorf("load static cards: %w", err)
 	}
 
 	ollamaClient := ollama.NewClient(cfg.OllamaBaseURL, cfg.RequestTimeout)
@@ -89,10 +89,12 @@ func run() error {
 
 	mux := http.NewServeMux()
 	web.Register(mux, web.Dependencies{
-		Cards:   cardStore,
-		Memory:  memoryStore,
-		Chat:    service,
-		Profile: profileStore,
+		Cards:      cardStore,
+		Memory:     memoryStore,
+		Chat:       service,
+		Profile:    profileStore,
+		Patch:      ollamaClient,
+		PatchModel: cfg.OllamaChatModel,
 	})
 
 	log.Printf("living card server listening on http://%s", cfg.WebAddr)

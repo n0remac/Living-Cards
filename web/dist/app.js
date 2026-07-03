@@ -103,6 +103,13 @@ async function fetchCard(cardId) {
   }
   return await response.json();
 }
+async function fetchCardCanvas(cardId) {
+  const response = await fetch("/api/cards/" + encodeURIComponent(cardId) + "/canvas", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("Failed to load card canvas.");
+  }
+  return await response.text();
+}
 async function fetchRecentMemories(cardId, userId) {
   const response = await fetch("/api/cards/" + encodeURIComponent(cardId) + "/memories?user_id=" + encodeURIComponent(userId), { cache: "no-store" });
   if (!response.ok) {
@@ -120,6 +127,20 @@ async function sendChatMessage(cardId, userId, message) {
     throw new Error(await response.text() || "Chat request failed.");
   }
   return await response.json();
+}
+
+// web/src/components.ts
+var initializers = {
+  "chat-form": initChatForm
+};
+function hydrateCardCanvas(root, deps) {
+  root.querySelectorAll("[data-component-type]").forEach((node) => {
+    const componentType = node.dataset.componentType || "";
+    const initializer = initializers[componentType];
+    if (initializer) {
+      initializer(deps);
+    }
+  });
 }
 
 // web/src/state.ts
@@ -181,9 +202,24 @@ async function refreshSelectedCard() {
     setChatStatus("Failed to load card.", true);
     return;
   }
+  if (!await refreshCardCanvas(card.card_id)) {
+    return;
+  }
   refreshSelectedCardChatView(card);
   await refreshRecentMemories();
   setChatStatus("Ready.", false);
+}
+async function refreshCardCanvas(cardId) {
+  const canvas = byID("card-canvas");
+  if (!canvas) return false;
+  try {
+    canvas.innerHTML = await fetchCardCanvas(cardId);
+  } catch {
+    setChatStatus("Failed to load card canvas.", true);
+    return false;
+  }
+  hydrateCardCanvas(canvas, hydrationDeps());
+  return true;
 }
 function renderRetrievedMemories(items) {
   const el = byID("retrieved-memories");
@@ -238,7 +274,10 @@ function appendTranscript(cardId, item) {
 }
 document.addEventListener("DOMContentLoaded", () => {
   initAppHeader({ loadCards });
-  initChatForm({
+  void loadCards();
+});
+function hydrationDeps() {
+  return {
     getSelectedCardId: () => livingCardState.selectedCardId,
     getUserId: () => livingCardState.userId,
     getTranscript,
@@ -247,7 +286,6 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshRecentMemories,
     renderRetrievedMemories,
     renderStoredSummary
-  });
-  void loadCards();
-});
+  };
+}
 //# sourceMappingURL=app.js.map

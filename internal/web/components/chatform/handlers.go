@@ -6,16 +6,37 @@ import (
 	"net/http"
 	"strings"
 
+	godom "github.com/n0remac/GoDom/html"
+
 	"github.com/n0remac/Living-Card/internal/cards"
 	"github.com/n0remac/Living-Card/internal/chat"
 	"github.com/n0remac/Living-Card/internal/web/component"
 )
 
+const ComponentType = cards.ChatFormComponentType
+
+func Definition() component.Definition {
+	return component.Definition{
+		Type: ComponentType,
+		Render: func(cards.ComponentInstance) *godom.Node {
+			return View()
+		},
+		HandleAction:      HandleAction,
+		ClientInitializer: "initChatForm",
+		ContextFiles: []string{
+			"internal/web/components/chatform/view.go",
+			"internal/web/components/chatform/handlers.go",
+			"internal/web/components/chatform/client.ts",
+			"internal/web/components/chatform/types.ts",
+		},
+	}
+}
+
 func RegisterRoutes(_ *http.ServeMux, _ component.Dependencies) {
 }
 
-func HandleCardResource(w http.ResponseWriter, r *http.Request, deps component.Dependencies, card cards.Card, parts []string) bool {
-	if len(parts) != 5 || parts[1] != "components" || parts[2] != "chat-form" || parts[3] != "actions" || parts[4] != "send" {
+func HandleAction(w http.ResponseWriter, r *http.Request, deps component.Dependencies, card cards.Card, _ cards.ComponentInstance, action string) bool {
+	if action != "send" {
 		return false
 	}
 	if r.Method != http.MethodPost {

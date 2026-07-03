@@ -4,7 +4,6 @@ import (
 	. "github.com/n0remac/GoDom/html"
 
 	"github.com/n0remac/Living-Card/internal/web/components/appheader"
-	"github.com/n0remac/Living-Card/internal/web/components/chatform"
 )
 
 func Page() *Node {
@@ -25,7 +24,7 @@ func Page() *Node {
 							H2(Class("text-sm font-semibold uppercase tracking-[0.18em] text-[var(--app-fg-soft)]"), T("Cards")),
 							Div(Id("card-list"), Class("mt-4 flex max-h-[calc(100vh-12rem)] flex-col gap-2 overflow-y-auto pr-1")),
 						),
-						chatform.View(),
+						Div(Id("card-canvas")),
 						Section(
 							Class("rounded-3xl border border-[var(--app-border-strong)] bg-[var(--app-surface)] p-4 shadow-sm backdrop-blur"),
 							H2(Class("text-sm font-semibold uppercase tracking-[0.18em] text-[var(--app-fg-soft)]"), T("Debug")),

@@ -17,7 +17,6 @@ const (
 	defaultQdrantBaseURL        = "http://127.0.0.1:6333"
 	defaultQdrantPrefix         = "living-card-v1"
 	defaultMemoryDBPath         = "data/state/memory.db"
-	defaultCardsDir             = "data/cards"
 	defaultWebAddr              = "127.0.0.1:8090"
 	defaultRequestTimeoutSecond = 45
 )
@@ -30,7 +29,6 @@ type Config struct {
 	QdrantAPIKey           string
 	QdrantCollectionPrefix string
 	MemoryDBPath           string
-	CardsDir               string
 	WebAddr                string
 	RequestTimeout         time.Duration
 	DevMode                bool
@@ -53,7 +51,6 @@ func Load() (Config, error) {
 		QdrantAPIKey:           strings.TrimSpace(os.Getenv("QDRANT_API_KEY")),
 		QdrantCollectionPrefix: strings.TrimSpace(readEnvOrDefault("QDRANT_COLLECTION_PREFIX", defaultQdrantPrefix)),
 		MemoryDBPath:           filepath.Clean(readEnvOrDefault("MEMORY_DB_PATH", defaultMemoryDBPath)),
-		CardsDir:               filepath.Clean(readEnvOrDefault("CARDS_DIR", defaultCardsDir)),
 		WebAddr:                strings.TrimSpace(readEnvOrDefault("WEB_ADDR", defaultWebAddr)),
 		RequestTimeout:         time.Duration(requestTimeoutSeconds) * time.Second,
 		DevMode:                devMode,
@@ -82,9 +79,6 @@ func validate(cfg Config) error {
 	}
 	if cfg.MemoryDBPath == "" || cfg.MemoryDBPath == "." {
 		return fmt.Errorf("MEMORY_DB_PATH cannot be empty")
-	}
-	if cfg.CardsDir == "" || cfg.CardsDir == "." {
-		return fmt.Errorf("CARDS_DIR cannot be empty")
 	}
 	if cfg.WebAddr == "" {
 		return fmt.Errorf("WEB_ADDR cannot be empty")

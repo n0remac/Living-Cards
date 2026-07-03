@@ -9,6 +9,13 @@ export interface Card {
   domain?: string[];
   archetype?: string;
   personality?: Personality;
+  components?: ComponentInstance[];
+}
+
+export interface ComponentInstance {
+  id: string;
+  type: string;
+  props?: Record<string, unknown>;
 }
 
 export interface Memory {

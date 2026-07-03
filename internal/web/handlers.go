@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,10 +19,16 @@ import (
 type Dependencies = component.Dependencies
 
 func Register(mux *http.ServeMux, deps Dependencies) {
+	registry := component.MustNewRegistry(
+		appheader.Definition(),
+		chatform.Definition(),
+	)
+	deps.ProjectRoot = firstNonEmpty(deps.ProjectRoot, projectRoot())
 	mux.HandleFunc("/", ServeNode(Page()))
 	mux.HandleFunc("/assets/", frontendAssetHandler())
+	mux.HandleFunc("/api/components/", componentResourceHandler(deps, registry))
 	mux.HandleFunc("/api/cards", cardsListHandler(deps))
-	mux.HandleFunc("/api/cards/", cardResourceHandler(deps))
+	mux.HandleFunc("/api/cards/", cardResourceHandler(deps, registry))
 	mux.HandleFunc("/api/users/", userResourceHandler(deps))
 	appheader.RegisterRoutes(mux, deps)
 	chatform.RegisterRoutes(mux, deps)
@@ -81,7 +88,7 @@ func cardsListHandler(deps Dependencies) http.HandlerFunc {
 	}
 }
 
-func cardResourceHandler(deps Dependencies) http.HandlerFunc {
+func cardResourceHandler(deps Dependencies, registry *component.Registry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/api/cards/")
 		path = strings.Trim(path, "/")
@@ -107,6 +114,23 @@ func cardResourceHandler(deps Dependencies) http.HandlerFunc {
 		}
 
 		switch parts[1] {
+		case "canvas":
+			if len(parts) != 2 {
+				http.NotFound(w, r)
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			node, err := registry.RenderCard(card)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			_, _ = w.Write([]byte(node.Render()))
 		case "memories":
 			if r.Method != http.MethodGet {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -120,11 +144,46 @@ func cardResourceHandler(deps Dependencies) http.HandlerFunc {
 			}
 			writeJSONResponse(w, memories)
 		default:
-			if chatform.HandleCardResource(w, r, deps, card, parts) {
+			if registry.HandleCardResource(w, r, deps, card, parts) {
 				return
 			}
 			http.NotFound(w, r)
 		}
+	}
+}
+
+func componentResourceHandler(deps Dependencies, registry *component.Registry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/components/")
+		path = strings.Trim(path, "/")
+		parts := strings.Split(path, "/")
+		if len(parts) != 2 || parts[0] == "" || parts[1] != "patch-proposals" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var request component.PatchProposalRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		service := component.NewPatchProposalService(registry, deps.Patch, deps.PatchModel, deps.ProjectRoot)
+		response, err := service.Propose(r.Context(), parts[0], request.Instruction)
+		if err != nil {
+			status := http.StatusInternalServerError
+			switch {
+			case errors.Is(err, component.ErrEmptyInstruction):
+				status = http.StatusBadRequest
+			case errors.Is(err, component.ErrComponentTypeNotFound):
+				status = http.StatusNotFound
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+		writeJSONResponse(w, response)
 	}
 }
 
@@ -165,6 +224,16 @@ func userResourceHandler(deps Dependencies) http.HandlerFunc {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func writeJSONResponse(w http.ResponseWriter, value any) {

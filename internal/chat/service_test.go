@@ -179,7 +179,7 @@ type chatFixture struct {
 func newTestChatService(t *testing.T, fixture chatFixture) (*Service, *memory.Store) {
 	t.Helper()
 
-	cardStore, err := cards.NewStore("../../data/cards")
+	cardStore, err := cards.NewStaticStore()
 	if err != nil {
 		t.Fatalf("cards.NewStore() error = %v", err)
 	}

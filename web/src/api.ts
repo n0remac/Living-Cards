@@ -16,6 +16,14 @@ export async function fetchCard(cardId: string): Promise<Card> {
   return await response.json() as Card;
 }
 
+export async function fetchCardCanvas(cardId: string): Promise<string> {
+  const response = await fetch("/api/cards/" + encodeURIComponent(cardId) + "/canvas", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error("Failed to load card canvas.");
+  }
+  return await response.text();
+}
+
 export async function fetchRecentMemories(cardId: string, userId: string): Promise<Memory[]> {
   const response = await fetch("/api/cards/" + encodeURIComponent(cardId) + "/memories?user_id=" + encodeURIComponent(userId), { cache: "no-store" });
   if (!response.ok) {

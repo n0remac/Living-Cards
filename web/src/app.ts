@@ -1,6 +1,7 @@
 import { initAppHeader } from "../../internal/web/components/appheader/client";
-import { initChatForm, refreshSelectedCardChatView, setChatStatus } from "../../internal/web/components/chatform/client";
-import { fetchCard, fetchCards, fetchRecentMemories, sendChatMessage } from "./api";
+import { refreshSelectedCardChatView, setChatStatus } from "../../internal/web/components/chatform/client";
+import { fetchCard, fetchCardCanvas, fetchCards, fetchRecentMemories, sendChatMessage } from "./api";
+import { hydrateCardCanvas, type HydrationDeps } from "./components";
 import { byID, escapeHtml } from "./dom";
 import { livingCardState } from "./state";
 import type { Card, Memory, SearchResult, TranscriptItem } from "./types";
@@ -62,9 +63,25 @@ async function refreshSelectedCard(): Promise<void> {
     setChatStatus("Failed to load card.", true);
     return;
   }
+  if (!await refreshCardCanvas(card.card_id)) {
+    return;
+  }
   refreshSelectedCardChatView(card);
   await refreshRecentMemories();
   setChatStatus("Ready.", false);
+}
+
+async function refreshCardCanvas(cardId: string): Promise<boolean> {
+  const canvas = byID<HTMLDivElement>("card-canvas");
+  if (!canvas) return false;
+  try {
+    canvas.innerHTML = await fetchCardCanvas(cardId);
+  } catch {
+    setChatStatus("Failed to load card canvas.", true);
+    return false;
+  }
+  hydrateCardCanvas(canvas, hydrationDeps());
+  return true;
 }
 
 function renderRetrievedMemories(items: SearchResult[]): void {
@@ -131,7 +148,11 @@ function appendTranscript(cardId: string, item: TranscriptItem): void {
 
 document.addEventListener("DOMContentLoaded", () => {
   initAppHeader({ loadCards });
-  initChatForm({
+  void loadCards();
+});
+
+function hydrationDeps(): HydrationDeps {
+  return {
     getSelectedCardId: () => livingCardState.selectedCardId,
     getUserId: () => livingCardState.userId,
     getTranscript,
@@ -140,6 +161,5 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshRecentMemories,
     renderRetrievedMemories,
     renderStoredSummary,
-  });
-  void loadCards();
-});
+  };
+}
