@@ -1,7 +1,7 @@
 import { initDesigner, resetDraft } from "./designer/controller";
-import { initAppHeader } from "../../internal/web/components/appheader/client";
+import { initStage } from "./stage/StageController";
 
 document.addEventListener("DOMContentLoaded", () => {
-  initAppHeader({ resetDraft });
   initDesigner();
+  initStage({ resetDraft });
 });

@@ -3,6 +3,7 @@ package border
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"strings"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
@@ -47,6 +48,79 @@ func Presets() []card.LibraryItem {
 			BorderColor:    "#111827",
 			CSS:            "border: 1px solid #111827;",
 		}),
+	}
+}
+
+func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
+	options := []struct {
+		description string
+		part        Fragment
+	}{
+		{
+			description: "A fine luminous cyan border.",
+			part: Fragment{
+				BorderWidthPX:  1,
+				BorderRadiusPX: 24,
+				BorderColor:    "rgba(103, 232, 249, 0.72)",
+				CSS:            "border: 1px solid rgba(103, 232, 249, 0.72); box-shadow: 0 0 24px rgba(34, 211, 238, 0.25);",
+			},
+		},
+		{
+			description: "A brass double-line frame.",
+			part: Fragment{
+				BorderWidthPX:  3,
+				BorderRadiusPX: 18,
+				BorderColor:    "#b08d57",
+				CSS:            "border: 3px double #b08d57; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);",
+			},
+		},
+		{
+			description: "A crisp editorial ink border.",
+			part: Fragment{
+				BorderWidthPX:  1,
+				BorderRadiusPX: 8,
+				BorderColor:    "#111827",
+				CSS:            "border: 1px solid #111827;",
+			},
+		},
+		{
+			description: "A soft pearl border with deep shadow.",
+			part: Fragment{
+				BorderWidthPX:  2,
+				BorderRadiusPX: 32,
+				BorderColor:    "rgba(255,255,255,0.64)",
+				CSS:            "border: 2px solid rgba(255,255,255,0.64); box-shadow: 0 24px 70px rgba(15,23,42,0.42);",
+			},
+		},
+		{
+			description: "A compact slate border.",
+			part: Fragment{
+				BorderWidthPX:  2,
+				BorderRadiusPX: 14,
+				BorderColor:    "#64748b",
+				CSS:            "border: 2px solid #64748b;",
+			},
+		},
+	}
+	if level > 2 {
+		options = append(options, struct {
+			description string
+			part        Fragment
+		}{
+			description: "A strong arcade magenta border.",
+			part: Fragment{
+				BorderWidthPX:  4,
+				BorderRadiusPX: 28,
+				BorderColor:    "rgba(244,114,182,0.84)",
+				CSS:            "border: 4px solid rgba(244,114,182,0.84); box-shadow: 0 0 28px rgba(244,114,182,0.26);",
+			},
+		})
+	}
+	pick := options[rand.New(rand.NewSource(seed)).Intn(len(options))]
+	return fragment.Generated[Fragment]{
+		Target:      Type,
+		Description: pick.description,
+		Fragment:    pick.part,
 	}
 }
 

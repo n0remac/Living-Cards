@@ -3,6 +3,7 @@ package background
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"strings"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
@@ -37,6 +38,67 @@ func Presets() []card.LibraryItem {
 			BackgroundColor: "#d9f99d",
 			CSS:             "background: linear-gradient(145deg, #ecfccb 0%, #bbf7d0 100%); box-shadow: inset 0 0 40px rgba(22, 101, 52, 0.12);",
 		}),
+	}
+}
+
+func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
+	options := []struct {
+		description string
+		part        Fragment
+	}{
+		{
+			description: "A midnight card surface with a cool highlight.",
+			part: Fragment{
+				BackgroundColor: "#0f172a",
+				CSS:             "background: radial-gradient(circle at top, rgba(56,189,248,0.24), transparent 44%), linear-gradient(160deg, #0f172a 0%, #111827 100%);",
+			},
+		},
+		{
+			description: "A warm parchment card surface.",
+			part: Fragment{
+				BackgroundColor: "#f5e6c8",
+				CSS:             "background: linear-gradient(135deg, #f8edd5 0%, #e7cfa6 100%); box-shadow: inset 0 0 36px rgba(120, 53, 15, 0.12);",
+			},
+		},
+		{
+			description: "A soft mint card surface with gentle depth.",
+			part: Fragment{
+				BackgroundColor: "#d9f99d",
+				CSS:             "background: linear-gradient(145deg, #ecfccb 0%, #bbf7d0 100%); box-shadow: inset 0 0 40px rgba(22, 101, 52, 0.12);",
+			},
+		},
+		{
+			description: "A rose dusk card surface.",
+			part: Fragment{
+				BackgroundColor: "#581c87",
+				CSS:             "background: radial-gradient(circle at top right, rgba(244,114,182,0.28), transparent 42%), linear-gradient(155deg, #581c87 0%, #1f2937 100%);",
+			},
+		},
+		{
+			description: "A quiet stone card surface.",
+			part: Fragment{
+				BackgroundColor: "#374151",
+				CSS:             "background: linear-gradient(150deg, #4b5563 0%, #1f2937 100%); box-shadow: inset 0 0 34px rgba(255,255,255,0.08);",
+			},
+		},
+	}
+	if level > 2 {
+		options = append(options, struct {
+			description string
+			part        Fragment
+		}{
+			description: "A bright ember card surface.",
+			part: Fragment{
+				BackgroundColor: "#7c2d12",
+				CSS:             "background: radial-gradient(circle at bottom, rgba(251,146,60,0.34), transparent 42%), linear-gradient(145deg, #7c2d12 0%, #111827 100%);",
+			},
+		})
+	}
+	pick := options[rand.New(rand.NewSource(seed)).Intn(len(options))]
+	return fragment.Generated[Fragment]{
+		Target:      Type,
+		Description: pick.description,
+		Fragment:    pick.part,
 	}
 }
 

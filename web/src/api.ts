@@ -1,4 +1,15 @@
-import type { ApplyFragmentResponse, DesignLibraryItem, FragmentIssue, GeneratedStyleFragment, LibraryResponse, RenderedDraftCard } from "./types";
+import type {
+  ApplyFragmentResponse,
+  CardHitZone,
+  ComponentTarget,
+  DesignLibraryItem,
+  FragmentIssue,
+  GeneratedStyleFragment,
+  InteractiveDraftCardResponse,
+  LibraryResponse,
+  RenderedDraftCard,
+  TapCardResponse,
+} from "./types";
 
 export class FragmentGenerationError extends Error {
   rawResponse: string;
@@ -20,12 +31,32 @@ export async function fetchRenderedDraftCard(): Promise<RenderedDraftCard> {
   return await response.json() as RenderedDraftCard;
 }
 
+export async function fetchInteractiveDraftCard(): Promise<InteractiveDraftCardResponse> {
+  const response = await fetch("/api/draft-card/interactive", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to load interactive card."));
+  }
+  return await response.json() as InteractiveDraftCardResponse;
+}
+
 export async function resetDraftCard(): Promise<RenderedDraftCard> {
   const response = await fetch("/api/draft-card/reset", { method: "POST" });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to reset draft card."));
   }
   return await response.json() as RenderedDraftCard;
+}
+
+export async function tapCardZone(target: ComponentTarget, zone: CardHitZone, x: number, y: number): Promise<TapCardResponse> {
+  const response = await fetch("/api/draft-card/tap", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, zone, x, y }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to apply card tap."));
+  }
+  return await response.json() as TapCardResponse;
 }
 
 export async function generateFragment(target: string, instruction: string, update = false): Promise<GeneratedStyleFragment> {

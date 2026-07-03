@@ -109,6 +109,15 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 			writeRenderedDraftCard(w, document, library)
 			return
 		}
+		if path == "interactive" {
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			document, gameState, library := state.interactiveSnapshot()
+			writeInteractiveDraftCard(w, document, gameState, library)
+			return
+		}
 		if path == "reset" {
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -120,6 +129,10 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 		}
 		if path == "apply-fragment" {
 			applyDraftFragmentHandler(w, r, state)
+			return
+		}
+		if path == "tap" {
+			tapDraftCardHandler(w, r, state)
 			return
 		}
 		if path == "library" {
@@ -191,6 +204,30 @@ type renderedDraftCardResponse struct {
 	Library     []cardcomponent.LibraryItem `json:"library"`
 }
 
+type interactiveDraftCardResponse struct {
+	Document         cardcomponent.Document      `json:"document"`
+	GameState        GameState                   `json:"gameState"`
+	PreviewHTML      string                      `json:"preview_html"`
+	AvailableTargets []string                    `json:"availableTargets"`
+	Library          []cardcomponent.LibraryItem `json:"library"`
+}
+
+type tapDraftCardRequest struct {
+	Target string  `json:"target"`
+	Zone   string  `json:"zone"`
+	X      float64 `json:"x"`
+	Y      float64 `json:"y"`
+}
+
+type tapDraftCardResponse struct {
+	Document        cardcomponent.Document      `json:"document"`
+	GameState       GameState                   `json:"gameState"`
+	AppliedFragment any                         `json:"appliedFragment,omitempty"`
+	PreviewHTML     string                      `json:"preview_html"`
+	Events          []CardEvent                 `json:"events"`
+	Library         []cardcomponent.LibraryItem `json:"library"`
+}
+
 type libraryResponse struct {
 	Item    cardcomponent.LibraryItem   `json:"item,omitempty"`
 	Library []cardcomponent.LibraryItem `json:"library"`
@@ -227,6 +264,26 @@ func applyDraftFragmentHandler(w http.ResponseWriter, r *http.Request, state *de
 	}
 	_, library := state.snapshot()
 	writeAppliedDraftFragment(w, document, normalized, library)
+}
+
+func tapDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request tapDraftCardRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	result, err := state.tap(request.Target, request.Zone, request.X, request.Y)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeTappedDraftCard(w, result)
 }
 
 func validateGeneratedFragmentEnvelope(raw json.RawMessage) error {
@@ -326,6 +383,35 @@ func writeRenderedDraftCard(w http.ResponseWriter, document cardcomponent.Docume
 		Document:    document,
 		PreviewHTML: previewHTML,
 		Library:     library,
+	})
+}
+
+func writeInteractiveDraftCard(w http.ResponseWriter, document cardcomponent.Document, gameState GameState, library []cardcomponent.LibraryItem) {
+	previewHTML, ok := renderDraftPreview(w, document, http.StatusInternalServerError)
+	if !ok {
+		return
+	}
+	writeJSONResponse(w, interactiveDraftCardResponse{
+		Document:         document,
+		GameState:        gameState,
+		PreviewHTML:      previewHTML,
+		AvailableTargets: append([]string(nil), gameState.UnlockedTargets...),
+		Library:          library,
+	})
+}
+
+func writeTappedDraftCard(w http.ResponseWriter, result tapResult) {
+	previewHTML, ok := renderDraftPreview(w, result.document, http.StatusBadRequest)
+	if !ok {
+		return
+	}
+	writeJSONResponse(w, tapDraftCardResponse{
+		Document:        result.document,
+		GameState:       result.gameState,
+		AppliedFragment: result.appliedFragment,
+		PreviewHTML:     previewHTML,
+		Events:          result.events,
+		Library:         result.library,
 	})
 }
 

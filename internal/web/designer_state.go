@@ -16,14 +16,16 @@ import (
 type designerState struct {
 	mu          sync.Mutex
 	document    cardcomponent.Document
+	gameState   GameState
 	library     []cardcomponent.LibraryItem
 	lastApplied *cardcomponent.LibraryItem
 }
 
 func newDesignerState() *designerState {
 	return &designerState{
-		document: cardcomponent.DefaultDocument(),
-		library:  seededLibrary(),
+		document:  cardcomponent.DefaultDocument(),
+		gameState: initialGameState(),
+		library:   seededLibrary(),
 	}
 }
 
@@ -41,11 +43,20 @@ func (s *designerState) snapshot() (cardcomponent.Document, []cardcomponent.Libr
 	return cloneValue(s.document), cloneLibrary(s.library)
 }
 
+func (s *designerState) interactiveSnapshot() (cardcomponent.Document, GameState, []cardcomponent.LibraryItem) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.gameState = normalizeGameState(s.gameState)
+	return cloneValue(s.document), cloneValue(s.gameState), cloneLibrary(s.library)
+}
+
 func (s *designerState) reset() (cardcomponent.Document, []cardcomponent.LibraryItem) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.document = cardcomponent.DefaultDocument()
+	s.gameState = initialGameState()
 	s.lastApplied = nil
 	return cloneValue(s.document), cloneLibrary(s.library)
 }
@@ -62,6 +73,55 @@ func (s *designerState) apply(raw json.RawMessage) (cardcomponent.Document, any,
 	s.document = document
 	s.lastApplied = &item
 	return cloneValue(s.document), normalized, nil
+}
+
+func (s *designerState) tap(target, zone string, x, y float64) (tapResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_ = x
+	_ = y
+	s.gameState = normalizeGameState(s.gameState)
+	target = canonicalTapTarget(target, zone)
+	if !isKnownTapTarget(target) {
+		return tapResult{}, fmt.Errorf("target %q is not available", target)
+	}
+	if !targetUnlocked(s.gameState, target) {
+		return tapResult{
+			document:  cloneValue(s.document),
+			gameState: cloneValue(s.gameState),
+			library:   cloneLibrary(s.library),
+			events: []CardEvent{{
+				Type:    "invalidAction",
+				Target:  target,
+				Message: target + " is locked.",
+			}},
+		}, nil
+	}
+
+	targetProgress := s.gameState.TargetProgress[target]
+	seed := tapSeed(s.gameState, target)
+	raw, err := randomGeneratedFragment(target, seed, maxInt(s.gameState.Level, targetProgress.Level))
+	if err != nil {
+		return tapResult{}, err
+	}
+	document := cloneValue(s.document)
+	normalized, item, err := applyGeneratedFragmentToDocument(raw, &document)
+	if err != nil {
+		return tapResult{}, err
+	}
+	s.document = document
+	s.lastApplied = &item
+	var events []CardEvent
+	s.gameState, events = advanceGameState(s.gameState, target)
+
+	return tapResult{
+		document:        cloneValue(s.document),
+		gameState:       cloneValue(s.gameState),
+		appliedFragment: normalized,
+		library:         cloneLibrary(s.library),
+		events:          events,
+	}, nil
 }
 
 func (s *designerState) applyLibraryItem(id string) (cardcomponent.Document, any, error) {
@@ -202,4 +262,11 @@ func cloneValue[T any](value T) T {
 		panic(err)
 	}
 	return out
+}
+
+func maxInt(left, right int) int {
+	if left > right {
+		return left
+	}
+	return right
 }

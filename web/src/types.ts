@@ -12,6 +12,9 @@ export interface ComponentNode {
 }
 
 export type FragmentTarget = "background" | "border" | "textarea";
+export type ComponentTarget = FragmentTarget | "shadow" | "padding" | "textblock" | "image" | "button" | "layout";
+export type CardHitZone = "border" | "background" | "textarea";
+export type EditMode = "random" | "preset" | "simpleControls" | "advancedControls" | "aiPrompt" | "library";
 
 export type FragmentJSON = Record<string, unknown>;
 
@@ -43,6 +46,46 @@ export interface DesignLibraryItem {
 export interface RenderedDraftCard {
   document: CardDocument;
   preview_html: string;
+  library: DesignLibraryItem[];
+}
+
+export interface TargetProgress {
+  taps: number;
+  level: number;
+  unlockedModes: EditMode[];
+}
+
+export interface GameState {
+  tapCount: number;
+  level: number;
+  xp: number;
+  unlockedTargets: ComponentTarget[];
+  unlockedModes: EditMode[];
+  targetProgress: Record<string, TargetProgress>;
+}
+
+export type CardEvent =
+  | { type: "fragmentApplied"; target: ComponentTarget }
+  | { type: "xpGained"; amount: number }
+  | { type: "levelUp"; level: number }
+  | { type: "targetUnlocked"; target: ComponentTarget }
+  | { type: "modeUnlocked"; target: ComponentTarget; mode: EditMode }
+  | { type: "invalidAction"; target?: ComponentTarget; message: string };
+
+export interface InteractiveDraftCardResponse {
+  document: CardDocument;
+  gameState: GameState;
+  preview_html: string;
+  availableTargets: ComponentTarget[];
+  library: DesignLibraryItem[];
+}
+
+export interface TapCardResponse {
+  document: CardDocument;
+  gameState: GameState;
+  appliedFragment?: GeneratedStyleFragment;
+  preview_html: string;
+  events: CardEvent[];
   library: DesignLibraryItem[];
 }
 

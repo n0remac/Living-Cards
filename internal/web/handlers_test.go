@@ -13,7 +13,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/ollama"
 )
 
-func TestPageRendersDesignerOnlyWorkflow(t *testing.T) {
+func TestPageRendersInteractiveStageWorkflow(t *testing.T) {
 	t.Parallel()
 
 	mux := testMux(t, nil)
@@ -26,9 +26,15 @@ func TestPageRendersDesignerOnlyWorkflow(t *testing.T) {
 	body := recorder.Body.String()
 	for _, marker := range []string{
 		`src="/assets/app.js"`,
-		`id="app-header"`,
+		`id="living-card-stage"`,
 		`id="card-workspace"`,
+		`data-card-preview-root`,
 		`id="draft-card-preview"`,
+		`id="stage-overlay-root"`,
+		`id="card-level"`,
+		`id="card-xp"`,
+		`id="designer-toggle-btn"`,
+		`id="designer-overlay"`,
 		`id="fragment-target"`,
 		`value="background"`,
 		`value="border"`,
@@ -43,6 +49,9 @@ func TestPageRendersDesignerOnlyWorkflow(t *testing.T) {
 		}
 	}
 	for _, marker := range []string{
+		`id="app-header"`,
+		`<aside`,
+		`lg:grid-cols`,
 		`value="title"`,
 		`value="body"`,
 		`id="card-list"`,
@@ -110,6 +119,190 @@ func TestRenderedDraftCardResourceReturnsDocumentAndPreviewHTML(t *testing.T) {
 	}
 	if !strings.Contains(payload.PreviewHTML, `id="draft-card-preview"`) || !strings.Contains(payload.PreviewHTML, `Start designing this card.`) {
 		t.Fatalf("preview_html did not include default preview: %s", payload.PreviewHTML)
+	}
+}
+
+func TestInteractiveDraftCardResourceReturnsGameStateAndPreviewHTML(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/draft-card/interactive", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Document         cardcomponent.Document      `json:"document"`
+		GameState        GameState                   `json:"gameState"`
+		PreviewHTML      string                      `json:"preview_html"`
+		AvailableTargets []string                    `json:"availableTargets"`
+		Library          []cardcomponent.LibraryItem `json:"library"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if payload.Document.CardID != cardcomponent.DefaultCardID {
+		t.Fatalf("document = %#v", payload.Document)
+	}
+	if payload.GameState.Level != 1 || payload.GameState.XP != 0 || payload.GameState.TapCount != 0 {
+		t.Fatalf("gameState = %#v", payload.GameState)
+	}
+	if !hasString(payload.AvailableTargets, "background") || !hasString(payload.AvailableTargets, "border") {
+		t.Fatalf("availableTargets = %#v", payload.AvailableTargets)
+	}
+	if len(payload.Library) == 0 {
+		t.Fatal("library should include seeded presets")
+	}
+	if !strings.Contains(payload.PreviewHTML, `id="draft-card-preview"`) {
+		t.Fatalf("preview_html did not include rendered card: %s", payload.PreviewHTML)
+	}
+}
+
+func TestTapDraftCardAppliesRandomFragmentsAndProgresses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		target string
+		field  string
+	}{
+		{name: "background", target: "background", field: "background_color"},
+		{name: "border", target: "border", field: "border_color"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			mux := testMux(t, nil)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"`+test.target+`","zone":"`+test.target+`","x":0.2,"y":0.4}`))
+			request.Header.Set("Content-Type", "application/json")
+			mux.ServeHTTP(recorder, request)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+			}
+			var payload struct {
+				Document        cardcomponent.Document `json:"document"`
+				GameState       GameState              `json:"gameState"`
+				AppliedFragment json.RawMessage        `json:"appliedFragment"`
+				PreviewHTML     string                 `json:"preview_html"`
+				Events          []CardEvent            `json:"events"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+			}
+			if payload.GameState.TapCount != 1 || payload.GameState.XP != 1 || payload.GameState.Level != 1 {
+				t.Fatalf("gameState = %#v", payload.GameState)
+			}
+			if !hasEvent(payload.Events, "fragmentApplied", test.target) || !hasEvent(payload.Events, "xpGained", "") {
+				t.Fatalf("events = %#v", payload.Events)
+			}
+			if !strings.Contains(string(payload.AppliedFragment), test.field) {
+				t.Fatalf("appliedFragment = %s, want field %s", string(payload.AppliedFragment), test.field)
+			}
+			if !strings.Contains(payload.PreviewHTML, `id="draft-card-preview"`) {
+				t.Fatalf("preview_html did not include rendered card: %s", payload.PreviewHTML)
+			}
+		})
+	}
+}
+
+func TestTapDraftCardReturnsLevelUpEvent(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	var payload struct {
+		GameState GameState   `json:"gameState"`
+		Events    []CardEvent `json:"events"`
+	}
+	for index := 0; index < 5; index++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("tap %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
+		}
+		payload = struct {
+			GameState GameState   `json:"gameState"`
+			Events    []CardEvent `json:"events"`
+		}{}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+		}
+	}
+	if payload.GameState.Level != 2 || payload.GameState.XP != 5 || payload.GameState.TapCount != 5 {
+		t.Fatalf("gameState = %#v", payload.GameState)
+	}
+	if !hasEvent(payload.Events, "levelUp", "") {
+		t.Fatalf("events = %#v, want levelUp", payload.Events)
+	}
+}
+
+func TestTapDraftCardHandlesLockedAndInvalidTargets(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	lockedRecorder := httptest.NewRecorder()
+	lockedRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"textarea","zone":"textarea","x":0.5,"y":0.5}`))
+	lockedRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(lockedRecorder, lockedRequest)
+	if lockedRecorder.Code != http.StatusOK {
+		t.Fatalf("locked status = %d, want 200 body=%s", lockedRecorder.Code, lockedRecorder.Body.String())
+	}
+	var lockedPayload struct {
+		GameState GameState   `json:"gameState"`
+		Events    []CardEvent `json:"events"`
+	}
+	if err := json.Unmarshal(lockedRecorder.Body.Bytes(), &lockedPayload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, lockedRecorder.Body.String())
+	}
+	if lockedPayload.GameState.TapCount != 0 || !hasEvent(lockedPayload.Events, "invalidAction", "textarea") {
+		t.Fatalf("locked payload = %#v", lockedPayload)
+	}
+
+	invalidRecorder := httptest.NewRecorder()
+	invalidRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"shadow","zone":"shadow","x":0.5,"y":0.5}`))
+	invalidRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(invalidRecorder, invalidRequest)
+	if invalidRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid status = %d, want 400 body=%s", invalidRecorder.Code, invalidRecorder.Body.String())
+	}
+}
+
+func TestResetDraftCardRestoresGameProgress(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	tapRecorder := httptest.NewRecorder()
+	tapRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"background","zone":"background","x":0.5,"y":0.5}`))
+	tapRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(tapRecorder, tapRequest)
+	if tapRecorder.Code != http.StatusOK {
+		t.Fatalf("tap status = %d, want 200 body=%s", tapRecorder.Code, tapRecorder.Body.String())
+	}
+
+	resetRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(resetRecorder, httptest.NewRequest(http.MethodPost, "/api/draft-card/reset", nil))
+	if resetRecorder.Code != http.StatusOK {
+		t.Fatalf("reset status = %d, want 200 body=%s", resetRecorder.Code, resetRecorder.Body.String())
+	}
+
+	interactiveRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(interactiveRecorder, httptest.NewRequest(http.MethodGet, "/api/draft-card/interactive", nil))
+	if interactiveRecorder.Code != http.StatusOK {
+		t.Fatalf("interactive status = %d, want 200 body=%s", interactiveRecorder.Code, interactiveRecorder.Body.String())
+	}
+	var payload struct {
+		GameState GameState `json:"gameState"`
+	}
+	if err := json.Unmarshal(interactiveRecorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, interactiveRecorder.Body.String())
+	}
+	if payload.GameState.TapCount != 0 || payload.GameState.XP != 0 || payload.GameState.Level != 1 {
+		t.Fatalf("gameState = %#v", payload.GameState)
 	}
 }
 
@@ -683,4 +876,25 @@ func applyRequestBody(t *testing.T, generated json.RawMessage) string {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
 	return string(raw)
+}
+
+func hasString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEvent(events []CardEvent, eventType, target string) bool {
+	for _, event := range events {
+		if event.Type != eventType {
+			continue
+		}
+		if target == "" || event.Target == target {
+			return true
+		}
+	}
+	return false
 }

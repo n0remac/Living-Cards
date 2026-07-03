@@ -20,10 +20,28 @@ async function fetchRenderedDraftCard() {
   }
   return await response.json();
 }
+async function fetchInteractiveDraftCard() {
+  const response = await fetch("/api/draft-card/interactive", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to load interactive card."));
+  }
+  return await response.json();
+}
 async function resetDraftCard() {
   const response = await fetch("/api/draft-card/reset", { method: "POST" });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to reset draft card."));
+  }
+  return await response.json();
+}
+async function tapCardZone(target, zone, x, y) {
+  const response = await fetch("/api/draft-card/tap", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, zone, x, y })
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to apply card tap."));
   }
   return await response.json();
 }
@@ -235,6 +253,7 @@ async function resetDraft() {
     renderDesignLibraryItems(response.library);
     setSaveEnabled(false);
     setDesignerStatus("Ready.", false);
+    document.dispatchEvent(new CustomEvent("living-card:interactive-refresh"));
   } catch (error) {
     setDesignerStatus(error instanceof Error ? error.message : "Failed to reset draft card.", true);
   }
@@ -436,19 +455,231 @@ function escapeHTML(value) {
   return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
-// internal/web/components/appheader/client.ts
-function initAppHeader(deps) {
-  const reset = byID("reset-draft-btn");
-  if (reset) {
-    reset.addEventListener("click", () => {
-      void deps.resetDraft();
-    });
+// web/src/stage/cardMotion.ts
+function animateCardTap(preview, x, y) {
+  const rotateY = (x - 0.5) * 8;
+  const rotateX = (0.5 - y) * 8;
+  runAnimation(preview, [
+    { transform: "translateY(0) scale(1) rotateX(0deg) rotateY(0deg)" },
+    { transform: `translateY(-8px) scale(1.018) rotateX(${rotateX}deg) rotateY(${rotateY}deg)` },
+    { transform: "translateY(0) scale(1) rotateX(0deg) rotateY(0deg)" }
+  ], 260);
+}
+function animateInvalidTap(preview) {
+  runAnimation(preview, [
+    { transform: "translateX(0)" },
+    { transform: "translateX(-7px)" },
+    { transform: "translateX(6px)" },
+    { transform: "translateX(-4px)" },
+    { transform: "translateX(0)" }
+  ], 230);
+}
+function runAnimation(element, keyframes, duration) {
+  if (typeof element.animate !== "function") return;
+  element.getAnimations().forEach((animation) => animation.cancel());
+  element.animate(keyframes, {
+    duration,
+    easing: "cubic-bezier(.2,.8,.2,1)"
+  });
+}
+
+// web/src/stage/hitTesting.ts
+var borderBandPX = 24;
+function hitTestCard(event, preview) {
+  const rect = preview.getBoundingClientRect();
+  const x = clamp((event.clientX - rect.left) / rect.width);
+  const y = clamp((event.clientY - rect.top) / rect.height);
+  const localX = event.clientX - rect.left;
+  const localY = event.clientY - rect.top;
+  const inBorderBand = localX <= borderBandPX || localY <= borderBandPX || rect.width - localX <= borderBandPX || rect.height - localY <= borderBandPX;
+  if (inBorderBand) {
+    return { target: "border", zone: "border", x, y };
   }
+  const target = event.target instanceof Element ? event.target : null;
+  if (target?.closest('[data-component-type="textarea"]')) {
+    return { target: "textarea", zone: "textarea", x, y };
+  }
+  return { target: "background", zone: "background", x, y };
+}
+function clamp(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+// web/src/stage/overlays.ts
+function renderEvents(root, events) {
+  if (!root) return;
+  events.forEach((event, index) => {
+    window.setTimeout(() => showEvent(root, event), index * 140);
+  });
+}
+function showMessage(root, message, tone = "info") {
+  if (!root) return;
+  const toast = document.createElement("div");
+  toast.className = toastClass(tone);
+  toast.textContent = message;
+  root.appendChild(toast);
+  window.setTimeout(() => {
+    toast.classList.add("opacity-0", "-translate-y-2");
+  }, 1700);
+  window.setTimeout(() => {
+    toast.remove();
+  }, 2200);
+}
+function showEvent(root, event) {
+  switch (event.type) {
+    case "fragmentApplied":
+      showMessage(root, labelForTarget(event.target) + " changed");
+      return;
+    case "xpGained":
+      showMessage(root, "+" + event.amount + " XP");
+      return;
+    case "levelUp":
+      showMessage(root, "Level " + event.level);
+      return;
+    case "targetUnlocked":
+      showMessage(root, labelForTarget(event.target) + " unlocked");
+      return;
+    case "modeUnlocked":
+      showMessage(root, labelForTarget(event.target) + " " + event.mode + " unlocked");
+      return;
+    case "invalidAction":
+      showMessage(root, event.message || "Locked", "error");
+      return;
+  }
+}
+function toastClass(tone) {
+  const base = "stage-toast pointer-events-none rounded-md border px-4 py-2 text-sm font-semibold shadow-xl backdrop-blur transition duration-500";
+  if (tone === "error") {
+    return base + " border-amber-200/35 bg-amber-950/80 text-amber-100";
+  }
+  return base + " border-emerald-200/35 bg-zinc-950/78 text-emerald-50";
+}
+function labelForTarget(target) {
+  switch (target) {
+    case "background":
+      return "Background";
+    case "border":
+      return "Border";
+    case "textarea":
+      return "Text";
+    default:
+      return "Card";
+  }
+}
+
+// web/src/stage/StageController.ts
+var tapBusy = false;
+function initStage(deps) {
+  bindTapLayer();
+  bindDesignerOverlay();
+  bindReset(deps);
+  document.addEventListener("living-card:interactive-refresh", () => {
+    void loadInteractive(false);
+  });
+  void loadInteractive(true);
+}
+async function loadInteractive(showErrors) {
+  try {
+    const response = await fetchInteractiveDraftCard();
+    applyInteractiveResponse(response);
+  } catch (error) {
+    if (showErrors) {
+      showMessage(overlayRoot(), error instanceof Error ? error.message : "Failed to load card.", "error");
+    }
+  }
+}
+function applyInteractiveResponse(response) {
+  replacePreviewHTML(response.preview_html);
+  updateHUD(response.gameState);
+}
+function bindTapLayer() {
+  const workspace = byID("card-workspace");
+  if (!workspace) return;
+  workspace.addEventListener("pointerdown", (event) => {
+    void handleCardTap(event);
+  });
+}
+async function handleCardTap(event) {
+  if (tapBusy || document.body.classList.contains("designer-open")) return;
+  const preview = currentPreview();
+  if (!preview) return;
+  const hit = hitTestCard(event, preview);
+  animateCardTap(preview, hit.x, hit.y);
+  tapBusy = true;
+  try {
+    const response = await tapCardZone(hit.target, hit.zone, hit.x, hit.y);
+    replacePreviewHTML(response.preview_html);
+    updateHUD(response.gameState);
+    const nextPreview = currentPreview();
+    if (hasInvalidAction(response.events)) {
+      if (nextPreview) animateInvalidTap(nextPreview);
+    } else if (nextPreview) {
+      animateCardTap(nextPreview, hit.x, hit.y);
+    }
+    renderEvents(overlayRoot(), response.events);
+  } catch (error) {
+    const nextPreview = currentPreview();
+    if (nextPreview) animateInvalidTap(nextPreview);
+    showMessage(overlayRoot(), error instanceof Error ? error.message : "Tap failed.", "error");
+  } finally {
+    tapBusy = false;
+  }
+}
+function bindDesignerOverlay() {
+  const open = byID("designer-toggle-btn");
+  const close = byID("designer-close-btn");
+  const overlay = byID("designer-overlay");
+  open?.addEventListener("click", () => {
+    document.body.classList.add("designer-open");
+  });
+  close?.addEventListener("click", () => {
+    document.body.classList.remove("designer-open");
+  });
+  overlay?.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      document.body.classList.remove("designer-open");
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      document.body.classList.remove("designer-open");
+    }
+  });
+}
+function bindReset(deps) {
+  const reset = byID("reset-draft-btn");
+  reset?.addEventListener("click", () => {
+    void deps.resetDraft();
+  });
+}
+function updateHUD(gameState) {
+  const level = byID("card-level");
+  const xp = byID("card-xp");
+  const taps = byID("card-taps");
+  const bar = byID("card-xp-bar");
+  if (level) level.textContent = "Lv " + gameState.level;
+  if (xp) xp.textContent = gameState.xp + " XP";
+  if (taps) taps.textContent = gameState.tapCount + " taps";
+  if (bar) {
+    const currentLevelStart = Math.max(0, gameState.level - 1) * 5;
+    const progress = Math.max(0, Math.min(5, gameState.xp - currentLevelStart));
+    bar.style.width = String(progress / 5 * 100) + "%";
+  }
+}
+function hasInvalidAction(events) {
+  return events.some((event) => event.type === "invalidAction");
+}
+function currentPreview() {
+  return byID("draft-card-preview");
+}
+function overlayRoot() {
+  return byID("stage-overlay-root");
 }
 
 // web/src/app.ts
 document.addEventListener("DOMContentLoaded", () => {
-  initAppHeader({ resetDraft });
   initDesigner();
+  initStage({ resetDraft });
 });
 //# sourceMappingURL=app.js.map

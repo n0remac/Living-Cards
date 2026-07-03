@@ -22,6 +22,21 @@ func TestValidateGeneratedAcceptsSafeBackgroundCSS(t *testing.T) {
 	}
 }
 
+func TestRandomGeneratedBackgroundValidates(t *testing.T) {
+	t.Parallel()
+
+	for _, seed := range []int64{1, 2, 3, 4, 5, 6} {
+		generated := RandomGenerated(seed, 3)
+		NormalizeGenerated(&generated)
+		if generated.Target != Type {
+			t.Fatalf("target = %q, want %q", generated.Target, Type)
+		}
+		if issues := ValidateGenerated(generated); len(issues) != 0 {
+			t.Fatalf("seed %d issues = %#v", seed, issues)
+		}
+	}
+}
+
 func TestValidateGeneratedRejectsUnsafeBackgroundCSS(t *testing.T) {
 	t.Parallel()
 

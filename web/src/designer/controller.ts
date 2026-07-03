@@ -63,6 +63,7 @@ export async function resetDraft(): Promise<void> {
     renderDesignLibraryItems(response.library);
     setSaveEnabled(false);
     setDesignerStatus("Ready.", false);
+    document.dispatchEvent(new CustomEvent("living-card:interactive-refresh"));
   } catch (error) {
     setDesignerStatus(error instanceof Error ? error.message : "Failed to reset draft card.", true);
   }
