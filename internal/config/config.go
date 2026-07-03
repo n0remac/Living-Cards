@@ -33,10 +33,15 @@ type Config struct {
 	CardsDir               string
 	WebAddr                string
 	RequestTimeout         time.Duration
+	DevMode                bool
 }
 
 func Load() (Config, error) {
 	requestTimeoutSeconds, err := readIntEnv("REQUEST_TIMEOUT_SECONDS", defaultRequestTimeoutSecond)
+	if err != nil {
+		return Config{}, err
+	}
+	devMode, err := readBoolEnv("DEV_MODE", false)
 	if err != nil {
 		return Config{}, err
 	}
@@ -51,6 +56,7 @@ func Load() (Config, error) {
 		CardsDir:               filepath.Clean(readEnvOrDefault("CARDS_DIR", defaultCardsDir)),
 		WebAddr:                strings.TrimSpace(readEnvOrDefault("WEB_ADDR", defaultWebAddr)),
 		RequestTimeout:         time.Duration(requestTimeoutSeconds) * time.Second,
+		DevMode:                devMode,
 	}
 	if err := validate(cfg); err != nil {
 		return Config{}, err
@@ -118,4 +124,19 @@ func readIntEnv(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s must be an integer", key)
 	}
 	return parsed, nil
+}
+
+func readBoolEnv(key string, fallback bool) (bool, error) {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
+	if value == "" {
+		return fallback, nil
+	}
+	switch value {
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s must be a boolean", key)
+	}
 }

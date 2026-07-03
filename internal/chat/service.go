@@ -9,6 +9,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/cards"
 	"github.com/n0remac/Living-Card/internal/memory"
 	"github.com/n0remac/Living-Card/internal/ollama"
+	"github.com/n0remac/Living-Card/internal/profile"
 )
 
 type CardCatalog interface {
@@ -16,13 +17,22 @@ type CardCatalog interface {
 }
 
 type MemoryStore interface {
-	SaveMemory(ctx context.Context, input memory.SaveInput) (memory.Memory, error)
-	Search(ctx context.Context, cardID, query string, topK int) ([]memory.SearchResult, error)
+	Search(ctx context.Context, userID, cardID, query string, topK int) ([]memory.SearchResult, error)
+}
+
+type UserProfileReader interface {
+	Summary(ctx context.Context, userID string) (string, error)
+}
+
+type PostChatProcessor interface {
+	Enqueue(job PostChatJob)
 }
 
 type Config struct {
 	Cards          CardCatalog
 	Memory         MemoryStore
+	Profile        UserProfileReader
+	Processor      PostChatProcessor
 	Ollama         ChatClient
 	ChatModel      string
 	RequestTimeout time.Duration
@@ -36,6 +46,8 @@ type ChatClient interface {
 type Service struct {
 	cards          CardCatalog
 	memory         MemoryStore
+	profile        UserProfileReader
+	processor      PostChatProcessor
 	ollama         ChatClient
 	chatModel      string
 	requestTimeout time.Duration
@@ -43,11 +55,13 @@ type Service struct {
 }
 
 type Request struct {
+	UserID  string `json:"user_id"`
 	CardID  string `json:"card_id"`
 	Message string `json:"message"`
 }
 
 type Result struct {
+	UserID            string                `json:"user_id"`
 	Card              cards.Card            `json:"card"`
 	AssistantResponse string                `json:"assistant_response"`
 	RetrievedMemories []memory.SearchResult `json:"retrieved_memories"`
@@ -62,6 +76,8 @@ func NewService(cfg Config) *Service {
 	return &Service{
 		cards:          cfg.Cards,
 		memory:         cfg.Memory,
+		profile:        cfg.Profile,
+		processor:      cfg.Processor,
 		ollama:         cfg.Ollama,
 		chatModel:      strings.TrimSpace(cfg.ChatModel),
 		requestTimeout: cfg.RequestTimeout,
@@ -74,6 +90,7 @@ func (s *Service) Chat(ctx context.Context, request Request) (Result, error) {
 		return Result{}, fmt.Errorf("chat service is not initialized")
 	}
 	cardID := strings.TrimSpace(request.CardID)
+	userID := profile.NormalizeUserID(request.UserID)
 	message := strings.TrimSpace(request.Message)
 	if cardID == "" {
 		return Result{}, fmt.Errorf("card_id cannot be empty")
@@ -96,11 +113,20 @@ func (s *Service) Chat(ctx context.Context, request Request) (Result, error) {
 		defer cancel()
 	}
 
-	retrieved, err := s.memory.Search(callCtx, cardID, message, s.topK)
+	userProfile := ""
+	if s.profile != nil {
+		var err error
+		userProfile, err = s.profile.Summary(callCtx, userID)
+		if err != nil {
+			return Result{}, err
+		}
+	}
+
+	retrieved, err := s.memory.Search(callCtx, userID, cardID, message, s.topK)
 	if err != nil {
 		return Result{}, err
 	}
-	systemPrompt, userPrompt := BuildPrompt(card, message, retrieved)
+	systemPrompt, userPrompt := BuildPrompt(card, message, userProfile, retrieved)
 	reply, err := s.ollama.Chat(callCtx, s.chatModel, []ollama.ChatMessage{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: userPrompt},
@@ -112,30 +138,24 @@ func (s *Service) Chat(ctx context.Context, request Request) (Result, error) {
 	if reply == "" {
 		return Result{}, fmt.Errorf("ollama returned an empty response")
 	}
-	summary, err := s.generateSummary(callCtx, card, message, reply)
-	if err != nil {
-		return Result{}, err
-	}
 
-	stored, err := s.memory.SaveMemory(callCtx, memory.SaveInput{
-		CardID:       card.CardID,
-		UserInput:    message,
-		CardResponse: reply,
-		Summary:      summary,
-		Importance:   0.5,
-	})
-	if err != nil {
-		return Result{}, err
+	if s.processor != nil {
+		s.processor.Enqueue(PostChatJob{
+			Card:              card,
+			UserID:            userID,
+			UserInput:         message,
+			AssistantResponse: reply,
+		})
 	}
 	return Result{
+		UserID:            userID,
 		Card:              card,
 		AssistantResponse: reply,
 		RetrievedMemories: retrieved,
-		StoredMemory:      stored,
 	}, nil
 }
 
-func (s *Service) generateSummary(ctx context.Context, card cards.Card, userInput, response string) (string, error) {
+func generateSummary(ctx context.Context, client ChatClient, model string, card cards.Card, userInput, response string) (string, error) {
 	systemPrompt := "Summarize the interaction for future semantic retrieval. Return one concise sentence. Do not add labels."
 	userPrompt := fmt.Sprintf(
 		"Card: %s\nUser input: %s\nCard response: %s\nWrite a single-sentence summary.",
@@ -143,7 +163,7 @@ func (s *Service) generateSummary(ctx context.Context, card cards.Card, userInpu
 		strings.TrimSpace(userInput),
 		strings.TrimSpace(response),
 	)
-	summary, err := s.ollama.Chat(ctx, s.chatModel, []ollama.ChatMessage{
+	summary, err := client.Chat(ctx, model, []ollama.ChatMessage{
 		{Role: "system", Content: systemPrompt},
 		{Role: "user", Content: userPrompt},
 	})
@@ -157,7 +177,7 @@ func (s *Service) generateSummary(ctx context.Context, card cards.Card, userInpu
 	return summary, nil
 }
 
-func BuildPrompt(card cards.Card, userInput string, retrieved []memory.SearchResult) (string, string) {
+func BuildPrompt(card cards.Card, userInput string, userProfile string, retrieved []memory.SearchResult) (string, string) {
 	domainLine := ""
 	if len(card.Domain) > 0 {
 		domainLine = "- Domain: " + strings.Join(card.Domain, ", ") + "\n"
@@ -182,7 +202,15 @@ func BuildPrompt(card cards.Card, userInput string, retrieved []memory.SearchRes
 		"- Keep responses concise.\n" +
 		"- Stay in character. Respond in a normal conversational tone. Be inspired by your character but don't over fit to it." +
 		knowledgeScope +
-		"\nDo not behave like a generic assistant. Respond as the same persistent entity every time. Avoid common phrases, like 'How may I help you'"
+		"\nDo not behave like a generic assistant. Respond as the same persistent entity every time. Avoid common phrases, like 'How may I help you'\n" +
+		"- Use known user profile context naturally when relevant.\n" +
+		"- Do not mention the profile unless it directly helps the response.\n" +
+		"- Do not invent facts about the user."
+
+	knownUser := strings.TrimSpace(userProfile)
+	if knownUser == "" {
+		knownUser = "- none"
+	}
 
 	relevantMemories := "- none\n"
 	if len(retrieved) > 0 {
@@ -192,7 +220,9 @@ func BuildPrompt(card cards.Card, userInput string, retrieved []memory.SearchRes
 		}
 	}
 
-	userPrompt := "Relevant memories:\n" +
+	userPrompt := "Known user profile:\n" +
+		knownUser +
+		"\n\nRelevant memories:\n" +
 		relevantMemories +
 		"\nUser says:\n" +
 		strings.TrimSpace(userInput) +

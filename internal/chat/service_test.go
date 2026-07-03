@@ -26,7 +26,7 @@ func TestBuildPromptIncludesIdentityAndMemories(t *testing.T) {
 		},
 		Constraints: cards.Constraints{KnowledgeScope: "abstract and philosophical"},
 	}
-	systemPrompt, userPrompt := BuildPrompt(card, "What is fear?", []memory.SearchResult{
+	systemPrompt, userPrompt := BuildPrompt(card, "What is fear?", "- preferences: likes concise replies", []memory.SearchResult{
 		{Memory: memory.Memory{Summary: "The user once asked about courage."}},
 	})
 	if !strings.Contains(systemPrompt, "You are Ember.") {
@@ -37,6 +37,9 @@ func TestBuildPromptIncludesIdentityAndMemories(t *testing.T) {
 	}
 	if !strings.Contains(userPrompt, "The user once asked about courage.") {
 		t.Fatalf("userPrompt missing memory: %q", userPrompt)
+	}
+	if !strings.Contains(userPrompt, "likes concise replies") {
+		t.Fatalf("userPrompt missing user profile: %q", userPrompt)
 	}
 	if !strings.Contains(userPrompt, "What is fear?") {
 		t.Fatalf("userPrompt missing input: %q", userPrompt)
@@ -55,7 +58,7 @@ func TestBuildPromptHandlesEmptyMemories(t *testing.T) {
 		Constraints: cards.Constraints{
 			KnowledgeScope: "abstract",
 		},
-	}, "Hello", nil)
+	}, "Hello", "", nil)
 	if !strings.Contains(systemPrompt, "Stay in character") {
 		t.Fatalf("systemPrompt = %q", systemPrompt)
 	}
@@ -69,7 +72,6 @@ func TestServiceChatPersistsMemory(t *testing.T) {
 
 	service, store := newTestChatService(t, chatFixture{chatResponses: []string{
 		"Fear is the shadow cast by change.",
-		"User asked about fear; Ember answered poetically.",
 	}})
 
 	result, err := service.Chat(context.Background(), Request{
@@ -82,7 +84,10 @@ func TestServiceChatPersistsMemory(t *testing.T) {
 	if result.AssistantResponse == "" {
 		t.Fatalf("AssistantResponse is empty")
 	}
-	memories, err := store.ListByCard(context.Background(), "ember_stag_001", 10)
+	if result.UserID != "local-user" {
+		t.Fatalf("UserID = %q, want local-user", result.UserID)
+	}
+	memories, err := store.ListByCard(context.Background(), "local-user", "ember_stag_001", 10)
 	if err != nil {
 		t.Fatalf("ListByCard() error = %v", err)
 	}
@@ -91,24 +96,27 @@ func TestServiceChatPersistsMemory(t *testing.T) {
 	}
 }
 
-func TestServiceChatSurfacesQdrantFailure(t *testing.T) {
+func TestServiceChatDoesNotSurfaceBackgroundMemoryFailure(t *testing.T) {
 	t.Parallel()
 
 	service, store := newTestChatService(t, chatFixture{
 		chatResponses: []string{
 			"Fear is the shadow cast by change.",
-			"User asked about fear; Ember answered poetically.",
 		},
 		failQdrantUpsert: true,
 	})
 
-	if _, err := service.Chat(context.Background(), Request{
+	result, err := service.Chat(context.Background(), Request{
 		CardID:  "ember_stag_001",
 		Message: "What is fear?",
-	}); err == nil {
-		t.Fatal("Chat() error = nil, want qdrant failure")
+	})
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
 	}
-	memories, err := store.ListByCard(context.Background(), "ember_stag_001", 10)
+	if result.AssistantResponse == "" {
+		t.Fatal("AssistantResponse is empty")
+	}
+	memories, err := store.ListByCard(context.Background(), "local-user", "ember_stag_001", 10)
 	if err != nil {
 		t.Fatalf("ListByCard() error = %v", err)
 	}
@@ -127,7 +135,7 @@ func TestServiceChatDoesNotWritePartialMemoryOnOllamaFailure(t *testing.T) {
 	}); err == nil {
 		t.Fatal("Chat() error = nil, want ollama failure")
 	}
-	memories, err := store.ListByCard(context.Background(), "ember_stag_001", 10)
+	memories, err := store.ListByCard(context.Background(), "local-user", "ember_stag_001", 10)
 	if err != nil {
 		t.Fatalf("ListByCard() error = %v", err)
 	}
@@ -141,9 +149,7 @@ func TestChatSmokeRetrievesPriorMemory(t *testing.T) {
 
 	service, _ := newTestChatService(t, chatFixture{chatResponses: []string{
 		"Fear is the shadow cast by change.",
-		"User asked about fear; Ember answered poetically.",
 		"Courage is the ember that stays lit.",
-		"User asked about courage after fear; Ember answered poetically.",
 	}})
 
 	if _, err := service.Chat(context.Background(), Request{
@@ -188,6 +194,8 @@ func newTestChatService(t *testing.T, fixture chatFixture) (*Service, *memory.St
 	service := NewService(Config{
 		Cards:          cardStore,
 		Memory:         store,
+		Profile:        fakeProfile{summary: "- preferences: likes concise replies"},
+		Processor:      savingProcessor{store: store},
 		Ollama:         &fakeChatClient{responses: fixture.chatResponses, err: fixture.chatError},
 		ChatModel:      "qwen2.5:3b-instruct",
 		RequestTimeout: 0,
@@ -215,12 +223,31 @@ func (fakeCards) Get(string) (cards.Card, bool) { return cards.Card{}, false }
 
 type fakeMemory struct{}
 
-func (fakeMemory) SaveMemory(context.Context, memory.SaveInput) (memory.Memory, error) {
-	return memory.Memory{}, nil
+func (fakeMemory) Search(context.Context, string, string, string, int) ([]memory.SearchResult, error) {
+	return nil, nil
 }
 
-func (fakeMemory) Search(context.Context, string, string, int) ([]memory.SearchResult, error) {
-	return nil, nil
+type fakeProfile struct {
+	summary string
+}
+
+func (f fakeProfile) Summary(context.Context, string) (string, error) {
+	return f.summary, nil
+}
+
+type savingProcessor struct {
+	store *memory.Store
+}
+
+func (p savingProcessor) Enqueue(job PostChatJob) {
+	_, _ = p.store.SaveMemory(context.Background(), memory.SaveInput{
+		UserID:       job.UserID,
+		CardID:       job.Card.CardID,
+		UserInput:    job.UserInput,
+		CardResponse: job.AssistantResponse,
+		Summary:      "User asked: " + job.UserInput,
+		Importance:   0.5,
+	})
 }
 
 type fakeChatClient struct {
@@ -270,10 +297,15 @@ func (f *chatVectorIndex) UpsertDocuments(_ context.Context, _ string, docs []em
 func (f *chatVectorIndex) Search(_ context.Context, _ string, query string, topK int, filters map[string]string) (embedding.SearchResponse, error) {
 	query = strings.ToLower(strings.TrimSpace(query))
 	cardID := filters["card_id"]
+	userID := filters["user_id"]
 	results := make([]embedding.SearchResult, 0)
 	for _, doc := range f.docs {
 		payloadCardID, _ := doc.Payload["card_id"].(string)
+		payloadUserID, _ := doc.Payload["user_id"].(string)
 		if cardID != "" && payloadCardID != cardID {
+			continue
+		}
+		if userID != "" && payloadUserID != userID {
 			continue
 		}
 		if !strings.Contains(strings.ToLower(doc.Text), "fear") && strings.Contains(query, "courage") {

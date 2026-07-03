@@ -33,7 +33,7 @@ func TestStoreSavesAndListsMemories(t *testing.T) {
 		t.Fatalf("SaveMemory(second) error = %v", err)
 	}
 
-	memories, err := store.ListByCard(ctx, "ember", 10)
+	memories, err := store.ListByCard(ctx, "local-user", "ember", 10)
 	if err != nil {
 		t.Fatalf("ListByCard() error = %v", err)
 	}
@@ -45,25 +45,35 @@ func TestStoreSavesAndListsMemories(t *testing.T) {
 	}
 }
 
-func TestStoreSearchFiltersByCardID(t *testing.T) {
+func TestStoreSearchFiltersByCardIDAndUserID(t *testing.T) {
 	t.Parallel()
 
 	store := newTestStore(t)
 	ctx := context.Background()
 	_, _ = store.SaveMemory(ctx, SaveInput{
+		UserID:       "local-user",
 		CardID:       "ember",
 		UserInput:    "What is fear?",
 		CardResponse: "Fear is the shadow cast by change.",
 		Summary:      "Fear and change were discussed.",
 	})
 	_, _ = store.SaveMemory(ctx, SaveInput{
+		UserID:       "local-user",
 		CardID:       "river",
 		UserInput:    "What is fear?",
 		CardResponse: "Fear is a stone under water.",
 		Summary:      "Fear was discussed near the river.",
 	})
 
-	results, err := store.Search(ctx, "ember", "fear", 5)
+	_, _ = store.SaveMemory(ctx, SaveInput{
+		UserID:       "other-user",
+		CardID:       "ember",
+		UserInput:    "What is fear?",
+		CardResponse: "Fear is a locked door.",
+		Summary:      "Fear was discussed by another user.",
+	})
+
+	results, err := store.Search(ctx, "local-user", "ember", "fear", 5)
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -72,6 +82,9 @@ func TestStoreSearchFiltersByCardID(t *testing.T) {
 	}
 	if results[0].Memory.CardID != "ember" {
 		t.Fatalf("results[0].Memory.CardID = %q", results[0].Memory.CardID)
+	}
+	if results[0].Memory.UserID != "local-user" {
+		t.Fatalf("results[0].Memory.UserID = %q", results[0].Memory.UserID)
 	}
 }
 
@@ -109,10 +122,15 @@ func (f *fakeVectorIndex) UpsertDocuments(_ context.Context, _ string, docs []em
 func (f *fakeVectorIndex) Search(_ context.Context, _ string, query string, _ int, filters map[string]string) (embedding.SearchResponse, error) {
 	query = strings.ToLower(strings.TrimSpace(query))
 	cardID := filters["card_id"]
+	userID := filters["user_id"]
 	results := make([]embedding.SearchResult, 0)
 	for _, doc := range f.docs {
 		payloadCardID, _ := doc.Payload["card_id"].(string)
+		payloadUserID, _ := doc.Payload["user_id"].(string)
 		if cardID != "" && payloadCardID != cardID {
+			continue
+		}
+		if userID != "" && payloadUserID != userID {
 			continue
 		}
 		if !strings.Contains(strings.ToLower(doc.Text), query) {

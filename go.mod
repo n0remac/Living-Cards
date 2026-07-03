@@ -3,6 +3,7 @@ module github.com/n0remac/Living-Card
 go 1.26.1
 
 require (
+	github.com/evanw/esbuild v0.28.1
 	github.com/n0remac/GoDom v0.0.0-20260221051826-5cfc25919c35
 	modernc.org/sqlite v1.50.0
 )

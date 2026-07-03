@@ -26,6 +26,7 @@ type VectorIndex interface {
 
 type Memory struct {
 	ID             string   `json:"id"`
+	UserID         string   `json:"user_id"`
 	CardID         string   `json:"card_id"`
 	Timestamp      string   `json:"timestamp"`
 	UserInput      string   `json:"user_input"`
@@ -37,6 +38,7 @@ type Memory struct {
 }
 
 type SaveInput struct {
+	UserID       string
 	CardID       string
 	UserInput    string
 	CardResponse string
@@ -119,6 +121,7 @@ func (s *Store) SaveMemory(ctx context.Context, input SaveInput) (Memory, error)
 		Text:       memory.Summary,
 		Payload: map[string]any{
 			"card_id":    memory.CardID,
+			"user_id":    memory.UserID,
 			"memory_id":  memory.ID,
 			"timestamp":  memory.Timestamp,
 			"importance": memory.Importance,
@@ -137,18 +140,19 @@ func (s *Store) SaveMemory(ctx context.Context, input SaveInput) (Memory, error)
 	}
 	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO memories (
-			id, card_id, timestamp, user_input, card_response, summary, tags_json, importance, collection_name
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, memory.ID, memory.CardID, memory.Timestamp, memory.UserInput, memory.CardResponse, memory.Summary, string(tagsJSON), memory.Importance, memory.CollectionName); err != nil {
+			id, user_id, card_id, timestamp, user_input, card_response, summary, tags_json, importance, collection_name
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, memory.ID, memory.UserID, memory.CardID, memory.Timestamp, memory.UserInput, memory.CardResponse, memory.Summary, string(tagsJSON), memory.Importance, memory.CollectionName); err != nil {
 		return Memory{}, fmt.Errorf("insert memory: %w", err)
 	}
 	return memory, nil
 }
 
-func (s *Store) ListByCard(ctx context.Context, cardID string, limit int) ([]Memory, error) {
+func (s *Store) ListByCard(ctx context.Context, userID, cardID string, limit int) ([]Memory, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("memory store is not initialized")
 	}
+	userID = normalizeUserID(userID)
 	cardID = strings.TrimSpace(cardID)
 	if cardID == "" {
 		return nil, fmt.Errorf("card_id cannot be empty")
@@ -157,12 +161,12 @@ func (s *Store) ListByCard(ctx context.Context, cardID string, limit int) ([]Mem
 		limit = 20
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, card_id, timestamp, user_input, card_response, summary, tags_json, importance, collection_name
+		SELECT id, user_id, card_id, timestamp, user_input, card_response, summary, tags_json, importance, collection_name
 		FROM memories
-		WHERE card_id = ?
+		WHERE user_id = ? AND card_id = ?
 		ORDER BY timestamp DESC, id DESC
 		LIMIT ?
-	`, cardID, limit)
+	`, userID, cardID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list memories: %w", err)
 	}
@@ -181,10 +185,11 @@ func (s *Store) ListByCard(ctx context.Context, cardID string, limit int) ([]Mem
 	return memories, rows.Err()
 }
 
-func (s *Store) Search(ctx context.Context, cardID, query string, topK int) ([]SearchResult, error) {
+func (s *Store) Search(ctx context.Context, userID, cardID, query string, topK int) ([]SearchResult, error) {
 	if s == nil || s.index == nil {
 		return nil, fmt.Errorf("memory store is not initialized")
 	}
+	userID = normalizeUserID(userID)
 	cardID = strings.TrimSpace(cardID)
 	query = strings.TrimSpace(query)
 	if cardID == "" {
@@ -196,7 +201,10 @@ func (s *Store) Search(ctx context.Context, cardID, query string, topK int) ([]S
 	if topK <= 0 {
 		topK = 3
 	}
-	response, err := s.index.Search(ctx, s.embeddingModel, query, topK, map[string]string{"card_id": cardID})
+	response, err := s.index.Search(ctx, s.embeddingModel, query, topK, map[string]string{
+		"card_id": cardID,
+		"user_id": userID,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -221,7 +229,7 @@ func (s *Store) Search(ctx context.Context, cardID, query string, topK int) ([]S
 
 func (s *Store) GetByID(ctx context.Context, id string) (Memory, error) {
 	row := s.db.QueryRowContext(ctx, `
-		SELECT id, card_id, timestamp, user_input, card_response, summary, tags_json, importance, collection_name
+		SELECT id, user_id, card_id, timestamp, user_input, card_response, summary, tags_json, importance, collection_name
 		FROM memories
 		WHERE id = ?
 	`, strings.TrimSpace(id))
@@ -242,6 +250,7 @@ func (s *Store) init() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS memories (
 			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL DEFAULT 'local-user',
 			card_id TEXT NOT NULL,
 			timestamp TEXT NOT NULL,
 			user_input TEXT NOT NULL,
@@ -256,10 +265,53 @@ func (s *Store) init() error {
 	if err != nil {
 		return fmt.Errorf("init memory schema: %w", err)
 	}
+	return s.ensureUserIDColumn()
+}
+
+func (s *Store) ensureUserIDColumn() error {
+	rows, err := s.db.Query("PRAGMA table_info(memories)")
+	if err != nil {
+		return fmt.Errorf("inspect memories schema: %w", err)
+	}
+	hasUserID := false
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return fmt.Errorf("scan memories schema: %w", err)
+		}
+		if name == "user_id" {
+			hasUserID = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return fmt.Errorf("read memories schema: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close memories schema rows: %w", err)
+	}
+	if hasUserID {
+		if _, err := s.db.Exec("CREATE INDEX IF NOT EXISTS idx_memories_user_card_time ON memories(user_id, card_id, timestamp DESC)"); err != nil {
+			return fmt.Errorf("create memories user/card index: %w", err)
+		}
+		return nil
+	}
+	if _, err := s.db.Exec("ALTER TABLE memories ADD COLUMN user_id TEXT NOT NULL DEFAULT 'local-user'"); err != nil {
+		return fmt.Errorf("add memories user_id column: %w", err)
+	}
+	if _, err := s.db.Exec("CREATE INDEX IF NOT EXISTS idx_memories_user_card_time ON memories(user_id, card_id, timestamp DESC)"); err != nil {
+		return fmt.Errorf("create memories user/card index: %w", err)
+	}
 	return nil
 }
 
 func sanitizeSaveInput(input SaveInput) (Memory, error) {
+	userID := normalizeUserID(input.UserID)
 	cardID := strings.TrimSpace(input.CardID)
 	userInput := strings.TrimSpace(input.UserInput)
 	cardResponse := strings.TrimSpace(input.CardResponse)
@@ -285,6 +337,7 @@ func sanitizeSaveInput(input SaveInput) (Memory, error) {
 	}
 	return Memory{
 		ID:           nextMemoryID(),
+		UserID:       userID,
 		CardID:       cardID,
 		Timestamp:    time.Now().UTC().Format(time.RFC3339Nano),
 		UserInput:    userInput,
@@ -312,6 +365,14 @@ func nextMemoryID() string {
 	return "mem_" + strconv.FormatInt(time.Now().UTC().UnixMilli(), 10) + "_" + strconv.FormatUint(n, 10)
 }
 
+func normalizeUserID(userID string) string {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return "local-user"
+	}
+	return userID
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }
@@ -321,6 +382,7 @@ func scanMemory(row scanner) (Memory, error) {
 	var tagsJSON string
 	if err := row.Scan(
 		&memory.ID,
+		&memory.UserID,
 		&memory.CardID,
 		&memory.Timestamp,
 		&memory.UserInput,

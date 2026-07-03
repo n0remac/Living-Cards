@@ -11,7 +11,9 @@ import (
 	"github.com/n0remac/Living-Card/internal/embedding"
 	"github.com/n0remac/Living-Card/internal/memory"
 	"github.com/n0remac/Living-Card/internal/ollama"
+	"github.com/n0remac/Living-Card/internal/profile"
 	"github.com/n0remac/Living-Card/internal/web"
+	"github.com/n0remac/Living-Card/internal/webbuild"
 )
 
 func main() {
@@ -24,6 +26,11 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+	if cfg.DevMode {
+		if err := webbuild.BuildFrontend(); err != nil {
+			return err
+		}
 	}
 
 	cardStore, err := cards.NewStore(cfg.CardsDir)
@@ -50,9 +57,30 @@ func run() error {
 		_ = memoryStore.Close()
 	}()
 
+	profileStore, err := profile.NewStore(cfg.MemoryDBPath)
+	if err != nil {
+		return fmt.Errorf("init profile store: %w", err)
+	}
+	defer func() {
+		_ = profileStore.Close()
+	}()
+
+	processor := chat.NewBackgroundProcessor(chat.ProcessorConfig{
+		Memory:         memoryStore,
+		Profile:        profileStore,
+		Ollama:         ollamaClient,
+		ChatModel:      cfg.OllamaChatModel,
+		RequestTimeout: cfg.RequestTimeout,
+	})
+	defer func() {
+		_ = processor.Close()
+	}()
+
 	service := chat.NewService(chat.Config{
 		Cards:          cardStore,
 		Memory:         memoryStore,
+		Profile:        profileStore,
+		Processor:      processor,
 		Ollama:         ollamaClient,
 		ChatModel:      cfg.OllamaChatModel,
 		RequestTimeout: cfg.RequestTimeout,
@@ -61,9 +89,10 @@ func run() error {
 
 	mux := http.NewServeMux()
 	web.Register(mux, web.Dependencies{
-		Cards:  cardStore,
-		Memory: memoryStore,
-		Chat:   service,
+		Cards:   cardStore,
+		Memory:  memoryStore,
+		Chat:    service,
+		Profile: profileStore,
 	})
 
 	log.Printf("living card server listening on http://%s", cfg.WebAddr)
