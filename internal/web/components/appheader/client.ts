@@ -1,14 +1,14 @@
 import { byID } from "../../../../web/src/dom";
 
 interface AppHeaderDeps {
-  loadCards: () => Promise<void>;
+  resetDraft: () => Promise<void>;
 }
 
 export function initAppHeader(deps: AppHeaderDeps): void {
-  const reload = byID<HTMLButtonElement>("reload-cards-btn");
-  if (reload) {
-    reload.addEventListener("click", () => {
-      void deps.loadCards();
+  const reset = byID<HTMLButtonElement>("reset-draft-btn");
+  if (reset) {
+    reset.addEventListener("click", () => {
+      void deps.resetDraft();
     });
   }
 }

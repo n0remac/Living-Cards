@@ -1,45 +1,107 @@
-import type { Card, ChatResult, Memory } from "./types";
+import type { ApplyFragmentResponse, DesignLibraryItem, FragmentIssue, GeneratedStyleFragment, LibraryResponse, RenderedDraftCard } from "./types";
 
-export async function fetchCards(): Promise<Card[]> {
-  const response = await fetch("/api/cards", { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error("Failed to load cards.");
+export class FragmentGenerationError extends Error {
+  rawResponse: string;
+  issues: FragmentIssue[];
+
+  constructor(message: string, rawResponse: string, issues: FragmentIssue[] = []) {
+    super(message);
+    this.name = "FragmentGenerationError";
+    this.rawResponse = rawResponse;
+    this.issues = issues;
   }
-  return await response.json() as Card[];
 }
 
-export async function fetchCard(cardId: string): Promise<Card> {
-  const response = await fetch("/api/cards/" + encodeURIComponent(cardId), { cache: "no-store" });
+export async function fetchRenderedDraftCard(): Promise<RenderedDraftCard> {
+  const response = await fetch("/api/draft-card/rendered", { cache: "no-store" });
   if (!response.ok) {
-    throw new Error("Failed to load card.");
+    throw new Error(await readError(response, "Failed to load draft card."));
   }
-  return await response.json() as Card;
+  return await response.json() as RenderedDraftCard;
 }
 
-export async function fetchCardCanvas(cardId: string): Promise<string> {
-  const response = await fetch("/api/cards/" + encodeURIComponent(cardId) + "/canvas", { cache: "no-store" });
+export async function resetDraftCard(): Promise<RenderedDraftCard> {
+  const response = await fetch("/api/draft-card/reset", { method: "POST" });
   if (!response.ok) {
-    throw new Error("Failed to load card canvas.");
+    throw new Error(await readError(response, "Failed to reset draft card."));
   }
-  return await response.text();
+  return await response.json() as RenderedDraftCard;
 }
 
-export async function fetchRecentMemories(cardId: string, userId: string): Promise<Memory[]> {
-  const response = await fetch("/api/cards/" + encodeURIComponent(cardId) + "/memories?user_id=" + encodeURIComponent(userId), { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error("Failed to load memories.");
-  }
-  return await response.json() as Memory[];
-}
-
-export async function sendChatMessage(cardId: string, userId: string, message: string): Promise<ChatResult> {
-  const response = await fetch("/api/cards/" + encodeURIComponent(cardId) + "/components/chat-form/actions/send", {
+export async function generateFragment(target: string, instruction: string, update = false): Promise<GeneratedStyleFragment> {
+  const response = await fetch("/api/draft-card/fragments/" + encodeURIComponent(target), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_id: userId, message }),
+    body: JSON.stringify({ instruction, update }),
   });
   if (!response.ok) {
-    throw new Error(await response.text() || "Chat request failed.");
+    throw await readFragmentError(response, "Failed to generate fragment.");
   }
-  return await response.json() as ChatResult;
+  return await response.json() as GeneratedStyleFragment;
+}
+
+export async function applyDraftFragment(generatedFragment: GeneratedStyleFragment): Promise<ApplyFragmentResponse> {
+  const response = await fetch("/api/draft-card/apply-fragment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ generated_fragment: generatedFragment }),
+  });
+  if (!response.ok) {
+    throw await readFragmentError(response, "Failed to apply fragment.");
+  }
+  return await response.json() as ApplyFragmentResponse;
+}
+
+export async function fetchDesignLibrary(target = ""): Promise<DesignLibraryItem[]> {
+  const suffix = target ? "?target=" + encodeURIComponent(target) : "";
+  const response = await fetch("/api/draft-card/library" + suffix, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to load design library."));
+  }
+  const payload = await response.json() as LibraryResponse;
+  return payload.library || [];
+}
+
+export async function saveAppliedDesign(): Promise<LibraryResponse> {
+  const response = await fetch("/api/draft-card/library/save-applied", { method: "POST" });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to save applied design."));
+  }
+  return await response.json() as LibraryResponse;
+}
+
+export async function applyLibraryDesign(itemID: string): Promise<ApplyFragmentResponse> {
+  const response = await fetch("/api/draft-card/library/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item_id: itemID }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to apply library design."));
+  }
+  return await response.json() as ApplyFragmentResponse;
+}
+
+async function readError(response: Response, fallback: string): Promise<string> {
+  const text = String(await response.text() || "").trim();
+  return text || fallback;
+}
+
+async function readFragmentError(response: Response, fallback: string): Promise<Error> {
+  const contentType = response.headers.get("Content-Type") || "";
+  if (contentType.includes("application/json")) {
+    try {
+      const payload = await response.json() as { message?: string; raw_response?: string; issues?: FragmentIssue[] };
+      const message = String(payload.message || fallback).trim();
+      const rawResponse = String(payload.raw_response || "").trim();
+      const issues = Array.isArray(payload.issues) ? payload.issues : [];
+      if (rawResponse || issues.length) {
+        return new FragmentGenerationError(message, rawResponse, issues);
+      }
+      return new Error(message);
+    } catch {
+      return new Error(fallback);
+    }
+  }
+  return new Error(await readError(response, fallback));
 }

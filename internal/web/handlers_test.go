@@ -8,637 +8,679 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/n0remac/Living-Card/internal/cards"
-	"github.com/n0remac/Living-Card/internal/chat"
-	"github.com/n0remac/Living-Card/internal/memory"
+	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/fragment"
 	"github.com/n0remac/Living-Card/internal/ollama"
-	"github.com/n0remac/Living-Card/internal/profile"
 )
 
-func TestCardsListHandler(t *testing.T) {
+func TestPageRendersDesignerOnlyWorkflow(t *testing.T) {
 	t.Parallel()
 
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{testWebCard("ember", "Ember")},
-		},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/api/cards", nil)
+	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", recorder.Code)
-	}
-	var payload []cards.Card
-	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
-	}
-	if len(payload) != 1 || payload[0].CardID != "ember" {
-		t.Fatalf("payload = %#v", payload)
-	}
-	if len(payload[0].Components) != 1 || payload[0].Components[0].ID != cards.ChatFormComponentType {
-		t.Fatalf("payload[0].Components = %#v", payload[0].Components)
-	}
-}
-
-func TestCardResourceHandlerIncludesComponents(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{testWebCard("ember", "Ember")},
-		},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/api/cards/ember", nil)
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
-	}
-	var payload cards.Card
-	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
-	}
-	if len(payload.Components) != 1 || payload.Components[0].Type != cards.ChatFormComponentType {
-		t.Fatalf("payload.Components = %#v", payload.Components)
-	}
-}
-
-func TestCardCanvasHandlerRendersComponents(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{testWebCard("ember", "Ember")},
-		},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/api/cards/ember/canvas", nil)
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 	}
 	body := recorder.Body.String()
 	for _, marker := range []string{
-		`data-component-id="chat-form"`,
-		`data-component-type="chat-form"`,
-		`data-client-initializer="initChatForm"`,
-		`id="chat-form-component"`,
-		`id="chat-input"`,
-	} {
-		if !strings.Contains(body, marker) {
-			t.Fatalf("canvas missing %s: %s", marker, body)
-		}
-	}
-}
-
-func TestCardCanvasHandlerReturnsNotFoundForInvalidCard(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards:   fakeCardStore{},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/api/cards/missing/canvas", nil)
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", recorder.Code)
-	}
-}
-
-func TestCardCanvasHandlerReturnsServerErrorForUnknownComponentType(t *testing.T) {
-	t.Parallel()
-
-	card := testWebCard("ember", "Ember")
-	card.Components[0].Type = "missing-type"
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{card},
-		},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/api/cards/ember/canvas", nil)
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", recorder.Code)
-	}
-}
-
-func TestChatFormHandlerReturnsValidResponse(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{testWebCard("ember", "Ember")},
-		},
-		Memory: fakeMemoryStore{},
-		Chat: fakeChatService{
-			result: chat.Result{
-				Card:              cards.Card{CardID: "ember", Name: "Ember"},
-				AssistantResponse: "Fear is a shadow.",
-			},
-		},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/cards/ember/components/chat-form/actions/send", strings.NewReader(`{"user_id":"tester","message":"What is fear?"}`))
-	request.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
-	}
-	var payload chat.Result
-	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v", err)
-	}
-	if payload.AssistantResponse != "Fear is a shadow." {
-		t.Fatalf("AssistantResponse = %q", payload.AssistantResponse)
-	}
-}
-
-func TestChatFormHandlerReturnsNotFoundForInvalidCard(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards:   fakeCardStore{},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/cards/missing/components/chat-form/actions/send", strings.NewReader(`{"message":"hi"}`))
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", recorder.Code)
-	}
-}
-
-func TestChatFormHandlerRejectsMalformedRequest(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{testWebCard("ember", "Ember")},
-		},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/cards/ember/components/chat-form/actions/send", strings.NewReader(`{`))
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", recorder.Code)
-	}
-}
-
-func TestComponentActionReturnsNotFoundForMissingComponentInstance(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{testWebCard("ember", "Ember")},
-		},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/cards/ember/components/missing/actions/send", strings.NewReader(`{"message":"hi"}`))
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", recorder.Code)
-	}
-}
-
-func TestComponentActionReturnsNotFoundForUnsupportedAction(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{testWebCard("ember", "Ember")},
-		},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/cards/ember/components/chat-form/actions/unknown", strings.NewReader(`{"message":"hi"}`))
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", recorder.Code)
-	}
-}
-
-func TestComponentActionReturnsMethodNotAllowedForWrongMethod(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{testWebCard("ember", "Ember")},
-		},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/api/cards/ember/components/chat-form/actions/send", nil)
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want 405", recorder.Code)
-	}
-}
-
-func TestComponentActionReturnsServerErrorForUnknownComponentType(t *testing.T) {
-	t.Parallel()
-
-	card := testWebCard("ember", "Ember")
-	card.Components[0].Type = "missing-type"
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{card},
-		},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/cards/ember/components/chat-form/actions/send", strings.NewReader(`{"message":"hi"}`))
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", recorder.Code)
-	}
-}
-
-func TestOldChatHandlerRouteIsNotFound(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards: fakeCardStore{
-			cards: []cards.Card{testWebCard("ember", "Ember")},
-		},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/cards/ember/chat", strings.NewReader(`{"message":"hi"}`))
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", recorder.Code)
-	}
-}
-
-func TestProfileHandlerFetchesAndResetsProfile(t *testing.T) {
-	t.Parallel()
-
-	store := &fakeProfileStore{
-		profile: profile.Profile{
-			UserID:         "tester",
-			ProfileSummary: "- preferences: likes concise replies",
-			Facts: []profile.Fact{{
-				ID:         "fact_1",
-				UserID:     "tester",
-				Key:        "preferences",
-				Value:      "likes concise replies",
-				Confidence: 0.9,
-				Evidence:   "I like concise replies.",
-				Status:     profile.StatusAccepted,
-			}},
-		},
-	}
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards:   fakeCardStore{},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: store,
-	})
-
-	getRequest := httptest.NewRequest(http.MethodGet, "/api/users/tester/profile", nil)
-	getRecorder := httptest.NewRecorder()
-	mux.ServeHTTP(getRecorder, getRequest)
-	if getRecorder.Code != http.StatusOK {
-		t.Fatalf("GET status = %d, want 200 body=%s", getRecorder.Code, getRecorder.Body.String())
-	}
-	var fetched profile.Profile
-	if err := json.Unmarshal(getRecorder.Body.Bytes(), &fetched); err != nil {
-		t.Fatalf("json.Unmarshal(GET) error = %v", err)
-	}
-	if fetched.UserID != "tester" || fetched.ProfileSummary == "" {
-		t.Fatalf("GET payload = %#v", fetched)
-	}
-
-	deleteRequest := httptest.NewRequest(http.MethodDelete, "/api/users/tester/profile", nil)
-	deleteRecorder := httptest.NewRecorder()
-	mux.ServeHTTP(deleteRecorder, deleteRequest)
-	if deleteRecorder.Code != http.StatusOK {
-		t.Fatalf("DELETE status = %d, want 200 body=%s", deleteRecorder.Code, deleteRecorder.Body.String())
-	}
-	if !store.reset {
-		t.Fatal("Reset was not called")
-	}
-}
-
-func TestPageReferencesFrontendBundle(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards:   fakeCardStore{},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", recorder.Code)
-	}
-	body := recorder.Body.String()
-	if !strings.Contains(body, `type="module"`) || !strings.Contains(body, `src="/assets/app.js"`) {
-		t.Fatalf("page did not reference module frontend bundle: %s", body)
-	}
-}
-
-func TestPageIncludesHeaderAndCardCanvasMounts(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards:   fakeCardStore{},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", recorder.Code)
-	}
-	body := recorder.Body.String()
-	for _, marker := range []string{
+		`src="/assets/app.js"`,
 		`id="app-header"`,
-		`id="reload-cards-btn"`,
-		`id="card-canvas"`,
+		`id="card-workspace"`,
+		`id="draft-card-preview"`,
+		`id="fragment-target"`,
+		`value="background"`,
+		`value="border"`,
+		`value="textarea"`,
+		`id="generate-fragment-btn"`,
+		`id="update-fragment-btn"`,
+		`id="design-library-list"`,
+		`id="fragment-preview"`,
 	} {
 		if !strings.Contains(body, marker) {
-			t.Fatalf("page missing %s: %s", marker, body)
+			t.Fatalf("page missing %s:\n%s", marker, body)
+		}
+	}
+	for _, marker := range []string{
+		`value="title"`,
+		`value="body"`,
+		`id="card-list"`,
+		`id="chat-form"`,
+	} {
+		if strings.Contains(body, marker) {
+			t.Fatalf("page should not include removed workflow marker %s:\n%s", marker, body)
 		}
 	}
 }
 
-func TestPatchProposalHandlerReturnsProposal(t *testing.T) {
+func TestUnknownPagePathReturnsNotFound(t *testing.T) {
 	t.Parallel()
 
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards:       fakeCardStore{},
-		Memory:      fakeMemoryStore{},
-		Chat:        fakeChatService{},
-		Profile:     &fakeProfileStore{},
-		Patch:       fakePatchClient{response: "diff --git a/view.go b/view.go"},
-		PatchModel:  "test-model",
-		ProjectRoot: projectRoot(),
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/components/chat-form/patch-proposals", strings.NewReader(`{"instruction":"make the button clearer"}`))
+	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/cards/ember", nil))
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", recorder.Code)
+	}
+}
+
+func TestDraftCardResourceReturnsDefaultDocument(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/draft-card", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var document cardcomponent.Document
+	if err := json.Unmarshal(recorder.Body.Bytes(), &document); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if document.CardID != cardcomponent.DefaultCardID || document.Root.Type != cardcomponent.Type {
+		t.Fatalf("document = %#v", document)
+	}
+	if len(document.Root.Children) != 3 {
+		t.Fatalf("children = %#v", document.Root.Children)
+	}
+}
+
+func TestRenderedDraftCardResourceReturnsDocumentAndPreviewHTML(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/draft-card/rendered", nil))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Document    cardcomponent.Document `json:"document"`
+		PreviewHTML string                 `json:"preview_html"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if payload.Document.CardID != cardcomponent.DefaultCardID {
+		t.Fatalf("document = %#v", payload.Document)
+	}
+	if !strings.Contains(payload.PreviewHTML, `id="draft-card-preview"`) || !strings.Contains(payload.PreviewHTML, `Start designing this card.`) {
+		t.Fatalf("preview_html did not include default preview: %s", payload.PreviewHTML)
+	}
+}
+
+func TestDraftFragmentRoutesGenerateFragments(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		target string
+		raw    string
+		field  string
+	}{
+		{
+			target: "background",
+			raw:    `{"target":"background","description":"Moody teal background","fragment":{"background_color":"#0f766e","css":"background: linear-gradient(135deg, #0f766e, #111827);"}}`,
+			field:  `"background_color":"#0f766e"`,
+		},
+		{
+			target: "border",
+			raw:    `{"target":"border","description":"Fine white border","fragment":{"border_width_px":2,"border_radius_px":18,"border_color":"#ffffff","css":"box-shadow: 0 0 20px rgba(255,255,255,0.2);"}}`,
+			field:  `"border_width_px":2`,
+		},
+		{
+			target: "textarea",
+			raw:    `{"target":"textarea","description":"Centered text","fragment":{"content":"Hello card","font_family":"system","font_size_px":28,"font_weight":700,"font_style":"normal","color":"#f8fafc","align":"center","position":"center","css":"text-align: center;"}}`,
+			field:  `"content":"Hello card"`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.target, func(t *testing.T) {
+			t.Parallel()
+
+			mux := testMux(t, &fakePatchClient{responses: []string{test.raw}})
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/"+test.target, strings.NewReader(`{"instruction":"make it polished"}`))
+			request.Header.Set("Content-Type", "application/json")
+			mux.ServeHTTP(recorder, request)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+			}
+			if !strings.Contains(recorder.Body.String(), test.field) {
+				t.Fatalf("response missing %s: %s", test.field, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestDraftFragmentRoutesRepairInvalidOutput(t *testing.T) {
+	t.Parallel()
+
+	client := &fakePatchClient{responses: []string{
+		`{"target":"textarea","fragment":{"content":"","font_family":"system","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"left","position":"center","css":""}}`,
+		`{"target":"textarea","description":"Repaired centered text","fragment":{"content":"Repaired text","font_family":"system","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"center","position":"center","css":"text-align: center;"}}`,
+	}}
+	mux := testMux(t, client)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/textarea", strings.NewReader(`{"instruction":"write a centered note"}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	if client.calls != 2 {
+		t.Fatalf("calls = %d, want 2", client.calls)
+	}
+	if !strings.Contains(recorder.Body.String(), `"content":"Repaired text"`) {
+		t.Fatalf("response did not include repaired fragment: %s", recorder.Body.String())
+	}
+	repairPrompt := joinedMessages(client.messages[1])
+	for _, marker := range []string{
+		"write a centered note",
+		"description is required",
+		"Invalid raw model response",
+		"Working example",
+	} {
+		if !strings.Contains(repairPrompt, marker) {
+			t.Fatalf("repair prompt missing %q:\n%s", marker, repairPrompt)
+		}
+	}
+}
+
+func TestDraftFragmentRouteReturnsRawRepairFailure(t *testing.T) {
+	t.Parallel()
+
+	client := &fakePatchClient{responses: []string{
+		`{"target":"textarea","description":"","fragment":{"content":"","font_family":"bad","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"left","position":"center","css":""}}`,
+		`{"target":"textarea","description":"","fragment":{"content":"","font_family":"bad","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"left","position":"center","css":"position: absolute;"}}`,
+	}}
+	mux := testMux(t, client)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/textarea", strings.NewReader(`{"instruction":"make broken text"}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502 body=%s", recorder.Code, recorder.Body.String())
+	}
+	if client.calls != 2 {
+		t.Fatalf("calls = %d, want 2", client.calls)
+	}
+	var payload struct {
+		Message     string           `json:"message"`
+		RawResponse string           `json:"raw_response"`
+		Issues      []fragment.Issue `json:"issues"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if payload.RawResponse != client.responses[1] {
+		t.Fatalf("raw_response = %q, want repair output %q", payload.RawResponse, client.responses[1])
+	}
+	if len(payload.Issues) == 0 {
+		t.Fatalf("issues = %#v, want structured issues", payload.Issues)
+	}
+}
+
+func TestDraftFragmentRouteIncludesUpdateContext(t *testing.T) {
+	t.Parallel()
+
+	client := &fakePatchClient{responses: []string{
+		`{"target":"background","description":"Updated background","fragment":{"background_color":"#111827","css":"background: #111827;"}}`,
+	}}
+	mux := testMux(t, client)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/background", strings.NewReader(`{"instruction":"make it darker","old_code":"{\"background_color\":\"#ffffff\",\"css\":\"\"}","component_id":"background-primary"}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	prompt := joinedMessages(client.messages[0])
+	for _, marker := range []string{
+		"make it darker",
+		"Existing fragment JSON to update",
+		`"background_color":"#ffffff"`,
+		"background-primary",
+	} {
+		if !strings.Contains(prompt, marker) {
+			t.Fatalf("prompt missing %q:\n%s", marker, prompt)
+		}
+	}
+}
+
+func TestDraftFragmentRouteUsesServerCurrentFragmentForUpdate(t *testing.T) {
+	t.Parallel()
+
+	client := &fakePatchClient{responses: []string{
+		`{"target":"background","description":"Updated background","fragment":{"background_color":"#111827","css":"background: #111827;"}}`,
+	}}
+	mux := testMux(t, client)
+	applyRecorder := httptest.NewRecorder()
+	applyBody := applyRequestBody(t, json.RawMessage(`{
+		"target":"background",
+		"description":"Applied white background",
+		"fragment":{"background_color":"#ffffff","css":"background: #ffffff;"}
+	}`))
+	applyRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-fragment", strings.NewReader(applyBody))
+	applyRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(applyRecorder, applyRequest)
+	if applyRecorder.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200 body=%s", applyRecorder.Code, applyRecorder.Body.String())
+	}
+
+	generateRecorder := httptest.NewRecorder()
+	generateRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/background", strings.NewReader(`{"instruction":"make it darker","update":true}`))
+	generateRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(generateRecorder, generateRequest)
+	if generateRecorder.Code != http.StatusOK {
+		t.Fatalf("generate status = %d, want 200 body=%s", generateRecorder.Code, generateRecorder.Body.String())
+	}
+	prompt := joinedMessages(client.messages[0])
+	for _, marker := range []string{
+		"Existing fragment JSON to update",
+		`"background_color": "#ffffff"`,
+		"background-primary",
+	} {
+		if !strings.Contains(prompt, marker) {
+			t.Fatalf("prompt missing %q:\n%s", marker, prompt)
+		}
+	}
+}
+
+func TestDraftFragmentRouteDoesNotUseServerCurrentFragmentForGenerate(t *testing.T) {
+	t.Parallel()
+
+	client := &fakePatchClient{responses: []string{
+		`{"target":"background","description":"Updated background","fragment":{"background_color":"#111827","css":"background: #111827;"}}`,
+	}}
+	mux := testMux(t, client)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/background", strings.NewReader(`{"instruction":"make it darker"}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	prompt := joinedMessages(client.messages[0])
+	if strings.Contains(prompt, "Existing fragment JSON to update") {
+		t.Fatalf("generate prompt should not include update context:\n%s", prompt)
+	}
+}
+
+func TestApplyDraftFragmentValidatesAndRendersPreview(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	recorder := httptest.NewRecorder()
+	body := applyRequestBody(t, json.RawMessage(`{
+		"target":"textarea",
+		"description":"Large centered note",
+		"fragment":{
+			"content":"Server rendered text",
+			"font_family":"system",
+			"font_size_px":90,
+			"font_weight":700,
+			"font_style":"normal",
+			"color":"#f8fafc",
+			"align":"center",
+			"position":"center",
+			"css":"text-align: center;"
+		}
+	}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-fragment", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 	}
 	var payload struct {
-		ComponentType string   `json:"component_type"`
-		ContextFiles  []string `json:"context_files"`
-		Proposal      string   `json:"proposal"`
+		Document           cardcomponent.Document `json:"document"`
+		NormalizedFragment json.RawMessage        `json:"normalized_fragment"`
+		PreviewHTML        string                 `json:"preview_html"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if !strings.Contains(payload.PreviewHTML, `id="draft-card-preview"`) || !strings.Contains(payload.PreviewHTML, `Server rendered text`) {
+		t.Fatalf("preview_html did not include rendered card: %s", payload.PreviewHTML)
+	}
+	if !strings.Contains(string(payload.NormalizedFragment), `"font_size_px":72`) {
+		t.Fatalf("normalized fragment did not clamp font size: %s", string(payload.NormalizedFragment))
+	}
+	if !strings.Contains(string(payload.Document.Root.Children[2].Fragment), `"Server rendered text"`) {
+		t.Fatalf("document textarea fragment was not replaced: %s", string(payload.Document.Root.Children[2].Fragment))
+	}
+
+	recorder = httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/draft-card", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var document cardcomponent.Document
+	if err := json.Unmarshal(recorder.Body.Bytes(), &document); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if payload.ComponentType != "chat-form" || payload.Proposal == "" || len(payload.ContextFiles) == 0 {
-		t.Fatalf("payload = %#v", payload)
+	if !strings.Contains(string(document.Root.Children[2].Fragment), `"Server rendered text"`) {
+		t.Fatalf("server state did not retain applied fragment: %s", string(document.Root.Children[2].Fragment))
 	}
 }
 
-func TestPatchProposalHandlerRejectsUnknownComponentType(t *testing.T) {
+func TestDesignLibraryRoutesUseServerState(t *testing.T) {
 	t.Parallel()
 
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards:       fakeCardStore{},
-		Memory:      fakeMemoryStore{},
-		Chat:        fakeChatService{},
-		Profile:     &fakeProfileStore{},
-		Patch:       fakePatchClient{response: "diff"},
-		PatchModel:  "test-model",
-		ProjectRoot: projectRoot(),
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/components/missing/patch-proposals", strings.NewReader(`{"instruction":"change it"}`))
+	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/draft-card/library?target=background", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("library status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var libraryPayload struct {
+		Library []cardcomponent.LibraryItem `json:"library"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &libraryPayload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if len(libraryPayload.Library) == 0 || libraryPayload.Library[0].Target != "background" {
+		t.Fatalf("library = %#v, want background presets", libraryPayload.Library)
+	}
 
-	if recorder.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want 404", recorder.Code)
+	recorder = httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/draft-card/library/save-applied", nil))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("save before apply status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	applyRecorder := httptest.NewRecorder()
+	applyBody := applyRequestBody(t, json.RawMessage(`{
+		"target":"border",
+		"description":"Saved border",
+		"fragment":{"border_width_px":2,"border_radius_px":16,"border_color":"#ffffff","css":"border: 2px solid #ffffff;"}
+	}`))
+	applyRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-fragment", strings.NewReader(applyBody))
+	applyRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(applyRecorder, applyRequest)
+	if applyRecorder.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200 body=%s", applyRecorder.Code, applyRecorder.Body.String())
+	}
+
+	saveRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(saveRecorder, httptest.NewRequest(http.MethodPost, "/api/draft-card/library/save-applied", nil))
+	if saveRecorder.Code != http.StatusOK {
+		t.Fatalf("save status = %d, want 200 body=%s", saveRecorder.Code, saveRecorder.Body.String())
+	}
+	var savePayload struct {
+		Item    cardcomponent.LibraryItem   `json:"item"`
+		Library []cardcomponent.LibraryItem `json:"library"`
+	}
+	if err := json.Unmarshal(saveRecorder.Body.Bytes(), &savePayload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, saveRecorder.Body.String())
+	}
+	if !savePayload.Item.Saved || savePayload.Item.Target != "border" {
+		t.Fatalf("saved item = %#v", savePayload.Item)
+	}
+
+	applyLibraryRecorder := httptest.NewRecorder()
+	applyLibraryRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/library/apply", strings.NewReader(`{"item_id":"seed-background-night-sky"}`))
+	applyLibraryRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(applyLibraryRecorder, applyLibraryRequest)
+	if applyLibraryRecorder.Code != http.StatusOK {
+		t.Fatalf("apply library status = %d, want 200 body=%s", applyLibraryRecorder.Code, applyLibraryRecorder.Body.String())
+	}
+	if !strings.Contains(applyLibraryRecorder.Body.String(), `"background_color":"#0f172a"`) {
+		t.Fatalf("apply library response did not include preset fragment: %s", applyLibraryRecorder.Body.String())
 	}
 }
 
-func TestPatchProposalHandlerRejectsEmptyInstruction(t *testing.T) {
+func TestApplyDraftFragmentReturnsStructuredValidationIssues(t *testing.T) {
 	t.Parallel()
 
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards:       fakeCardStore{},
-		Memory:      fakeMemoryStore{},
-		Chat:        fakeChatService{},
-		Profile:     &fakeProfileStore{},
-		Patch:       fakePatchClient{response: "diff"},
-		PatchModel:  "test-model",
-		ProjectRoot: projectRoot(),
-	})
-	request := httptest.NewRequest(http.MethodPost, "/api/components/chat-form/patch-proposals", strings.NewReader(`{"instruction":" "}`))
+	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
+	body := applyRequestBody(t, json.RawMessage(`{
+		"target":"background",
+		"description":"Unsafe background",
+		"fragment":{
+			"background_color":"#111827",
+			"css":"background-image: url(https://example.test/image.png);"
+		}
+	}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-fragment", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", recorder.Code)
+		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Message     string           `json:"message"`
+		RawResponse string           `json:"raw_response"`
+		Issues      []fragment.Issue `json:"issues"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if payload.RawResponse == "" || len(payload.Issues) == 0 {
+		t.Fatalf("payload = %#v, want raw response and issues", payload)
+	}
+	if payload.Issues[0].Path != "fragment.css" {
+		t.Fatalf("issue path = %q, want fragment.css", payload.Issues[0].Path)
 	}
 }
 
-func TestFrontendAssetHandlerServesBundle(t *testing.T) {
+func TestResetDraftCardRestoresServerState(t *testing.T) {
 	t.Parallel()
 
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards:   fakeCardStore{},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
+	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
-	}
-	if contentType := recorder.Header().Get("Content-Type"); !strings.Contains(contentType, "text/javascript") {
-		t.Fatalf("Content-Type = %q, want javascript", contentType)
-	}
-	if cacheControl := recorder.Header().Get("Cache-Control"); cacheControl != "no-store" {
-		t.Fatalf("Cache-Control = %q, want no-store", cacheControl)
-	}
-	if !strings.Contains(recorder.Body.String(), "livingCardState") {
-		t.Fatalf("bundle body did not contain expected app code")
-	}
-}
-
-func TestFrontendAssetHandlerServesSourceMap(t *testing.T) {
-	t.Parallel()
-
-	mux := http.NewServeMux()
-	Register(mux, Dependencies{
-		Cards:   fakeCardStore{},
-		Memory:  fakeMemoryStore{},
-		Chat:    fakeChatService{},
-		Profile: &fakeProfileStore{},
-	})
-	request := httptest.NewRequest(http.MethodGet, "/assets/app.js.map", nil)
-	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
-	}
-	if contentType := recorder.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
-		t.Fatalf("Content-Type = %q, want json", contentType)
-	}
-	if cacheControl := recorder.Header().Get("Cache-Control"); cacheControl != "no-store" {
-		t.Fatalf("Cache-Control = %q, want no-store", cacheControl)
-	}
-	if !strings.Contains(recorder.Body.String(), `"sources"`) {
-		t.Fatalf("source map body did not contain sources")
-	}
-}
-
-type fakeCardStore struct {
-	cards []cards.Card
-}
-
-func (f fakeCardStore) List() []cards.Card {
-	return append([]cards.Card(nil), f.cards...)
-}
-
-func testWebCard(cardID, name string) cards.Card {
-	return cards.Card{
-		CardID:    cardID,
-		Name:      name,
-		Archetype: "guardian",
-		Personality: cards.Personality{
-			Tone: "calm",
-		},
-		Constraints: cards.Constraints{
-			KnowledgeScope: "mythic",
-		},
-		Components: cards.DefaultComponents(),
-	}
-}
-
-func (f fakeCardStore) Get(cardID string) (cards.Card, bool) {
-	for _, card := range f.cards {
-		if card.CardID == cardID {
-			return card, true
+	body := applyRequestBody(t, json.RawMessage(`{
+		"target":"textarea",
+		"description":"Text",
+		"fragment":{
+			"content":"Missing node",
+			"font_family":"system",
+			"font_size_px":16,
+			"font_weight":400,
+			"font_style":"normal",
+			"color":"#cbd5e1",
+			"align":"left",
+			"position":"center",
+			"css":""
 		}
+	}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-fragment", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("apply status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 	}
-	return cards.Card{}, false
+
+	recorder = httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/draft-card/reset", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("reset status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		Document    cardcomponent.Document `json:"document"`
+		PreviewHTML string                 `json:"preview_html"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if !strings.Contains(string(payload.Document.Root.Children[2].Fragment), `Start designing this card.`) {
+		t.Fatalf("reset did not restore default textarea: %s", string(payload.Document.Root.Children[2].Fragment))
+	}
+	if !strings.Contains(payload.PreviewHTML, `Start designing this card.`) {
+		t.Fatalf("reset preview did not render default text: %s", payload.PreviewHTML)
+	}
 }
 
-type fakeMemoryStore struct{}
+func TestApplyDraftFragmentRejectsBadRequests(t *testing.T) {
+	t.Parallel()
 
-func (fakeMemoryStore) ListByCard(context.Context, string, string, int) ([]memory.Memory, error) {
-	return nil, nil
+	tests := []struct {
+		name   string
+		method string
+		body   string
+		status int
+	}{
+		{name: "wrong method", method: http.MethodGet, body: ``, status: http.StatusMethodNotAllowed},
+		{name: "malformed body", method: http.MethodPost, body: `{`, status: http.StatusBadRequest},
+		{name: "unknown request field", method: http.MethodPost, body: `{"generated_fragment":{},"extra":true}`, status: http.StatusBadRequest},
+		{name: "unknown target", method: http.MethodPost, body: applyRequestBody(t, json.RawMessage(`{"target":"shadow","description":"Shadow","fragment":{}}`)), status: http.StatusBadRequest},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			mux := testMux(t, nil)
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(test.method, "/api/draft-card/apply-fragment", strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
+			mux.ServeHTTP(recorder, request)
+
+			if recorder.Code != test.status {
+				t.Fatalf("status = %d, want %d body=%s", recorder.Code, test.status, recorder.Body.String())
+			}
+		})
+	}
 }
 
-type fakeChatService struct {
-	result chat.Result
-	err    error
+func TestDraftFragmentRouteRejectsBadRequests(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		status int
+	}{
+		{name: "empty instruction", method: http.MethodPost, path: "/api/draft-card/fragments/background", body: `{"instruction":" "}`, status: http.StatusBadRequest},
+		{name: "malformed body", method: http.MethodPost, path: "/api/draft-card/fragments/background", body: `{`, status: http.StatusBadRequest},
+		{name: "unknown target", method: http.MethodPost, path: "/api/draft-card/fragments/shadow", body: `{"instruction":"make it"}`, status: http.StatusNotFound},
+		{name: "removed title target", method: http.MethodPost, path: "/api/draft-card/fragments/title", body: `{"instruction":"make it"}`, status: http.StatusNotFound},
+		{name: "removed body target", method: http.MethodPost, path: "/api/draft-card/fragments/body", body: `{"instruction":"make it"}`, status: http.StatusNotFound},
+		{name: "wrong method", method: http.MethodGet, path: "/api/draft-card/fragments/background", body: ``, status: http.StatusMethodNotAllowed},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			mux := testMux(t, &fakePatchClient{responses: []string{`{}`}})
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
+			mux.ServeHTTP(recorder, request)
+
+			if recorder.Code != test.status {
+				t.Fatalf("status = %d, want %d body=%s", recorder.Code, test.status, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestRemovedLegacyRoutesReturnNotFound(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	for _, path := range []string{
+		"/api/cards",
+		"/api/cards/ember",
+		"/api/cards/ember/canvas",
+		"/api/cards/ember/memories",
+		"/api/cards/ember/components/chat-form/actions/send",
+		"/api/users/tester/profile",
+		"/api/components/chat-form/patch-proposals",
+	} {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := httptest.NewRecorder()
+			mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+			if recorder.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404 body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestFrontendAssetsServed(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	for _, asset := range []string{"/assets/app.js", "/assets/app.js.map"} {
+		t.Run(asset, func(t *testing.T) {
+			t.Parallel()
+
+			recorder := httptest.NewRecorder()
+			mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, asset, nil))
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+			}
+			if strings.TrimSpace(recorder.Body.String()) == "" {
+				t.Fatal("asset body is empty")
+			}
+		})
+	}
+}
+
+func testMux(t *testing.T, client *fakePatchClient) *http.ServeMux {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	Register(mux, Dependencies{
+		Patch:      client,
+		PatchModel: "test-model",
+	})
+	return mux
 }
 
 type fakePatchClient struct {
-	response string
+	responses []string
+	messages  [][]ollama.ChatMessage
+	calls     int
 }
 
-func (f fakePatchClient) Chat(context.Context, string, []ollama.ChatMessage) (string, error) {
-	if f.response == "" {
-		return "diff --git a/file b/file", nil
+func (c *fakePatchClient) Chat(_ context.Context, model string, messages []ollama.ChatMessage) (string, error) {
+	if model != "test-model" {
+		return "", nil
 	}
-	return f.response, nil
-}
-
-func (f fakeChatService) Chat(context.Context, chat.Request) (chat.Result, error) {
-	return f.result, f.err
-}
-
-type fakeProfileStore struct {
-	profile profile.Profile
-	reset   bool
-}
-
-func (f *fakeProfileStore) Get(_ context.Context, userID string) (profile.Profile, error) {
-	if f.profile.UserID == "" {
-		return profile.Profile{UserID: userID}, nil
+	c.messages = append(c.messages, append([]ollama.ChatMessage(nil), messages...))
+	index := c.calls
+	c.calls++
+	if index >= len(c.responses) {
+		return `{}`, nil
 	}
-	return f.profile, nil
+	return c.responses[index], nil
 }
 
-func (f *fakeProfileStore) Reset(context.Context, string) error {
-	f.reset = true
-	f.profile.ProfileSummary = ""
-	f.profile.Facts = nil
-	return nil
+func joinedMessages(messages []ollama.ChatMessage) string {
+	var parts []string
+	for _, message := range messages {
+		parts = append(parts, message.Role+": "+message.Content)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func applyRequestBody(t *testing.T, generated json.RawMessage) string {
+	t.Helper()
+
+	raw, err := json.Marshal(struct {
+		GeneratedFragment json.RawMessage `json:"generated_fragment"`
+	}{
+		GeneratedFragment: generated,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	return string(raw)
 }

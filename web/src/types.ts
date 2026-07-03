@@ -1,51 +1,59 @@
-export interface Personality {
-  tone?: string;
-  style_rules?: string[];
-}
-
-export interface Card {
+export interface CardDocument {
   card_id: string;
   name: string;
-  domain?: string[];
-  archetype?: string;
-  personality?: Personality;
-  components?: ComponentInstance[];
+  root: ComponentNode;
 }
 
-export interface ComponentInstance {
+export interface ComponentNode {
   id: string;
   type: string;
-  props?: Record<string, unknown>;
+  fragment?: FragmentJSON;
+  children?: ComponentNode[];
 }
 
-export interface Memory {
-  id?: string;
-  user_id?: string;
-  card_id?: string;
-  timestamp?: string;
-  user_input?: string;
-  card_response?: string;
-  summary?: string;
-  tags?: string[];
-  importance?: number;
-  collection_name?: string;
+export type FragmentTarget = "background" | "border" | "textarea";
+
+export type FragmentJSON = Record<string, unknown>;
+
+export interface GeneratedFragment<T = FragmentJSON> {
+  target: string;
+  description: string;
+  fragment: T;
 }
 
-export interface SearchResult {
-  memory?: Memory;
-  rank: number;
-  score: number;
+export type GeneratedStyleFragment = GeneratedFragment;
+
+export interface FragmentIssue {
+  path: string;
+  code: string;
+  message: string;
+  actual?: unknown;
+  allowed?: string[];
 }
 
-export interface ChatResult {
-  user_id?: string;
-  card?: Card;
-  assistant_response?: string;
-  retrieved_memories?: SearchResult[];
-  stored_memory?: Memory;
+export interface DesignLibraryItem {
+  id: string;
+  name: string;
+  target: FragmentTarget;
+  description: string;
+  fragment: FragmentJSON;
+  saved?: boolean;
 }
 
-export interface TranscriptItem {
-  user: string;
-  assistant: string;
+export interface RenderedDraftCard {
+  document: CardDocument;
+  preview_html: string;
+  library: DesignLibraryItem[];
+}
+
+export interface ApplyFragmentResponse {
+  document: CardDocument;
+  normalized_fragment: GeneratedStyleFragment;
+  preview_html: string;
+  library: DesignLibraryItem[];
+}
+
+export interface LibraryResponse {
+  item?: DesignLibraryItem;
+  library: DesignLibraryItem[];
 }
