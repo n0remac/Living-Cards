@@ -14,9 +14,8 @@ const swatches = [
 interface ComponentOverlayOptions {
   root: HTMLElement | null;
   overlay: ComponentOverlay;
-  anchorX: number;
-  anchorY: number;
   onControl: (control: ControlDescriptor, value: unknown) => void;
+  onClose: () => void;
 }
 
 export function openComponentOverlay(options: ComponentOverlayOptions): void {
@@ -24,40 +23,124 @@ export function openComponentOverlay(options: ComponentOverlayOptions): void {
   if (!root) return;
   closeComponentOverlay(root);
 
-  const panel = document.createElement("div");
-  panel.dataset.stageControlOverlay = "component";
-  panel.className = "stage-component-panel pointer-events-auto fixed grid max-h-[min(28rem,calc(100dvh-6rem))] w-72 gap-3 overflow-y-auto rounded-md border border-[var(--app-border-strong)] bg-[var(--app-surface-muted)] p-3 shadow-2xl backdrop-blur";
-  panel.style.left = clampPX(options.anchorX, 12, window.innerWidth - 300) + "px";
-  panel.style.top = clampPX(options.anchorY, 84, window.innerHeight - 360) + "px";
-  stopCardTapEvents(panel);
+  const slots = edgeControlSlots(root);
+  if (!slots) return;
 
-  const header = document.createElement("div");
-  header.className = "flex items-center justify-between gap-3";
+  document.body.classList.add("stage-controls-open");
+  renderHeader(slots.top, options.overlay, () => {
+    closeComponentOverlay(root);
+    options.onClose();
+  });
+
+  const leftControls: ControlDescriptor[] = [];
+  const rightControls: ControlDescriptor[] = [];
+  options.overlay.controls.forEach((control) => {
+    if (control.kind === "range" || control.kind === "color") {
+      rightControls.push(control);
+      return;
+    }
+    leftControls.push(control);
+  });
+
+  renderControlRail(slots.left, leftControls, options.onControl);
+  renderControlRail(slots.right, rightControls, options.onControl);
+  renderStatus(slots.bottom, "Controls stay fixed while you edit " + options.overlay.title.toLowerCase() + ".");
+}
+
+export function closeComponentOverlay(root: HTMLElement | null): void {
+  document.body.classList.remove("stage-controls-open");
+  const slots = root ? edgeControlSlots(root) : null;
+  slots?.all.forEach((slot) => {
+    slot.innerHTML = "";
+  });
+  if (slots?.bottom) {
+    renderStatus(slots.bottom, "");
+  }
+}
+
+export function isComponentOverlayOpen(): boolean {
+  return document.body.classList.contains("stage-controls-open");
+}
+
+function edgeControlSlots(root: HTMLElement): {
+  top: HTMLElement;
+  left: HTMLElement;
+  right: HTMLElement;
+  bottom: HTMLElement;
+  all: HTMLElement[];
+} | null {
+  const top = root.querySelector<HTMLElement>("#stage-edge-controls-top");
+  const left = root.querySelector<HTMLElement>("#stage-edge-controls-left");
+  const right = root.querySelector<HTMLElement>("#stage-edge-controls-right");
+  const bottom = root.querySelector<HTMLElement>("#stage-edge-controls-bottom");
+  if (!top || !left || !right || !bottom) return null;
+  return { top, left, right, bottom, all: [top, left, right, bottom] };
+}
+
+function renderHeader(root: HTMLElement, overlay: ComponentOverlay, onClose: () => void): void {
+  root.innerHTML = "";
+  stopCardTapEvents(root);
+
+  const panel = document.createElement("div");
+  panel.className = "stage-edge-panel stage-edge-header";
+
+  const text = document.createElement("div");
+  text.className = "min-w-0";
 
   const title = document.createElement("div");
-  title.className = "min-w-0 text-sm font-semibold text-[var(--app-fg)]";
-  title.textContent = options.overlay.title;
+  title.className = "stage-edge-title";
+  title.textContent = overlay.title;
+
+  const subtitle = document.createElement("div");
+  subtitle.className = "stage-edge-subtitle";
+  subtitle.textContent = overlay.componentType + " controls";
+
+  text.append(title, subtitle);
 
   const close = document.createElement("button");
   close.type = "button";
   close.className = "h-8 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 text-xs font-semibold text-[var(--app-fg-soft)]";
   close.textContent = "Close";
-  close.addEventListener("click", () => panel.remove());
+  close.addEventListener("click", onClose);
 
-  header.append(title, close);
-  panel.appendChild(header);
-
-  const controls = document.createElement("div");
-  controls.className = "grid gap-3";
-  options.overlay.controls.forEach((control) => {
-    controls.appendChild(renderControl(control, (value) => options.onControl(control, value)));
-  });
-  panel.appendChild(controls);
+  panel.append(text, close);
   root.appendChild(panel);
 }
 
-export function closeComponentOverlay(root: HTMLElement | null): void {
-  root?.querySelectorAll("[data-stage-control-overlay]").forEach((element) => element.remove());
+function renderControlRail(root: HTMLElement, controls: ControlDescriptor[], onControl: (control: ControlDescriptor, value: unknown) => void): void {
+  root.innerHTML = "";
+  stopCardTapEvents(root);
+
+  const panel = document.createElement("div");
+  panel.className = "stage-edge-panel stage-edge-controls-group";
+  if (!controls.length) {
+    const empty = document.createElement("div");
+    empty.className = "stage-edge-controls-empty";
+    empty.textContent = "No controls here.";
+    panel.appendChild(empty);
+  } else {
+    controls.forEach((control) => {
+      panel.appendChild(renderControl(control, (value) => onControl(control, value)));
+    });
+  }
+  root.appendChild(panel);
+}
+
+function renderStatus(root: HTMLElement, message: string, tone = "info"): void {
+  root.innerHTML = "";
+  stopCardTapEvents(root);
+
+  const panel = document.createElement("div");
+  panel.className = "stage-edge-panel";
+
+  const status = document.createElement("div");
+  status.id = "stage-edge-controls-status";
+  status.className = "stage-edge-controls-status";
+  status.dataset.tone = tone;
+  status.textContent = message;
+
+  panel.appendChild(status);
+  root.appendChild(panel);
 }
 
 function renderControl(control: ControlDescriptor, onValue: (value: unknown) => void): HTMLElement {
@@ -207,11 +290,6 @@ function stopCardTapEvents(element: HTMLElement): void {
       event.stopPropagation();
     });
   }
-}
-
-function clampPX(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min;
-  return Math.max(min, Math.min(max, value));
 }
 
 function hexOrFallback(value: string): string {

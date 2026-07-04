@@ -23,8 +23,9 @@ func Page() *Node {
 				cardWorkspaceView(),
 				Div(
 					Id("stage-overlay-root"),
-					Class("pointer-events-none fixed inset-0 z-30"),
+					Class("stage-overlay-root pointer-events-none fixed inset-0 z-30"),
 					Attr("aria-live", "polite"),
+					stageEdgeControlsView(),
 				),
 				designerOverlayView(),
 			),
@@ -89,12 +90,31 @@ func stageHUDView() *Node {
 
 func stageResetView() *Node {
 	return Div(
-		Class("pointer-events-none fixed right-3 top-3 z-20 sm:right-5 sm:top-5"),
+		Class("stage-reset pointer-events-none fixed right-3 top-3 z-20 sm:right-5 sm:top-5"),
 		Button(
 			Id("reset-draft-btn"),
 			Type("button"),
 			Class(uiSecondaryButtonClass("sm")+" pointer-events-auto"),
 			T("Reset"),
+		),
+	)
+}
+
+func stageEdgeControlsView() *Node {
+	return Div(
+		Id("stage-edge-controls"),
+		Class("stage-edge-controls"),
+		Div(Id("stage-edge-controls-top"), Class("stage-edge-controls-top")),
+		Div(
+			Class("stage-edge-controls-sides"),
+			Div(Id("stage-edge-controls-left"), Class("stage-edge-controls-rail")),
+			Div(Class("stage-edge-controls-spacer")),
+			Div(Id("stage-edge-controls-right"), Class("stage-edge-controls-rail")),
+		),
+		Div(
+			Id("stage-edge-controls-bottom"),
+			Class("stage-edge-controls-bottom"),
+			Div(Id("stage-edge-controls-status"), Class("stage-edge-controls-status"), T("")),
 		),
 	)
 }
@@ -251,6 +271,13 @@ func pageCSS() string {
   touch-action: manipulation;
 }
 
+.stage-controls-open .stage-hud,
+.stage-controls-open .stage-reset {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .stage-card-stack {
   width: min(94vw, 34rem, calc((100dvh - 6.5rem) * 5 / 7));
   display: grid;
@@ -386,6 +413,128 @@ func pageCSS() string {
   transform-origin: center;
   will-change: transform;
   color: var(--app-fg);
+}
+
+.stage-edge-controls {
+  --stage-card-width: min(94vw, 34rem, calc((100dvh - 6.5rem) * 5 / 7));
+  position: absolute;
+  inset: 0;
+  display: none;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  pointer-events: none;
+}
+
+.stage-controls-open .stage-edge-controls {
+  display: grid;
+}
+
+.stage-edge-controls-top,
+.stage-edge-controls-bottom {
+  pointer-events: auto;
+  width: var(--stage-card-width);
+  max-width: calc(100vw - 1.5rem);
+  justify-self: center;
+}
+
+.stage-edge-controls-sides {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) var(--stage-card-width) minmax(12rem, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.stage-edge-controls-spacer {
+  pointer-events: none;
+}
+
+.stage-edge-controls-rail {
+  pointer-events: auto;
+  display: grid;
+  gap: 0.65rem;
+  align-content: start;
+  max-height: min(34rem, calc(100dvh - 8rem));
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.stage-edge-panel {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.45rem;
+  background: rgba(9, 9, 11, 0.76);
+  color: rgba(244, 244, 245, 0.9);
+  box-shadow: 0 1rem 2.4rem rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(16px);
+}
+
+.stage-edge-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.65rem;
+}
+
+.stage-edge-title {
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: rgba(244, 244, 245, 0.92);
+}
+
+.stage-edge-subtitle {
+  margin-top: 0.1rem;
+  font-size: 0.68rem;
+  font-weight: 650;
+  color: rgba(244, 244, 245, 0.52);
+  text-transform: uppercase;
+}
+
+.stage-edge-controls-group {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.65rem;
+}
+
+.stage-edge-controls-empty {
+  padding: 0.7rem;
+  font-size: 0.78rem;
+  color: rgba(244, 244, 245, 0.58);
+}
+
+.stage-edge-controls-status {
+  min-height: 2rem;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.76rem;
+  font-weight: 650;
+  color: rgba(244, 244, 245, 0.66);
+}
+
+.stage-edge-controls-status[data-tone="error"] {
+  color: rgba(254, 243, 199, 0.95);
+}
+
+@media (max-width: 58rem) {
+  .stage-edge-controls {
+    padding: 0.55rem;
+    gap: 0.5rem;
+  }
+
+  .stage-edge-controls-sides {
+    align-self: end;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .stage-edge-controls-spacer {
+    display: none;
+  }
+
+  .stage-edge-controls-rail {
+    max-height: min(14rem, 30dvh);
+  }
 }
 
 .designer-open #designer-overlay {

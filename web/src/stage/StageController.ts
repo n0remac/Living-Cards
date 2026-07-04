@@ -3,7 +3,7 @@ import { byID } from "../dom";
 import { replacePreviewHTML } from "../designer/document";
 import type { CardDocument, CardEvent, ComponentOverlay, GameState, InteractiveDraftCardResponse, TapCardResponse } from "../types";
 import { animateCardTap, animateInvalidTap } from "./cardMotion";
-import { closeComponentOverlay, openComponentOverlay } from "./componentControls";
+import { closeComponentOverlay, isComponentOverlayOpen, openComponentOverlay } from "./componentControls";
 import { CardHit, hitTestCard } from "./hitTesting";
 import { initNotifications, renderEvents, showMessage } from "./overlays";
 
@@ -26,6 +26,7 @@ let pressState: {
   dragNextYPercent: number;
   dragElement: HTMLElement | null;
   dragging: boolean;
+  closedOverlay: boolean;
   timer: number;
   longPressed: boolean;
 } | null = null;
@@ -88,7 +89,11 @@ function startPress(event: PointerEvent, workspace: HTMLElement): void {
   const preview = currentPreview();
   if (!preview) return;
   const hit = hitTestCard(event, preview);
-  closeComponentOverlay(overlayRoot());
+  const closedOverlay = isComponentOverlayOpen();
+  if (closedOverlay) {
+    closeComponentOverlay(overlayRoot());
+    if (!canDragComponent(hit)) return;
+  }
   cancelPress();
   workspace.setPointerCapture?.(event.pointerId);
   pressState = {
@@ -102,6 +107,7 @@ function startPress(event: PointerEvent, workspace: HTMLElement): void {
     dragNextYPercent: 0,
     dragElement: null,
     dragging: false,
+    closedOverlay,
     longPressed: false,
     timer: window.setTimeout(() => {
       if (!pressState || pressState.pointerID !== event.pointerId) return;
@@ -135,6 +141,7 @@ async function finishPress(event: PointerEvent, workspace: HTMLElement): Promise
     await commitDragPosition(state);
     return;
   }
+  if (state.closedOverlay) return;
   if (state.longPressed) return;
   await handleCardTap(state.hit);
 }
@@ -233,7 +240,7 @@ async function openLongPressControls(hit: CardHit): Promise<void> {
     applyTapResponse(response);
     renderEvents(notificationRoot(), response.events);
     if (response.overlay) {
-      openOverlay(response.overlay, hit.clientX, hit.clientY);
+      openOverlay(response.overlay);
       return;
     }
     if (preview) animateInvalidTap(preview);
@@ -245,12 +252,13 @@ async function openLongPressControls(hit: CardHit): Promise<void> {
   }
 }
 
-function openOverlay(overlay: ComponentOverlay, anchorX: number, anchorY: number): void {
+function openOverlay(overlay: ComponentOverlay): void {
   openComponentOverlay({
     root: overlayRoot(),
     overlay,
-    anchorX,
-    anchorY,
+    onClose: () => {
+      renderSelection(latestGameState || overlayFallbackGameState());
+    },
     onControl: (control, value) => {
       void applyControl(overlay.componentId, control.trait, control.control, value);
     },
@@ -265,7 +273,9 @@ async function applyControl(componentId: string, trait: string, control: string,
     applyTapResponse(response);
     renderEvents(notificationRoot(), response.events);
     if (response.overlay) {
-      openOverlay(response.overlay, window.innerWidth - 320, 110);
+      openOverlay(response.overlay);
+    } else {
+      closeComponentOverlay(overlayRoot());
     }
   } catch (error) {
     showMessage(notificationRoot(), error instanceof Error ? error.message : "Control change failed.", "error");
@@ -397,7 +407,26 @@ function overlayRoot(): HTMLElement | null {
 }
 
 function notificationRoot(): HTMLElement | null {
+  if (isComponentOverlayOpen()) {
+    return byID<HTMLElement>("stage-edge-controls-status") || byID<HTMLElement>("stage-notification-section");
+  }
   return byID<HTMLElement>("stage-notification-section");
+}
+
+function overlayFallbackGameState(): GameState {
+  return latestGameState || {
+    totalXp: 0,
+    globalLevel: 1,
+    totalInteractions: 0,
+    unlockedComponentTypes: ["card"],
+    componentProgress: {},
+    tapCount: 0,
+    level: 1,
+    xp: 0,
+    unlockedTargets: [],
+    unlockedModes: [],
+    targetProgress: {},
+  };
 }
 
 function escapeSelectorValue(value: string): string {

@@ -91,16 +91,25 @@ function showNextNotification(): void {
   if (activeNotification) return;
   const current = notificationCurrent();
   const section = notificationSection();
+  const edgeStatus = edgeControlStatus();
   if (!current || !section) return;
   const item = notificationQueue.shift();
   if (!item) {
     current.textContent = "No notifications";
     section.dataset.tone = "empty";
+    if (edgeStatus) {
+      edgeStatus.textContent = "Controls stay fixed while you edit.";
+      edgeStatus.dataset.tone = "info";
+    }
     return;
   }
   activeNotification = true;
   current.textContent = item.message;
   section.dataset.tone = item.tone;
+  if (edgeStatus) {
+    edgeStatus.textContent = item.message;
+    edgeStatus.dataset.tone = item.tone;
+  }
   window.clearTimeout(notificationTimer);
   notificationTimer = window.setTimeout(() => {
     activeNotification = false;
@@ -157,6 +166,10 @@ function notificationHistoryPanel(): HTMLDivElement | null {
 
 function notificationHistoryList(): HTMLDivElement | null {
   return document.getElementById("stage-notification-history-list") as HTMLDivElement | null;
+}
+
+function edgeControlStatus(): HTMLDivElement | null {
+  return document.getElementById("stage-edge-controls-status") as HTMLDivElement | null;
 }
 
 function labelForTarget(target: string): string {
