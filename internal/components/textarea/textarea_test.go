@@ -22,6 +22,8 @@ func TestValidateGeneratedAcceptsSafeTextareaFragment(t *testing.T) {
 			Color:      "rgba(226,232,240,0.92)",
 			Align:      "center",
 			Position:   "center",
+			X:          50,
+			Y:          50,
 			CSS:        "font-family: Georgia, serif; line-height: 1.5; text-align: center; text-shadow: 0 1px 8px rgba(0,0,0,0.3);",
 		},
 	}
@@ -60,6 +62,8 @@ func TestValidateGeneratedRejectsInvalidTextareaFields(t *testing.T) {
 			Color:      "clear",
 			Align:      "justify",
 			Position:   "middle",
+			X:          -1,
+			Y:          101,
 			CSS:        "position: fixed;",
 		},
 	}
@@ -74,6 +78,8 @@ func TestValidateGeneratedRejectsInvalidTextareaFields(t *testing.T) {
 		"fragment.color",
 		"fragment.align",
 		"fragment.position",
+		"fragment.x",
+		"fragment.y",
 		"fragment.css",
 	} {
 		if !paths[path] {
@@ -109,6 +115,8 @@ func TestRenderLayerIncludesExtendedTextareaStyles(t *testing.T) {
 		Color:           "#111827",
 		Align:           "center",
 		Position:        "center",
+		X:               42,
+		Y:               58,
 		BackgroundColor: "#f8fafc",
 		BorderColor:     "#111827",
 		BorderWidthPX:   2,
@@ -123,7 +131,9 @@ func TestRenderLayerIncludesExtendedTextareaStyles(t *testing.T) {
 		`background-color: #f8fafc`,
 		`border: 2px solid #111827`,
 		`border-radius: 14px`,
+		`left: 42%`,
 		`padding: 12px`,
+		`top: 58%`,
 		`Styled text`,
 	} {
 		if !strings.Contains(body, marker) {
@@ -142,6 +152,8 @@ func validFragment() Fragment {
 		Color:      "#cbd5e1",
 		Align:      "left",
 		Position:   "center",
+		X:          50,
+		Y:          50,
 		CSS:        "",
 	}
 }

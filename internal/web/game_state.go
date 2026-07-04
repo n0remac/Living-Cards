@@ -42,7 +42,6 @@ const (
 	xpPerInteraction       = 1
 	xpPerLevel             = 5
 	componentXPPerLevel    = 3
-	randomRetireLevel      = 5
 	overlayUnlockLevel     = 3
 )
 
@@ -63,16 +62,17 @@ type GameState struct {
 }
 
 type ComponentProgress struct {
-	ComponentID      string   `json:"componentId"`
-	ComponentType    string   `json:"componentType"`
-	XP               int      `json:"xp"`
-	Level            int      `json:"level"`
-	Interactions     int      `json:"interactions"`
-	RandomTapEnabled bool     `json:"randomTapEnabled"`
-	OverlayUnlocked  bool     `json:"overlayUnlocked"`
-	OverlayOpened    bool     `json:"overlayOpened"`
-	UnlockedTraits   []string `json:"unlockedTraits"`
-	UnlockedControls []string `json:"unlockedControls"`
+	ComponentID        string   `json:"componentId"`
+	ComponentType      string   `json:"componentType"`
+	XP                 int      `json:"xp"`
+	Level              int      `json:"level"`
+	Interactions       int      `json:"interactions"`
+	RandomTapEnabled   bool     `json:"randomTapEnabled"`
+	PreventRandomizing bool     `json:"preventRandomizing"`
+	OverlayUnlocked    bool     `json:"overlayUnlocked"`
+	OverlayOpened      bool     `json:"overlayOpened"`
+	UnlockedTraits     []string `json:"unlockedTraits"`
+	UnlockedControls   []string `json:"unlockedControls"`
 }
 
 type TargetProgress struct {
@@ -195,7 +195,7 @@ func normalizeGameState(state GameState) GameState {
 		progress.XP = maxInt(progress.XP, 0)
 		progress.Interactions = maxInt(progress.Interactions, 0)
 		progress.Level = progress.XP/componentXPPerLevel + 1
-		progress.RandomTapEnabled = progress.Level < randomRetireLevel
+		progress.RandomTapEnabled = !progress.PreventRandomizing
 		progress.OverlayUnlocked = progress.Level >= overlayUnlockLevel
 		progress.UnlockedTraits = unlockedTraits(progress.ComponentType, state.GlobalLevel, progress.Level)
 		progress.UnlockedControls = unlockedControls(progress.ComponentType, state.GlobalLevel, progress.Level)
@@ -270,7 +270,7 @@ func unlockedTraits(componentType string, globalLevel, componentLevel int) []str
 		}
 		return traits
 	case componentTypeTextarea:
-		traits := []string{traitText, traitBackground, traitBorder}
+		traits := []string{traitText, traitBackground, traitBorder, traitPosition}
 		if globalLevel >= 6 || componentLevel >= 4 {
 			traits = append(traits, traitTypography)
 		}
@@ -279,12 +279,12 @@ func unlockedTraits(componentType string, globalLevel, componentLevel int) []str
 		}
 		return traits
 	case componentTypeShape:
-		traits := []string{traitGeometry, traitFill}
+		traits := []string{traitGeometry, traitFill, traitPosition}
 		if globalLevel >= 8 || componentLevel >= 5 {
 			traits = append(traits, traitBorder)
 		}
 		if globalLevel >= 10 || componentLevel >= 6 {
-			traits = append(traits, traitSize, traitPosition)
+			traits = append(traits, traitSize)
 		}
 		if componentLevel >= 8 {
 			traits = append(traits, traitShadow)
@@ -298,10 +298,11 @@ func unlockedTraits(componentType string, globalLevel, componentLevel int) []str
 func unlockedControls(componentType string, globalLevel, componentLevel int) []string {
 	switch componentType {
 	case componentTypeCard:
+		controls := randomLockControls(componentLevel)
 		if globalLevel < 5 {
-			return nil
+			return controls
 		}
-		controls := []string{"backgroundColor", "borderColor", "borderWidthPx", "borderRadiusPx"}
+		controls = append(controls, "backgroundColor", "borderColor", "borderWidthPx", "borderRadiusPx")
 		if globalLevel >= 2 {
 			controls = append(controls, "shadowPreset")
 		}
@@ -313,7 +314,7 @@ func unlockedControls(componentType string, globalLevel, componentLevel int) []s
 		if componentLevel < overlayUnlockLevel {
 			return nil
 		}
-		controls := []string{"content", "backgroundColor", "borderColor"}
+		controls := append(randomLockControls(componentLevel), "content", "backgroundColor", "borderColor", "x", "y", "position")
 		if globalLevel >= 6 || componentLevel >= 4 {
 			controls = append(controls, "textColor")
 		}
@@ -331,7 +332,7 @@ func unlockedControls(componentType string, globalLevel, componentLevel int) []s
 		if componentLevel < overlayUnlockLevel {
 			return nil
 		}
-		controls := []string{"shape", "backgroundColor"}
+		controls := append(randomLockControls(componentLevel), "shape", "backgroundColor", "x", "y", "position")
 		if globalLevel >= 8 || componentLevel >= 5 {
 			controls = append(controls, "borderColor", "borderWidthPx")
 		}
@@ -339,7 +340,7 @@ func unlockedControls(componentType string, globalLevel, componentLevel int) []s
 			controls = append(controls, "width", "height")
 		}
 		if globalLevel >= 10 || componentLevel >= 7 {
-			controls = append(controls, "x", "y", "rotation")
+			controls = append(controls, "rotation")
 		}
 		if componentLevel >= 8 {
 			controls = append(controls, "shadowPreset")
@@ -348,6 +349,13 @@ func unlockedControls(componentType string, globalLevel, componentLevel int) []s
 	default:
 		return nil
 	}
+}
+
+func randomLockControls(componentLevel int) []string {
+	if componentLevel < overlayUnlockLevel {
+		return nil
+	}
+	return []string{"preventRandomizing"}
 }
 
 func canonicalTapComponent(target, zone string) (string, string) {
@@ -436,6 +444,9 @@ func traitUnlocked(progress ComponentProgress, trait string) bool {
 }
 
 func controlUnlocked(progress ComponentProgress, control string) bool {
+	if control == "position" && (progress.ComponentType == componentTypeTextarea || progress.ComponentType == componentTypeShape) {
+		return true
+	}
 	for _, candidate := range progress.UnlockedControls {
 		if candidate == control {
 			return true
@@ -588,7 +599,7 @@ func buildOverlay(document cardcomponent.Document, state GameState, componentID 
 		ComponentID:      componentID,
 		ComponentType:    progress.ComponentType,
 		Title:            componentTitle(progress.ComponentType),
-		RandomizeEnabled: true,
+		RandomizeEnabled: false,
 	}
 	switch progress.ComponentType {
 	case componentTypeCard:
@@ -602,7 +613,7 @@ func buildOverlay(document cardcomponent.Document, state GameState, componentID 
 }
 
 func cardControls(document cardcomponent.Document, progress ComponentProgress) []ControlDescriptor {
-	var controls []ControlDescriptor
+	controls := randomLockControl(progress)
 	bg := currentBackground(document)
 	br := currentBorder(document)
 	root := cardcomponent.DecodeRootFragment(document.Root.Fragment)
@@ -629,7 +640,7 @@ func cardControls(document cardcomponent.Document, progress ComponentProgress) [
 
 func textareaControls(document cardcomponent.Document, progress ComponentProgress) []ControlDescriptor {
 	part := currentTextarea(document)
-	var controls []ControlDescriptor
+	controls := randomLockControl(progress)
 	if controlUnlocked(progress, "content") {
 		controls = append(controls, ControlDescriptor{Trait: traitText, Control: "content", Kind: "text", Label: "Text", Value: part.Content})
 	}
@@ -665,6 +676,12 @@ func textareaControls(document cardcomponent.Document, progress ComponentProgres
 	if controlUnlocked(progress, "paddingPx") {
 		controls = append(controls, rangeControl(traitPadding, "paddingPx", "Padding", part.PaddingPX, 0, 32, 1))
 	}
+	if controlUnlocked(progress, "x") {
+		controls = append(controls, rangeControl(traitPosition, "x", "X", part.X, 0, 100, 1))
+	}
+	if controlUnlocked(progress, "y") {
+		controls = append(controls, rangeControl(traitPosition, "y", "Y", part.Y, 0, 100, 1))
+	}
 	if controlUnlocked(progress, "borderWidthPx") {
 		controls = append(controls, rangeControl(traitBorder, "borderWidthPx", "Border Width", part.BorderWidthPX, 0, 12, 1))
 	}
@@ -676,7 +693,7 @@ func textareaControls(document cardcomponent.Document, progress ComponentProgres
 
 func shapeControls(document cardcomponent.Document, progress ComponentProgress) []ControlDescriptor {
 	part := currentShape(document)
-	var controls []ControlDescriptor
+	controls := randomLockControl(progress)
 	if controlUnlocked(progress, "shape") {
 		controls = append(controls, selectControl(traitGeometry, "shape", "Shape", part.Shape, shapeOptions()))
 	}
@@ -720,6 +737,19 @@ func rangeControl(trait, control, label string, value, min, max, step int) Contr
 
 func selectControl(trait, control, label, value string, options []ControlOption) ControlDescriptor {
 	return ControlDescriptor{Trait: trait, Control: control, Kind: "select", Label: label, Value: value, Options: options}
+}
+
+func checkboxControl(trait, control, label string, value bool) ControlDescriptor {
+	return ControlDescriptor{Trait: trait, Control: control, Kind: "checkbox", Label: label, Value: value}
+}
+
+func randomLockControl(progress ComponentProgress) []ControlDescriptor {
+	if !controlUnlocked(progress, "preventRandomizing") {
+		return nil
+	}
+	return []ControlDescriptor{
+		checkboxControl("", "preventRandomizing", "Prevent randomizing on tap", progress.PreventRandomizing),
+	}
 }
 
 func currentBackground(document cardcomponent.Document) background.Fragment {

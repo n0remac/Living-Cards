@@ -88,6 +88,8 @@ func TestRenderLayerIncludesShapeDataAttributesAndSVG(t *testing.T) {
 	for _, marker := range []string{
 		`data-component-id="shape-1"`,
 		`data-component-type="shape"`,
+		`left: 10%`,
+		`top: 20%`,
 		`<svg`,
 		`points="50,6 61,36`,
 		`fill="#f43f5e"`,

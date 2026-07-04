@@ -56,17 +56,6 @@ async function applyComponentControl(componentId, trait, control, value) {
   }
   return await response.json();
 }
-async function randomizeComponent(componentId, trait = "", scope = "unlockedTraits") {
-  const response = await fetch("/api/draft-card/randomize-component", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ componentId, trait, scope })
-  });
-  if (!response.ok) {
-    throw new Error(await readError(response, "Failed to randomize component."));
-  }
-  return await response.json();
-}
 async function generateFragment(target, instruction, update = false) {
   const response = await fetch("/api/draft-card/fragments/" + encodeURIComponent(target), {
     method: "POST",
@@ -538,14 +527,6 @@ function openComponentOverlay(options) {
   close.addEventListener("click", () => panel.remove());
   header.append(title, close);
   panel.appendChild(header);
-  if (options.overlay.randomizeEnabled) {
-    const randomize = document.createElement("button");
-    randomize.type = "button";
-    randomize.className = "h-9 rounded-md border border-emerald-300/30 bg-emerald-300 px-3 text-sm font-semibold text-zinc-950";
-    randomize.textContent = "Randomize";
-    randomize.addEventListener("click", options.onRandomize);
-    panel.appendChild(randomize);
-  }
   const controls = document.createElement("div");
   controls.className = "grid gap-3";
   options.overlay.controls.forEach((control) => {
@@ -559,6 +540,8 @@ function closeComponentOverlay(root) {
 }
 function renderControl(control, onValue) {
   switch (control.kind) {
+    case "checkbox":
+      return renderCheckboxControl(control, onValue);
     case "color":
       return renderColorControl(control, onValue);
     case "range":
@@ -570,6 +553,19 @@ function renderControl(control, onValue) {
     default:
       return document.createElement("div");
   }
+}
+function renderCheckboxControl(control, onValue) {
+  const wrapper = document.createElement("label");
+  wrapper.className = "flex items-center justify-between gap-3 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 py-2 text-sm font-semibold text-[var(--app-fg)]";
+  const text = document.createElement("span");
+  text.textContent = control.label;
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.className = "h-4 w-4 accent-emerald-300";
+  input.checked = Boolean(control.value);
+  input.addEventListener("change", () => onValue(input.checked));
+  wrapper.append(text, input);
+  return wrapper;
 }
 function renderColorControl(control, onValue) {
   const wrapper = controlWrapper(control.label);
@@ -765,7 +761,7 @@ function initNotifications() {
 }
 function renderEvents(root, events) {
   if (!root) return;
-  events.forEach((event) => showEvent(root, event));
+  (events || []).forEach((event) => showEvent(root, event));
 }
 function showMessage(root, message, tone = "info") {
   if (!root) return;
@@ -774,6 +770,8 @@ function showMessage(root, message, tone = "info") {
 function showEvent(root, event) {
   switch (event.type) {
     case "fragmentApplied":
+      return;
+    case "controlChanged":
       return;
     case "xpGained":
       return;
@@ -963,6 +961,12 @@ function startPress(event, workspace) {
     hit,
     startX: event.clientX,
     startY: event.clientY,
+    dragStartXPercent: 0,
+    dragStartYPercent: 0,
+    dragNextXPercent: 0,
+    dragNextYPercent: 0,
+    dragElement: null,
+    dragging: false,
     longPressed: false,
     timer: window.setTimeout(() => {
       if (!pressState || pressState.pointerID !== event.pointerId) return;
@@ -973,10 +977,16 @@ function startPress(event, workspace) {
 }
 function maybeCancelPressMove(event) {
   if (!pressState || pressState.pointerID !== event.pointerId || pressState.longPressed) return;
+  if (pressState.dragging) {
+    updateDragPreview(event, pressState);
+    return;
+  }
   const dx = event.clientX - pressState.startX;
   const dy = event.clientY - pressState.startY;
   if (Math.hypot(dx, dy) > moveCancelPX) {
-    cancelPress();
+    if (!startDrag(event, pressState)) {
+      cancelPress();
+    }
   }
 }
 async function finishPress(event, workspace) {
@@ -984,6 +994,10 @@ async function finishPress(event, workspace) {
   const state = pressState;
   cancelPress();
   workspace.releasePointerCapture?.(event.pointerId);
+  if (state.dragging) {
+    await commitDragPosition(state);
+    return;
+  }
   if (state.longPressed) return;
   await handleCardTap(state.hit);
 }
@@ -992,6 +1006,56 @@ function cancelPress() {
     window.clearTimeout(pressState.timer);
   }
   pressState = null;
+}
+function startDrag(event, state) {
+  if (!canDragComponent(state.hit)) return false;
+  const preview = currentPreview();
+  if (!preview) return false;
+  const element = componentElement(preview, state.hit.componentId);
+  if (!element) return false;
+  window.clearTimeout(state.timer);
+  state.dragElement = element;
+  state.dragging = true;
+  state.dragStartXPercent = readElementPercent(element, preview, "left");
+  state.dragStartYPercent = readElementPercent(element, preview, "top");
+  state.dragNextXPercent = state.dragStartXPercent;
+  state.dragNextYPercent = state.dragStartYPercent;
+  updateDragPreview(event, state);
+  return true;
+}
+function updateDragPreview(event, state) {
+  const preview = currentPreview();
+  const element = state.dragElement;
+  if (!preview || !element) return;
+  const rect = preview.getBoundingClientRect();
+  const dxPercent = (event.clientX - state.startX) / Math.max(1, rect.width) * 100;
+  const dyPercent = (event.clientY - state.startY) / Math.max(1, rect.height) * 100;
+  state.dragNextXPercent = clampPercent(state.dragStartXPercent + dxPercent);
+  state.dragNextYPercent = clampPercent(state.dragStartYPercent + dyPercent);
+  element.style.left = formatPercent(state.dragNextXPercent);
+  element.style.top = formatPercent(state.dragNextYPercent);
+}
+async function commitDragPosition(state) {
+  if (controlBusy) return;
+  const preview = currentPreview();
+  controlBusy = true;
+  try {
+    const response = await applyComponentControl(state.hit.componentId, "position", "position", {
+      x: Math.round(state.dragNextXPercent),
+      y: Math.round(state.dragNextYPercent)
+    });
+    applyTapResponse(response);
+    renderEvents(notificationRoot(), response.events);
+    if (hasInvalidAction(response.events)) {
+      const nextPreview = currentPreview();
+      if (nextPreview) animateInvalidTap(nextPreview);
+    }
+  } catch (error) {
+    if (preview) animateInvalidTap(preview);
+    showMessage(notificationRoot(), error instanceof Error ? error.message : "Drag failed.", "error");
+  } finally {
+    controlBusy = false;
+  }
 }
 async function handleCardTap(hit) {
   if (tapBusy || document.body.classList.contains("designer-open")) return;
@@ -1045,9 +1109,6 @@ function openOverlay(overlay, anchorX, anchorY) {
     anchorY,
     onControl: (control, value) => {
       void applyControl(overlay.componentId, control.trait, control.control, value);
-    },
-    onRandomize: () => {
-      void applyRandomize(overlay.componentId);
     }
   });
 }
@@ -1063,22 +1124,6 @@ async function applyControl(componentId, trait, control, value) {
     }
   } catch (error) {
     showMessage(notificationRoot(), error instanceof Error ? error.message : "Control change failed.", "error");
-  } finally {
-    controlBusy = false;
-  }
-}
-async function applyRandomize(componentId) {
-  if (controlBusy) return;
-  controlBusy = true;
-  try {
-    const response = await randomizeComponent(componentId);
-    applyTapResponse(response);
-    renderEvents(notificationRoot(), response.events);
-    if (response.overlay) {
-      openOverlay(response.overlay, window.innerWidth - 320, 110);
-    }
-  } catch (error) {
-    showMessage(notificationRoot(), error instanceof Error ? error.message : "Randomize failed.", "error");
   } finally {
     controlBusy = false;
   }
@@ -1151,8 +1196,39 @@ function renderSelection(gameState) {
   element.style.outline = "2px solid rgba(52, 211, 153, 0.86)";
   element.style.outlineOffset = "3px";
 }
+function canDragComponent(hit) {
+  return hit.componentType === "shape" || hit.componentType === "textarea";
+}
+function componentElement(preview, componentId) {
+  const selector = '[data-component-id="' + escapeSelectorValue(componentId) + '"]';
+  return preview.matches(selector) ? preview : preview.querySelector(selector);
+}
+function readElementPercent(element, preview, property) {
+  const inlineValue = property === "left" ? element.style.left : element.style.top;
+  const parsed = parsePercent(inlineValue);
+  if (parsed !== null) return parsed;
+  const elementRect = element.getBoundingClientRect();
+  const previewRect = preview.getBoundingClientRect();
+  if (property === "left") {
+    return clampPercent((elementRect.left - previewRect.left) / Math.max(1, previewRect.width) * 100);
+  }
+  return clampPercent((elementRect.top - previewRect.top) / Math.max(1, previewRect.height) * 100);
+}
+function parsePercent(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed.endsWith("%")) return null;
+  const number = Number(trimmed.slice(0, -1));
+  return Number.isFinite(number) ? clampPercent(number) : null;
+}
+function clampPercent(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+function formatPercent(value) {
+  return value.toFixed(2).replace(/\.?0+$/, "") + "%";
+}
 function hasInvalidAction(events) {
-  return events.some((event) => event.type === "invalidAction");
+  return (events || []).some((event) => event.type === "invalidAction");
 }
 function currentPreview() {
   return byID("draft-card-preview");

@@ -1,4 +1,4 @@
-import { applyComponentControl, fetchInteractiveDraftCard, interactWithComponent, randomizeComponent } from "../api";
+import { applyComponentControl, fetchInteractiveDraftCard, interactWithComponent } from "../api";
 import { byID } from "../dom";
 import { replacePreviewHTML } from "../designer/document";
 import type { CardDocument, CardEvent, ComponentOverlay, GameState, InteractiveDraftCardResponse, TapCardResponse } from "../types";
@@ -20,6 +20,12 @@ let pressState: {
   hit: CardHit;
   startX: number;
   startY: number;
+  dragStartXPercent: number;
+  dragStartYPercent: number;
+  dragNextXPercent: number;
+  dragNextYPercent: number;
+  dragElement: HTMLElement | null;
+  dragging: boolean;
   timer: number;
   longPressed: boolean;
 } | null = null;
@@ -90,6 +96,12 @@ function startPress(event: PointerEvent, workspace: HTMLElement): void {
     hit,
     startX: event.clientX,
     startY: event.clientY,
+    dragStartXPercent: 0,
+    dragStartYPercent: 0,
+    dragNextXPercent: 0,
+    dragNextYPercent: 0,
+    dragElement: null,
+    dragging: false,
     longPressed: false,
     timer: window.setTimeout(() => {
       if (!pressState || pressState.pointerID !== event.pointerId) return;
@@ -101,10 +113,16 @@ function startPress(event: PointerEvent, workspace: HTMLElement): void {
 
 function maybeCancelPressMove(event: PointerEvent): void {
   if (!pressState || pressState.pointerID !== event.pointerId || pressState.longPressed) return;
+  if (pressState.dragging) {
+    updateDragPreview(event, pressState);
+    return;
+  }
   const dx = event.clientX - pressState.startX;
   const dy = event.clientY - pressState.startY;
   if (Math.hypot(dx, dy) > moveCancelPX) {
-    cancelPress();
+    if (!startDrag(event, pressState)) {
+      cancelPress();
+    }
   }
 }
 
@@ -113,6 +131,10 @@ async function finishPress(event: PointerEvent, workspace: HTMLElement): Promise
   const state = pressState;
   cancelPress();
   workspace.releasePointerCapture?.(event.pointerId);
+  if (state.dragging) {
+    await commitDragPosition(state);
+    return;
+  }
   if (state.longPressed) return;
   await handleCardTap(state.hit);
 }
@@ -122,6 +144,59 @@ function cancelPress(): void {
     window.clearTimeout(pressState.timer);
   }
   pressState = null;
+}
+
+function startDrag(event: PointerEvent, state: NonNullable<typeof pressState>): boolean {
+  if (!canDragComponent(state.hit)) return false;
+  const preview = currentPreview();
+  if (!preview) return false;
+  const element = componentElement(preview, state.hit.componentId);
+  if (!element) return false;
+  window.clearTimeout(state.timer);
+  state.dragElement = element;
+  state.dragging = true;
+  state.dragStartXPercent = readElementPercent(element, preview, "left");
+  state.dragStartYPercent = readElementPercent(element, preview, "top");
+  state.dragNextXPercent = state.dragStartXPercent;
+  state.dragNextYPercent = state.dragStartYPercent;
+  updateDragPreview(event, state);
+  return true;
+}
+
+function updateDragPreview(event: PointerEvent, state: NonNullable<typeof pressState>): void {
+  const preview = currentPreview();
+  const element = state.dragElement;
+  if (!preview || !element) return;
+  const rect = preview.getBoundingClientRect();
+  const dxPercent = ((event.clientX - state.startX) / Math.max(1, rect.width)) * 100;
+  const dyPercent = ((event.clientY - state.startY) / Math.max(1, rect.height)) * 100;
+  state.dragNextXPercent = clampPercent(state.dragStartXPercent + dxPercent);
+  state.dragNextYPercent = clampPercent(state.dragStartYPercent + dyPercent);
+  element.style.left = formatPercent(state.dragNextXPercent);
+  element.style.top = formatPercent(state.dragNextYPercent);
+}
+
+async function commitDragPosition(state: NonNullable<typeof pressState>): Promise<void> {
+  if (controlBusy) return;
+  const preview = currentPreview();
+  controlBusy = true;
+  try {
+    const response = await applyComponentControl(state.hit.componentId, "position", "position", {
+      x: Math.round(state.dragNextXPercent),
+      y: Math.round(state.dragNextYPercent),
+    });
+    applyTapResponse(response);
+    renderEvents(notificationRoot(), response.events);
+    if (hasInvalidAction(response.events)) {
+      const nextPreview = currentPreview();
+      if (nextPreview) animateInvalidTap(nextPreview);
+    }
+  } catch (error) {
+    if (preview) animateInvalidTap(preview);
+    showMessage(notificationRoot(), error instanceof Error ? error.message : "Drag failed.", "error");
+  } finally {
+    controlBusy = false;
+  }
 }
 
 async function handleCardTap(hit: CardHit): Promise<void> {
@@ -179,9 +254,6 @@ function openOverlay(overlay: ComponentOverlay, anchorX: number, anchorY: number
     onControl: (control, value) => {
       void applyControl(overlay.componentId, control.trait, control.control, value);
     },
-    onRandomize: () => {
-      void applyRandomize(overlay.componentId);
-    },
   });
 }
 
@@ -197,23 +269,6 @@ async function applyControl(componentId: string, trait: string, control: string,
     }
   } catch (error) {
     showMessage(notificationRoot(), error instanceof Error ? error.message : "Control change failed.", "error");
-  } finally {
-    controlBusy = false;
-  }
-}
-
-async function applyRandomize(componentId: string): Promise<void> {
-  if (controlBusy) return;
-  controlBusy = true;
-  try {
-    const response = await randomizeComponent(componentId);
-    applyTapResponse(response);
-    renderEvents(notificationRoot(), response.events);
-    if (response.overlay) {
-      openOverlay(response.overlay, window.innerWidth - 320, 110);
-    }
-  } catch (error) {
-    showMessage(notificationRoot(), error instanceof Error ? error.message : "Randomize failed.", "error");
   } finally {
     controlBusy = false;
   }
@@ -292,8 +347,45 @@ function renderSelection(gameState: GameState): void {
   element.style.outlineOffset = "3px";
 }
 
+function canDragComponent(hit: CardHit): boolean {
+  return hit.componentType === "shape" || hit.componentType === "textarea";
+}
+
+function componentElement(preview: HTMLElement, componentId: string): HTMLElement | null {
+  const selector = '[data-component-id="' + escapeSelectorValue(componentId) + '"]';
+  return preview.matches(selector) ? preview : preview.querySelector<HTMLElement>(selector);
+}
+
+function readElementPercent(element: HTMLElement, preview: HTMLElement, property: "left" | "top"): number {
+  const inlineValue = property === "left" ? element.style.left : element.style.top;
+  const parsed = parsePercent(inlineValue);
+  if (parsed !== null) return parsed;
+  const elementRect = element.getBoundingClientRect();
+  const previewRect = preview.getBoundingClientRect();
+  if (property === "left") {
+    return clampPercent(((elementRect.left - previewRect.left) / Math.max(1, previewRect.width)) * 100);
+  }
+  return clampPercent(((elementRect.top - previewRect.top) / Math.max(1, previewRect.height)) * 100);
+}
+
+function parsePercent(value: string): number | null {
+  const trimmed = String(value || "").trim();
+  if (!trimmed.endsWith("%")) return null;
+  const number = Number(trimmed.slice(0, -1));
+  return Number.isFinite(number) ? clampPercent(number) : null;
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value));
+}
+
+function formatPercent(value: number): string {
+  return value.toFixed(2).replace(/\.?0+$/, "") + "%";
+}
+
 function hasInvalidAction(events: CardEvent[]): boolean {
-  return events.some((event) => event.type === "invalidAction");
+  return (events || []).some((event) => event.type === "invalidAction");
 }
 
 function currentPreview(): HTMLElement | null {

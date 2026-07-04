@@ -37,7 +37,7 @@ export function initNotifications(): void {
 
 export function renderEvents(root: HTMLElement | null, events: CardEvent[]): void {
   if (!root) return;
-  events.forEach((event) => showEvent(root, event));
+  (events || []).forEach((event) => showEvent(root, event));
 }
 
 export function showMessage(root: HTMLElement | null, message: string, tone: NotificationTone = "info"): void {
@@ -48,6 +48,8 @@ export function showMessage(root: HTMLElement | null, message: string, tone: Not
 function showEvent(root: HTMLElement | null, event: CardEvent): void {
   switch (event.type) {
     case "fragmentApplied":
+      return;
+    case "controlChanged":
       return;
     case "xpGained":
       return;

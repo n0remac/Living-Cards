@@ -312,6 +312,37 @@ func (s *designerState) applyControlChange(componentID, trait, control string, v
 	if !controlUnlocked(progress, control) {
 		return s.invalidComponentResult(componentID, "Control is locked."), nil
 	}
+	if control == "preventRandomizing" {
+		next, err := readBoolValue(value)
+		if err != nil {
+			return tapResult{}, err
+		}
+		events := []CardEvent{}
+		if progress.PreventRandomizing != next {
+			progress.PreventRandomizing = next
+			s.gameState.ComponentProgress[componentID] = progress
+			var xpEvents []CardEvent
+			s.gameState, xpEvents = advanceInteraction(s.gameState, componentID, xpPerInteraction)
+			progress = s.gameState.ComponentProgress[componentID]
+			progress.PreventRandomizing = next
+			s.gameState.ComponentProgress[componentID] = progress
+			s.gameState = normalizeGameState(s.gameState)
+			events = append(events, CardEvent{
+				Type:          "controlChanged",
+				ComponentID:   componentID,
+				ComponentType: progress.ComponentType,
+				Control:       control,
+			})
+			events = append(events, xpEvents...)
+		}
+		return tapResult{
+			document:  cloneValue(s.document),
+			gameState: cloneValue(s.gameState),
+			library:   cloneLibrary(s.library),
+			events:    events,
+			overlay:   buildOverlay(s.document, s.gameState, componentID),
+		}, nil
+	}
 	before := documentSignature(s.document)
 	normalized, item, target, err := s.applyControlMutation(componentID, trait, control, value)
 	if err != nil {
@@ -523,6 +554,25 @@ func (s *designerState) applyTextareaControl(trait, control string, value json.R
 			return nil, cardcomponent.LibraryItem{}, "", err
 		}
 		part.PaddingPX = padding
+	case "x":
+		x, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.X = x
+	case "y":
+		y, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Y = y
+	case "position":
+		position, err := readPositionValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.X = position.X
+		part.Y = position.Y
 	case "borderWidthPx":
 		width, err := readIntValue(value)
 		if err != nil {
@@ -592,6 +642,13 @@ func (s *designerState) applyShapeControl(trait, control string, value json.RawM
 			return nil, cardcomponent.LibraryItem{}, "", err
 		}
 		part.Y = y
+	case "position":
+		position, err := readPositionValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.X = position.X
+		part.Y = position.Y
 	case "rotation":
 		rotation, err := readIntValue(value)
 		if err != nil {
@@ -948,6 +1005,44 @@ func readIntValue(raw json.RawMessage) (int, error) {
 		return value, nil
 	}
 	return 0, fmt.Errorf("value must be a number")
+}
+
+type positionValue struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+func readPositionValue(raw json.RawMessage) (positionValue, error) {
+	if len(raw) == 0 {
+		return positionValue{}, fmt.Errorf("value is required")
+	}
+	var value positionValue
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return positionValue{}, fmt.Errorf("value must include x and y")
+	}
+	return value, nil
+}
+
+func readBoolValue(raw json.RawMessage) (bool, error) {
+	if len(raw) == 0 {
+		return false, fmt.Errorf("value is required")
+	}
+	var value bool
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return value, nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		switch strings.ToLower(strings.TrimSpace(text)) {
+		case "true", "1", "yes", "on":
+			return true, nil
+		case "false", "0", "no", "off":
+			return false, nil
+		default:
+			return false, fmt.Errorf("value must be a boolean")
+		}
+	}
+	return false, fmt.Errorf("value must be a boolean")
 }
 
 func controlOptionValueAllowed(options []ControlOption, value string) bool {

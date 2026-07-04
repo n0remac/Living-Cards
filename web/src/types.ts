@@ -63,6 +63,7 @@ export interface ComponentProgress {
   level: number;
   interactions: number;
   randomTapEnabled: boolean;
+  preventRandomizing: boolean;
   overlayUnlocked: boolean;
   overlayOpened: boolean;
   unlockedTraits: string[];
@@ -99,7 +100,7 @@ export interface ControlOption {
 export interface ControlDescriptor {
   trait: string;
   control: string;
-  kind: "color" | "range" | "select" | "text";
+  kind: "checkbox" | "color" | "range" | "select" | "text";
   label: string;
   value?: unknown;
   options?: ControlOption[];
@@ -118,6 +119,7 @@ export interface ComponentOverlay {
 
 export type CardEvent =
   | { type: "fragmentApplied"; target?: ComponentTarget; componentId?: string; componentType?: ComponentType; trait?: string; control?: string }
+  | { type: "controlChanged"; componentId: string; componentType: ComponentType; control: string }
   | { type: "xpGained"; amount: number }
   | { type: "levelUp"; level: number }
   | { type: "componentLevelUp"; componentId: string; componentType: ComponentType; level: number }

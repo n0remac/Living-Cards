@@ -17,7 +17,6 @@ interface ComponentOverlayOptions {
   anchorX: number;
   anchorY: number;
   onControl: (control: ControlDescriptor, value: unknown) => void;
-  onRandomize: () => void;
 }
 
 export function openComponentOverlay(options: ComponentOverlayOptions): void {
@@ -48,15 +47,6 @@ export function openComponentOverlay(options: ComponentOverlayOptions): void {
   header.append(title, close);
   panel.appendChild(header);
 
-  if (options.overlay.randomizeEnabled) {
-    const randomize = document.createElement("button");
-    randomize.type = "button";
-    randomize.className = "h-9 rounded-md border border-emerald-300/30 bg-emerald-300 px-3 text-sm font-semibold text-zinc-950";
-    randomize.textContent = "Randomize";
-    randomize.addEventListener("click", options.onRandomize);
-    panel.appendChild(randomize);
-  }
-
   const controls = document.createElement("div");
   controls.className = "grid gap-3";
   options.overlay.controls.forEach((control) => {
@@ -72,6 +62,8 @@ export function closeComponentOverlay(root: HTMLElement | null): void {
 
 function renderControl(control: ControlDescriptor, onValue: (value: unknown) => void): HTMLElement {
   switch (control.kind) {
+    case "checkbox":
+      return renderCheckboxControl(control, onValue);
     case "color":
       return renderColorControl(control, onValue);
     case "range":
@@ -83,6 +75,23 @@ function renderControl(control: ControlDescriptor, onValue: (value: unknown) => 
     default:
       return document.createElement("div");
   }
+}
+
+function renderCheckboxControl(control: ControlDescriptor, onValue: (value: unknown) => void): HTMLElement {
+  const wrapper = document.createElement("label");
+  wrapper.className = "flex items-center justify-between gap-3 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 py-2 text-sm font-semibold text-[var(--app-fg)]";
+
+  const text = document.createElement("span");
+  text.textContent = control.label;
+
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.className = "h-4 w-4 accent-emerald-300";
+  input.checked = Boolean(control.value);
+  input.addEventListener("change", () => onValue(input.checked));
+
+  wrapper.append(text, input);
+  return wrapper;
 }
 
 function renderColorControl(control: ControlDescriptor, onValue: (value: unknown) => void): HTMLElement {

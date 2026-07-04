@@ -24,6 +24,8 @@ type Fragment struct {
 	Color           string `json:"color"`
 	Align           string `json:"align"`
 	Position        string `json:"position"`
+	X               int    `json:"x"`
+	Y               int    `json:"y"`
 	BackgroundColor string `json:"background_color"`
 	BorderColor     string `json:"border_color"`
 	BorderWidthPX   int    `json:"border_width_px"`
@@ -42,6 +44,8 @@ func DefaultFragment() Fragment {
 		Color:           "#cbd5e1",
 		Align:           "left",
 		Position:        "center",
+		X:               50,
+		Y:               50,
 		BackgroundColor: "rgba(255,255,255,0)",
 		BorderColor:     "rgba(255,255,255,0)",
 		BorderWidthPX:   0,
@@ -62,6 +66,8 @@ func Presets() []card.LibraryItem {
 			Color:      "#f8fafc",
 			Align:      "center",
 			Position:   "center",
+			X:          50,
+			Y:          50,
 			CSS:        "font-size: 42px; font-weight: 800; text-align: center; letter-spacing: 0.04em; text-transform: uppercase;",
 		}),
 		preset("seed-textarea-elegant-serif", "Elegant Serif", "Refined serif text treatment", Fragment{
@@ -73,6 +79,8 @@ func Presets() []card.LibraryItem {
 			Color:      "#e2e8f0",
 			Align:      "center",
 			Position:   "center",
+			X:          50,
+			Y:          50,
 			CSS:        "font-family: Georgia, serif; font-style: italic; line-height: 1.5; text-align: center;",
 		}),
 		preset("seed-textarea-bottom-caption", "Bottom Caption", "Small readable note near the bottom", Fragment{
@@ -84,6 +92,8 @@ func Presets() []card.LibraryItem {
 			Color:      "#cbd5e1",
 			Align:      "center",
 			Position:   "bottom-center",
+			X:          50,
+			Y:          86,
 			CSS:        "font-size: 15px; line-height: 1.45; text-align: center;",
 		}),
 	}
@@ -105,6 +115,8 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 				Color:           "#f8fafc",
 				Align:           "center",
 				Position:        "center",
+				X:               50,
+				Y:               50,
 				BackgroundColor: "rgba(15,23,42,0.24)",
 				BorderColor:     "rgba(255,255,255,0.16)",
 				BorderWidthPX:   1,
@@ -124,6 +136,8 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 				Color:           "#e2e8f0",
 				Align:           "center",
 				Position:        "bottom-center",
+				X:               50,
+				Y:               86,
 				BackgroundColor: "rgba(17,24,39,0.42)",
 				BorderColor:     "rgba(148,163,184,0.22)",
 				BorderWidthPX:   1,
@@ -143,6 +157,8 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 				Color:           "#1f2937",
 				Align:           "center",
 				Position:        "center",
+				X:               50,
+				Y:               50,
 				BackgroundColor: "rgba(248,250,252,0.72)",
 				BorderColor:     "rgba(31,41,55,0.18)",
 				BorderWidthPX:   1,
@@ -167,6 +183,8 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 				Color:           "#111827",
 				Align:           "center",
 				Position:        "top-center",
+				X:               50,
+				Y:               14,
 				BackgroundColor: "#f8fafc",
 				BorderColor:     "#111827",
 				BorderWidthPX:   2,
@@ -212,13 +230,14 @@ func Definition() card.Definition {
 				return card.Contribution{}, fmt.Errorf("invalid textarea fragment at %s: %s", issues[0].Path, issues[0].Message)
 			}
 			return card.Contribution{
-				Layers: []*godom.Node{RenderLayer(node.ID, part)},
+				Layers: []*godom.Node{RenderLayer(node.ID, generated.Fragment)},
 			}, nil
 		},
 	}
 }
 
 func RenderLayer(componentID string, part Fragment) *godom.Node {
+	part = normalizedFragment(part)
 	style := map[string]string{
 		"color":         part.Color,
 		"font-family":   fontFamilyCSS(part.FontFamily),
@@ -230,7 +249,11 @@ func RenderLayer(componentID string, part Fragment) *godom.Node {
 		"overflow-wrap": "anywhere",
 		"padding":       fmt.Sprintf("%dpx", part.PaddingPX),
 		"text-align":    part.Align,
+		"left":          fmt.Sprintf("%d%%", part.X),
+		"top":           fmt.Sprintf("%d%%", part.Y),
+		"transform":     "translate(-50%, -50%)",
 		"white-space":   "pre-wrap",
+		"width":         "calc(100% - 3rem)",
 		"z-index":       "1",
 	}
 	if strings.TrimSpace(part.BackgroundColor) != "" {
@@ -242,9 +265,6 @@ func RenderLayer(componentID string, part Fragment) *godom.Node {
 		style["border-width"] = fmt.Sprintf("%dpx", part.BorderWidthPX)
 	}
 	style["border-radius"] = fmt.Sprintf("%dpx", part.BorderRadiusPX)
-	for property, value := range positionCSS(part.Position) {
-		style[property] = value
-	}
 	for property, value := range fragment.CSSDeclarations(part.CSS, AllowedCSS()) {
 		style[property] = value
 	}
@@ -295,6 +315,9 @@ func NormalizeGenerated(generated *fragment.Generated[Fragment]) {
 	if generated.Fragment.Position == "" {
 		generated.Fragment.Position = defaults.Position
 	}
+	if generated.Fragment.X == 0 && generated.Fragment.Y == 0 {
+		generated.Fragment.X, generated.Fragment.Y = positionDefaults(generated.Fragment.Position)
+	}
 	if generated.Fragment.BackgroundColor == "" {
 		generated.Fragment.BackgroundColor = defaults.BackgroundColor
 	}
@@ -305,6 +328,8 @@ func NormalizeGenerated(generated *fragment.Generated[Fragment]) {
 		generated.Fragment.BorderRadiusPX = defaults.BorderRadiusPX
 	}
 	generated.Fragment.FontSizePX = clamp(generated.Fragment.FontSizePX, 10, 72)
+	generated.Fragment.X = clamp(generated.Fragment.X, 0, 100)
+	generated.Fragment.Y = clamp(generated.Fragment.Y, 0, 100)
 	generated.Fragment.BorderWidthPX = clamp(generated.Fragment.BorderWidthPX, 0, 12)
 	generated.Fragment.BorderRadiusPX = clamp(generated.Fragment.BorderRadiusPX, 0, 40)
 	generated.Fragment.PaddingPX = clamp(generated.Fragment.PaddingPX, 0, 32)
@@ -384,6 +409,22 @@ func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue 
 			Message: "position is not allowed",
 			Actual:  generated.Fragment.Position,
 			Allowed: AllowedPositions(),
+		})
+	}
+	if generated.Fragment.X < 0 || generated.Fragment.X > 100 {
+		issues = append(issues, fragment.Issue{
+			Path:    "fragment.x",
+			Code:    "out_of_range",
+			Message: "x must be between 0 and 100",
+			Actual:  generated.Fragment.X,
+		})
+	}
+	if generated.Fragment.Y < 0 || generated.Fragment.Y > 100 {
+		issues = append(issues, fragment.Issue{
+			Path:    "fragment.y",
+			Code:    "out_of_range",
+			Message: "y must be between 0 and 100",
+			Actual:  generated.Fragment.Y,
 		})
 	}
 	if color := strings.TrimSpace(generated.Fragment.BackgroundColor); color != "" && !fragment.IsAllowedColor(color) {
@@ -472,6 +513,16 @@ func AllowedPositions() []string {
 	return []string{"top-left", "top-center", "center", "bottom-left", "bottom-center"}
 }
 
+func normalizedFragment(part Fragment) Fragment {
+	generated := fragment.Generated[Fragment]{
+		Target:      Type,
+		Description: "Rendered textarea",
+		Fragment:    part,
+	}
+	NormalizeGenerated(&generated)
+	return generated.Fragment
+}
+
 func fontFamilyCSS(value string) string {
 	switch value {
 	case "serif":
@@ -485,18 +536,18 @@ func fontFamilyCSS(value string) string {
 	}
 }
 
-func positionCSS(value string) map[string]string {
+func positionDefaults(value string) (int, int) {
 	switch value {
 	case "top-left":
-		return map[string]string{"left": "1.5rem", "top": "1.5rem"}
+		return 12, 14
 	case "top-center":
-		return map[string]string{"left": "50%", "top": "1.5rem", "transform": "translateX(-50%)"}
+		return 50, 14
 	case "bottom-left":
-		return map[string]string{"bottom": "1.5rem", "left": "1.5rem"}
+		return 12, 86
 	case "bottom-center":
-		return map[string]string{"bottom": "1.5rem", "left": "50%", "transform": "translateX(-50%)"}
+		return 50, 86
 	default:
-		return map[string]string{"left": "50%", "top": "50%", "transform": "translate(-50%, -50%)", "width": "calc(100% - 3rem)"}
+		return 50, 50
 	}
 }
 

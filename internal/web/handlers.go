@@ -528,10 +528,17 @@ func writeTappedDraftCard(w http.ResponseWriter, result tapResult) {
 		GameState:       result.gameState,
 		AppliedFragment: result.appliedFragment,
 		PreviewHTML:     previewHTML,
-		Events:          result.events,
+		Events:          nonNilCardEvents(result.events),
 		Overlay:         result.overlay,
 		Library:         result.library,
 	})
+}
+
+func nonNilCardEvents(events []CardEvent) []CardEvent {
+	if len(events) == 0 {
+		return []CardEvent{}
+	}
+	return events
 }
 
 func renderDraftPreview(w http.ResponseWriter, document cardcomponent.Document, status int) (string, bool) {
