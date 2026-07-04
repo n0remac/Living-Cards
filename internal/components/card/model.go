@@ -16,9 +16,12 @@ const (
 	DefaultBackgroundID  = "background-primary"
 	DefaultBorderID      = "border-primary"
 	DefaultTextareaID    = "textarea-main"
+	DefaultShapeID       = "shape-1"
 	TypeBackground       = "background"
 	TypeBorder           = "border"
 	TypeTextarea         = "textarea"
+	TypeShape            = "shape"
+	defaultRootRaw       = `{"padding_px":24,"shadow":""}`
 	defaultBackgroundRaw = `{"background_color":"#111827","css":""}`
 	defaultBorderRaw     = `{"border_width_px":1,"border_radius_px":24,"border_color":"rgba(255,255,255,0.16)","css":""}`
 	defaultTextareaRaw   = `{"content":"Start designing this card.","font_family":"system","font_size_px":16,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"left","position":"center","css":""}`
@@ -44,6 +47,11 @@ type Node struct {
 	Type     string          `json:"type"`
 	Fragment json.RawMessage `json:"fragment,omitempty"`
 	Children []Node          `json:"children,omitempty"`
+}
+
+type RootFragment struct {
+	PaddingPX int    `json:"padding_px"`
+	Shadow    string `json:"shadow"`
 }
 
 type Contribution struct {
@@ -98,8 +106,9 @@ func DefaultDocument() Document {
 		CardID: DefaultCardID,
 		Name:   "Empty Card",
 		Root: Node{
-			ID:   DefaultRootID,
-			Type: Type,
+			ID:       DefaultRootID,
+			Type:     Type,
+			Fragment: json.RawMessage(defaultRootRaw),
 			Children: []Node{
 				{ID: DefaultBackgroundID, Type: TypeBackground, Fragment: json.RawMessage(defaultBackgroundRaw)},
 				{ID: DefaultBorderID, Type: TypeBorder, Fragment: json.RawMessage(defaultBorderRaw)},
@@ -116,10 +125,12 @@ func RenderDocument(document Document, registry *Registry) (*godom.Node, error) 
 	if document.Root.Type != Type {
 		return nil, fmt.Errorf("root component type must be %q", Type)
 	}
+	rootStyle := DecodeRootFragment(document.Root.Fragment)
 	shellStyle := map[string]string{
 		"background-color": "#111827",
 		"border":           "1px solid rgba(255,255,255,0.16)",
 		"border-radius":    "24px",
+		"padding":          fmt.Sprintf("%dpx", rootStyle.PaddingPX),
 	}
 	var layers []*godom.Node
 	for _, child := range document.Root.Children {
@@ -139,14 +150,45 @@ func RenderDocument(document Document, registry *Registry) (*godom.Node, error) 
 		}
 		layers = append(layers, contribution.Layers...)
 	}
+	if strings.TrimSpace(rootStyle.Shadow) != "" {
+		shellStyle["box-shadow"] = strings.TrimSpace(rootStyle.Shadow)
+	}
 	return godom.Div(
 		godom.Id("draft-card-preview"),
 		godom.Class("relative aspect-[5/7] w-full max-w-md overflow-hidden p-6 shadow-2xl transition-[background,border,border-radius,box-shadow] duration-200"),
 		godom.Attr("data-card-id", document.CardID),
 		godom.Attr("data-component-id", document.Root.ID),
+		godom.Attr("data-component-type", Type),
 		godom.Attr("style", styleString(shellStyle)),
 		godom.Ch(layers),
 	), nil
+}
+
+func DefaultRootFragment() RootFragment {
+	return RootFragment{
+		PaddingPX: 24,
+		Shadow:    "",
+	}
+}
+
+func DecodeRootFragment(raw json.RawMessage) RootFragment {
+	part := DefaultRootFragment()
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &part)
+	}
+	part.PaddingPX = clamp(part.PaddingPX, 0, 48)
+	part.Shadow = strings.TrimSpace(part.Shadow)
+	return part
+}
+
+func EncodeRootFragment(part RootFragment) json.RawMessage {
+	part.PaddingPX = clamp(part.PaddingPX, 0, 48)
+	part.Shadow = strings.TrimSpace(part.Shadow)
+	raw, err := json.Marshal(part)
+	if err != nil {
+		panic(err)
+	}
+	return raw
 }
 
 func DecodeFragment[T any](node Node) (T, error) {
@@ -178,4 +220,14 @@ func styleString(styles map[string]string) string {
 		out.WriteString("; ")
 	}
 	return strings.TrimSpace(out.String())
+}
+
+func clamp(value, min, max int) int {
+	if value < min {
+		return min
+	}
+	if value > max {
+		return max
+	}
+	return value
 }

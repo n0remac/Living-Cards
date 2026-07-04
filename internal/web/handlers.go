@@ -14,6 +14,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/components/shape"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
 	"github.com/n0remac/Living-Card/internal/fragment"
 )
@@ -135,8 +136,16 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 			tapDraftCardHandler(w, r, state)
 			return
 		}
+		if path == "interact" {
+			interactDraftCardHandler(w, r, state)
+			return
+		}
 		if path == "control-change" {
 			controlChangeDraftCardHandler(w, r, state)
+			return
+		}
+		if path == "randomize-component" {
+			randomizeDraftCardHandler(w, r, state)
 			return
 		}
 		if path == "library" {
@@ -209,11 +218,13 @@ type renderedDraftCardResponse struct {
 }
 
 type interactiveDraftCardResponse struct {
-	Document         cardcomponent.Document      `json:"document"`
-	GameState        GameState                   `json:"gameState"`
-	PreviewHTML      string                      `json:"preview_html"`
-	AvailableTargets []string                    `json:"availableTargets"`
-	Library          []cardcomponent.LibraryItem `json:"library"`
+	Document            cardcomponent.Document      `json:"document"`
+	GameState           GameState                   `json:"gameState"`
+	PreviewHTML         string                      `json:"preview_html"`
+	AvailableTargets    []string                    `json:"availableTargets"`
+	AvailableComponents []ComponentDescriptor       `json:"availableComponents"`
+	Overlay             *ComponentOverlay           `json:"overlay,omitempty"`
+	Library             []cardcomponent.LibraryItem `json:"library"`
 }
 
 type tapDraftCardRequest struct {
@@ -224,11 +235,29 @@ type tapDraftCardRequest struct {
 }
 
 type controlChangeDraftCardRequest struct {
-	Target         string `json:"target"`
-	Color          string `json:"color"`
-	SecondaryColor string `json:"secondaryColor,omitempty"`
-	Gradient       bool   `json:"gradient,omitempty"`
-	Angle          int    `json:"angle,omitempty"`
+	ComponentID    string          `json:"componentId,omitempty"`
+	Trait          string          `json:"trait,omitempty"`
+	Control        string          `json:"control,omitempty"`
+	Value          json.RawMessage `json:"value,omitempty"`
+	Target         string          `json:"target"`
+	Color          string          `json:"color"`
+	SecondaryColor string          `json:"secondaryColor,omitempty"`
+	Gradient       bool            `json:"gradient,omitempty"`
+	Angle          int             `json:"angle,omitempty"`
+}
+
+type interactDraftCardRequest struct {
+	ComponentID string  `json:"componentId"`
+	Trait       string  `json:"trait,omitempty"`
+	Interaction string  `json:"interaction"`
+	X           float64 `json:"x,omitempty"`
+	Y           float64 `json:"y,omitempty"`
+}
+
+type randomizeDraftCardRequest struct {
+	ComponentID string `json:"componentId"`
+	Trait       string `json:"trait,omitempty"`
+	Scope       string `json:"scope,omitempty"`
 }
 
 type tapDraftCardResponse struct {
@@ -237,6 +266,7 @@ type tapDraftCardResponse struct {
 	AppliedFragment any                         `json:"appliedFragment,omitempty"`
 	PreviewHTML     string                      `json:"preview_html"`
 	Events          []CardEvent                 `json:"events"`
+	Overlay         *ComponentOverlay           `json:"overlay,omitempty"`
 	Library         []cardcomponent.LibraryItem `json:"library"`
 }
 
@@ -298,6 +328,26 @@ func tapDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designer
 	writeTappedDraftCard(w, result)
 }
 
+func interactDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request interactDraftCardRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	result, err := state.interact(request.ComponentID, request.Trait, request.Interaction, request.X, request.Y)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeTappedDraftCard(w, result)
+}
+
 func controlChangeDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -310,12 +360,41 @@ func controlChangeDraftCardHandler(w http.ResponseWriter, r *http.Request, state
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	if strings.TrimSpace(request.ComponentID) != "" || strings.TrimSpace(request.Control) != "" || len(request.Value) > 0 {
+		result, err := state.applyControlChange(request.ComponentID, request.Trait, request.Control, request.Value)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeTappedDraftCard(w, result)
+		return
+	}
 	result, err := state.applyColorControl(request.Target, colorControlRequest{
 		Color:          request.Color,
 		SecondaryColor: request.SecondaryColor,
 		Gradient:       request.Gradient,
 		Angle:          request.Angle,
 	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeTappedDraftCard(w, result)
+}
+
+func randomizeDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request randomizeDraftCardRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	result, err := state.randomizeComponent(request.ComponentID, request.Trait, request.Scope)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -335,15 +414,15 @@ func validateGeneratedFragmentEnvelope(raw json.RawMessage) error {
 		}}, fragment.ErrInvalidModelOutput)
 	}
 	switch strings.TrimSpace(envelope.Target) {
-	case background.Type, border.Type, textarea.Type:
+	case background.Type, border.Type, textarea.Type, shape.Type:
 		return nil
 	default:
 		return fragment.NewInvalidModelOutputError(string(raw), []fragment.Issue{{
 			Path:    "target",
 			Code:    "invalid_target",
-			Message: "target must be background, border, or textarea",
+			Message: "target must be background, border, textarea, or shape",
 			Actual:  envelope.Target,
-			Allowed: []string{background.Type, border.Type, textarea.Type},
+			Allowed: []string{background.Type, border.Type, textarea.Type, shape.Type},
 		}}, fragment.ErrInvalidModelOutput)
 	}
 }
@@ -429,11 +508,13 @@ func writeInteractiveDraftCard(w http.ResponseWriter, document cardcomponent.Doc
 		return
 	}
 	writeJSONResponse(w, interactiveDraftCardResponse{
-		Document:         document,
-		GameState:        gameState,
-		PreviewHTML:      previewHTML,
-		AvailableTargets: append([]string(nil), gameState.UnlockedTargets...),
-		Library:          library,
+		Document:            document,
+		GameState:           gameState,
+		PreviewHTML:         previewHTML,
+		AvailableTargets:    append([]string(nil), gameState.UnlockedTargets...),
+		AvailableComponents: availableComponents(gameState, document),
+		Overlay:             buildOverlay(document, gameState, gameState.SelectedComponentID),
+		Library:             library,
 	})
 }
 
@@ -448,6 +529,7 @@ func writeTappedDraftCard(w http.ResponseWriter, result tapResult) {
 		AppliedFragment: result.appliedFragment,
 		PreviewHTML:     previewHTML,
 		Events:          result.events,
+		Overlay:         result.overlay,
 		Library:         result.library,
 	})
 }
@@ -479,13 +561,15 @@ func applyGeneratedFragmentToDocument(raw json.RawMessage, document *cardcompone
 		return applyDraftFragment(raw, border.Spec(), document)
 	case textarea.Type:
 		return applyDraftFragment(raw, textarea.Spec(), document)
+	case shape.Type:
+		return applyDraftFragment(raw, shape.Spec(), document)
 	default:
 		return nil, cardcomponent.LibraryItem{}, fragment.NewInvalidModelOutputError(string(raw), []fragment.Issue{{
 			Path:    "target",
 			Code:    "invalid_target",
-			Message: "target must be background, border, or textarea",
+			Message: "target must be background, border, textarea, or shape",
 			Actual:  envelope.Target,
-			Allowed: []string{background.Type, border.Type, textarea.Type},
+			Allowed: []string{background.Type, border.Type, textarea.Type, shape.Type},
 		}}, fragment.ErrInvalidModelOutput)
 	}
 }

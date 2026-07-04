@@ -1,9 +1,9 @@
-import { applyColorControl, ColorControlPayload, fetchInteractiveDraftCard, tapCardZone } from "../api";
+import { applyComponentControl, fetchInteractiveDraftCard, interactWithComponent, randomizeComponent } from "../api";
 import { byID } from "../dom";
 import { replacePreviewHTML } from "../designer/document";
-import type { CardDocument, CardEvent, ComponentTarget, GameState, InteractiveDraftCardResponse, TapCardResponse } from "../types";
+import type { CardDocument, CardEvent, ComponentOverlay, GameState, InteractiveDraftCardResponse, TapCardResponse } from "../types";
 import { animateCardTap, animateInvalidTap } from "./cardMotion";
-import { closeColorControls, openColorControls } from "./colorControls";
+import { closeComponentOverlay, openComponentOverlay } from "./componentControls";
 import { CardHit, hitTestCard } from "./hitTesting";
 import { initNotifications, renderEvents, showMessage } from "./overlays";
 
@@ -12,7 +12,7 @@ interface StageDeps {
 }
 
 let tapBusy = false;
-let colorBusy = false;
+let controlBusy = false;
 let latestDocument: CardDocument | null = null;
 let latestGameState: GameState | null = null;
 let pressState: {
@@ -54,6 +54,7 @@ function applyInteractiveResponse(response: InteractiveDraftCardResponse): void 
   latestGameState = response.gameState;
   replacePreviewHTML(response.preview_html);
   updateHUD(response.gameState);
+  renderSelection(response.gameState);
 }
 
 function bindTapLayer(): void {
@@ -81,7 +82,7 @@ function startPress(event: PointerEvent, workspace: HTMLElement): void {
   const preview = currentPreview();
   if (!preview) return;
   const hit = hitTestCard(event, preview);
-  closeColorControls(overlayRoot());
+  closeComponentOverlay(overlayRoot());
   cancelPress();
   workspace.setPointerCapture?.(event.pointerId);
   pressState = {
@@ -93,7 +94,7 @@ function startPress(event: PointerEvent, workspace: HTMLElement): void {
     timer: window.setTimeout(() => {
       if (!pressState || pressState.pointerID !== event.pointerId) return;
       pressState.longPressed = true;
-      openLongPressControls(hit);
+      void openLongPressControls(hit);
     }, longPressMS),
   };
 }
@@ -130,7 +131,7 @@ async function handleCardTap(hit: CardHit): Promise<void> {
   animateCardTap(preview, hit.x, hit.y);
   tapBusy = true;
   try {
-    const response = await tapCardZone(hit.target, hit.zone, hit.x, hit.y);
+    const response = await interactWithComponent(hit.componentId, hit.trait, "shortTap", hit.x, hit.y);
     applyTapResponse(response);
     const nextPreview = currentPreview();
     if (hasInvalidAction(response.events)) {
@@ -148,36 +149,73 @@ async function handleCardTap(hit: CardHit): Promise<void> {
   }
 }
 
-function openLongPressControls(hit: CardHit): void {
+async function openLongPressControls(hit: CardHit): Promise<void> {
+  if (tapBusy || document.body.classList.contains("designer-open")) return;
   const preview = currentPreview();
-  if (!targetSupportsColorControls(hit.target) || !colorControlsUnlocked(hit.target)) {
+  tapBusy = true;
+  try {
+    const response = await interactWithComponent(hit.componentId, hit.trait, "longPress", hit.x, hit.y);
+    applyTapResponse(response);
+    renderEvents(notificationRoot(), response.events);
+    if (response.overlay) {
+      openOverlay(response.overlay, hit.clientX, hit.clientY);
+      return;
+    }
     if (preview) animateInvalidTap(preview);
-    showMessage(notificationRoot(), lockedControlMessage(hit.target), "error");
-    return;
+  } catch (error) {
+    if (preview) animateInvalidTap(preview);
+    showMessage(notificationRoot(), error instanceof Error ? error.message : "Overlay failed.", "error");
+  } finally {
+    tapBusy = false;
   }
-  openColorControls({
+}
+
+function openOverlay(overlay: ComponentOverlay, anchorX: number, anchorY: number): void {
+  openComponentOverlay({
     root: overlayRoot(),
-    target: hit.target,
-    anchorX: hit.clientX,
-    anchorY: hit.clientY,
-    currentColor: currentColorForTarget(hit.target),
-    onColor: (control) => {
-      void applyColor(hit.target, control);
+    overlay,
+    anchorX,
+    anchorY,
+    onControl: (control, value) => {
+      void applyControl(overlay.componentId, control.trait, control.control, value);
+    },
+    onRandomize: () => {
+      void applyRandomize(overlay.componentId);
     },
   });
 }
 
-async function applyColor(target: ComponentTarget, control: ColorControlPayload): Promise<void> {
-  if (colorBusy) return;
-  colorBusy = true;
+async function applyControl(componentId: string, trait: string, control: string, value: unknown): Promise<void> {
+  if (controlBusy) return;
+  controlBusy = true;
   try {
-    const response = await applyColorControl(target, control);
+    const response = await applyComponentControl(componentId, trait, control, value);
     applyTapResponse(response);
     renderEvents(notificationRoot(), response.events);
+    if (response.overlay) {
+      openOverlay(response.overlay, window.innerWidth - 320, 110);
+    }
   } catch (error) {
-    showMessage(notificationRoot(), error instanceof Error ? error.message : "Color change failed.", "error");
+    showMessage(notificationRoot(), error instanceof Error ? error.message : "Control change failed.", "error");
   } finally {
-    colorBusy = false;
+    controlBusy = false;
+  }
+}
+
+async function applyRandomize(componentId: string): Promise<void> {
+  if (controlBusy) return;
+  controlBusy = true;
+  try {
+    const response = await randomizeComponent(componentId);
+    applyTapResponse(response);
+    renderEvents(notificationRoot(), response.events);
+    if (response.overlay) {
+      openOverlay(response.overlay, window.innerWidth - 320, 110);
+    }
+  } catch (error) {
+    showMessage(notificationRoot(), error instanceof Error ? error.message : "Randomize failed.", "error");
+  } finally {
+    controlBusy = false;
   }
 }
 
@@ -186,6 +224,7 @@ function applyTapResponse(response: TapCardResponse): void {
   latestGameState = response.gameState;
   replacePreviewHTML(response.preview_html);
   updateHUD(response.gameState);
+  renderSelection(response.gameState);
 }
 
 function bindDesignerOverlay(): void {
@@ -222,52 +261,35 @@ function updateHUD(gameState: GameState): void {
   const xp = byID<HTMLSpanElement>("card-xp");
   const taps = byID<HTMLSpanElement>("card-taps");
   const bar = byID<HTMLDivElement>("card-xp-bar");
-  if (level) level.textContent = "Lv " + gameState.level;
-  if (xp) xp.textContent = gameState.xp + " XP";
-  if (taps) taps.textContent = gameState.tapCount + " taps";
+  const globalLevel = gameState.globalLevel || gameState.level || 1;
+  const totalXP = gameState.totalXp ?? gameState.xp ?? 0;
+  const totalInteractions = gameState.totalInteractions ?? gameState.tapCount ?? 0;
+  if (level) level.textContent = "Lv " + globalLevel;
+  if (xp) xp.textContent = totalXP + " XP";
+  if (taps) taps.textContent = totalInteractions + " actions";
   if (bar) {
-    const currentLevelStart = Math.max(0, gameState.level - 1) * 5;
-    const progress = Math.max(0, Math.min(5, gameState.xp - currentLevelStart));
+    const currentLevelStart = Math.max(0, globalLevel - 1) * 5;
+    const progress = Math.max(0, Math.min(5, totalXP - currentLevelStart));
     bar.style.width = String((progress / 5) * 100) + "%";
   }
 }
 
-function colorControlsUnlocked(target: ComponentTarget): boolean {
-  if (!latestGameState) return false;
-  const modes = latestGameState.targetProgress[target]?.unlockedModes || [];
-  return modes.includes("simpleControls");
-}
-
-function targetSupportsColorControls(target: ComponentTarget): boolean {
-  return target === "background" || target === "border";
-}
-
-function lockedControlMessage(target: ComponentTarget): string {
-  if (targetSupportsColorControls(target)) {
-    return "Color controls unlock at level 5.";
-  }
-  return "Color controls are locked.";
-}
-
-function currentColorForTarget(target: ComponentTarget): string {
-  const node = latestDocument ? findNode(latestDocument.root, target) : null;
-  const fragment = node?.fragment || {};
-  if (target === "background") {
-    return typeof fragment.background_color === "string" ? fragment.background_color : "#22c55e";
-  }
-  if (target === "border") {
-    return typeof fragment.border_color === "string" ? fragment.border_color : "#22c55e";
-  }
-  return "#22c55e";
-}
-
-function findNode(node: CardDocument["root"], target: ComponentTarget): CardDocument["root"] | null {
-  if (node.type === target) return node;
-  for (const child of node.children || []) {
-    const match = findNode(child, target);
-    if (match) return match;
-  }
-  return null;
+function renderSelection(gameState: GameState): void {
+  const preview = currentPreview();
+  if (!preview) return;
+  preview.querySelectorAll<HTMLElement>("[data-selected-component]").forEach((element) => {
+    element.removeAttribute("data-selected-component");
+    element.style.outline = "";
+    element.style.outlineOffset = "";
+  });
+  const selected = gameState.selectedComponentId;
+  if (!selected) return;
+  const selector = '[data-component-id="' + escapeSelectorValue(selected) + '"]';
+  const element = preview.matches(selector) ? preview : preview.querySelector<HTMLElement>(selector);
+  if (!element) return;
+  element.dataset.selectedComponent = "true";
+  element.style.outline = "2px solid rgba(52, 211, 153, 0.86)";
+  element.style.outlineOffset = "3px";
 }
 
 function hasInvalidAction(events: CardEvent[]): boolean {
@@ -284,4 +306,8 @@ function overlayRoot(): HTMLElement | null {
 
 function notificationRoot(): HTMLElement | null {
   return byID<HTMLElement>("stage-notification-section");
+}
+
+function escapeSelectorValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }

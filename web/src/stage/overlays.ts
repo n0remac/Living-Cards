@@ -53,6 +53,16 @@ function showEvent(root: HTMLElement | null, event: CardEvent): void {
       return;
     case "levelUp":
       return;
+    case "componentLevelUp":
+      showMessage(root, labelForComponent(event.componentType) + " level " + event.level);
+      return;
+    case "componentUnlocked":
+      showMessage(root, event.message || labelForComponent(event.componentType) + " unlocked");
+      return;
+    case "componentSelected":
+      return;
+    case "overlayOpened":
+      return;
     case "targetUnlocked":
       showMessage(root, labelForTarget(event.target) + " unlocked");
       return;
@@ -155,6 +165,17 @@ function labelForTarget(target: string): string {
       return "Border";
     case "textarea":
       return "Text";
+    default:
+      return "Card";
+  }
+}
+
+function labelForComponent(componentType: string): string {
+  switch (componentType) {
+    case "textarea":
+      return "Text";
+    case "shape":
+      return "Shape";
     default:
       return "Card";
   }

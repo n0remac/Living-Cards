@@ -59,11 +59,53 @@ export async function tapCardZone(target: ComponentTarget, zone: CardHitZone, x:
   return await response.json() as TapCardResponse;
 }
 
+export async function interactWithComponent(
+  componentId: string,
+  trait: string,
+  interaction: "shortTap" | "longPress",
+  x: number,
+  y: number,
+): Promise<TapCardResponse> {
+  const response = await fetch("/api/draft-card/interact", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ componentId, trait, interaction, x, y }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to apply interaction."));
+  }
+  return await response.json() as TapCardResponse;
+}
+
 export interface ColorControlPayload {
   color: string;
   secondaryColor?: string;
   gradient?: boolean;
   angle?: number;
+}
+
+export async function applyComponentControl(componentId: string, trait: string, control: string, value: unknown): Promise<TapCardResponse> {
+  const response = await fetch("/api/draft-card/control-change", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ componentId, trait, control, value }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to apply control."));
+  }
+  return await response.json() as TapCardResponse;
+}
+
+export async function randomizeComponent(componentId: string, trait = "", scope = "unlockedTraits"): Promise<TapCardResponse> {
+  const response = await fetch("/api/draft-card/randomize-component", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ componentId, trait, scope }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to randomize component."));
+  }
+  return await response.json() as TapCardResponse;
 }
 
 export async function applyColorControl(target: ComponentTarget, control: ColorControlPayload): Promise<TapCardResponse> {

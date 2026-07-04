@@ -255,8 +255,14 @@ func TestTapDraftCardUnlocksSimpleControlsAtLevelFive(t *testing.T) {
 		Events    []CardEvent `json:"events"`
 	}
 	for index := 0; index < 20; index++ {
+		target := "border"
+		x := "0.05"
+		if index >= 12 {
+			target = "textarea"
+			x = "0.5"
+		}
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"`+target+`","zone":"`+target+`","x":`+x+`,"y":0.5}`))
 		request.Header.Set("Content-Type", "application/json")
 		mux.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {
@@ -353,7 +359,7 @@ func TestControlChangeDraftCardAppliesUnlockedColors(t *testing.T) {
 			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 				t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
 			}
-			if payload.GameState.Level < 5 || payload.GameState.TapCount != 20 {
+			if payload.GameState.Level < 5 || payload.GameState.TapCount != 21 {
 				t.Fatalf("gameState = %#v", payload.GameState)
 			}
 			if !strings.Contains(string(payload.AppliedFragment), test.field) {
@@ -477,6 +483,168 @@ func TestControlChangeDraftCardRejectsInvalidGradient(t *testing.T) {
 	mux.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestInteractLongPressAwardsXPAndOpensOverlayOnce(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	for index := 0; index < 6; index++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("tap %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/interact", strings.NewReader(`{"componentId":"card-root","trait":"border","interaction":"longPress","x":0.05,"y":0.5}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		GameState GameState         `json:"gameState"`
+		Events    []CardEvent       `json:"events"`
+		Overlay   *ComponentOverlay `json:"overlay"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if payload.GameState.TotalXP != 8 || !payload.GameState.ComponentProgress["card-root"].OverlayOpened {
+		t.Fatalf("gameState = %#v", payload.GameState)
+	}
+	if payload.Overlay == nil || payload.Overlay.ComponentID != "card-root" {
+		t.Fatalf("overlay = %#v", payload.Overlay)
+	}
+	if !hasEvent(payload.Events, "overlayOpened", "") {
+		t.Fatalf("events = %#v, want overlayOpened", payload.Events)
+	}
+}
+
+func TestMatureComponentShortTapSelectsWithoutRandomXP(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	for index := 0; index < 12; index++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("tap %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/interact", strings.NewReader(`{"componentId":"card-root","trait":"background","interaction":"shortTap","x":0.5,"y":0.5}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		GameState       GameState       `json:"gameState"`
+		AppliedFragment json.RawMessage `json:"appliedFragment"`
+		Events          []CardEvent     `json:"events"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if payload.GameState.TotalXP != 12 || payload.GameState.ComponentProgress["card-root"].RandomTapEnabled {
+		t.Fatalf("gameState = %#v", payload.GameState)
+	}
+	if len(payload.AppliedFragment) != 0 {
+		t.Fatalf("appliedFragment = %s, want omitted", string(payload.AppliedFragment))
+	}
+	if hasEvent(payload.Events, "xpGained", "") {
+		t.Fatalf("events = %#v, mature selection should not grant XP", payload.Events)
+	}
+}
+
+func TestGenericControlChangeAppliesRootPaddingAndGrantsXP(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	levelDraftCardToFive(t, mux)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"componentId":"card-root","trait":"padding","control":"paddingPx","value":32}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		GameState       GameState       `json:"gameState"`
+		AppliedFragment json.RawMessage `json:"appliedFragment"`
+		PreviewHTML     string          `json:"preview_html"`
+		Events          []CardEvent     `json:"events"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if payload.GameState.TotalXP != 21 || !strings.Contains(payload.PreviewHTML, `padding: 32px`) {
+		t.Fatalf("payload = %#v preview=%s", payload.GameState, payload.PreviewHTML)
+	}
+	if !strings.Contains(string(payload.AppliedFragment), `"target":"card"`) {
+		t.Fatalf("appliedFragment = %s", string(payload.AppliedFragment))
+	}
+	if !hasEvent(payload.Events, "xpGained", "") {
+		t.Fatalf("events = %#v, want xpGained", payload.Events)
+	}
+}
+
+func TestShapeUnlockCreatesInitialShapeAndCanRandomize(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	levelDraftCardToSeven(t, mux)
+
+	interactiveRecorder := httptest.NewRecorder()
+	mux.ServeHTTP(interactiveRecorder, httptest.NewRequest(http.MethodGet, "/api/draft-card/interactive", nil))
+	if interactiveRecorder.Code != http.StatusOK {
+		t.Fatalf("interactive status = %d, want 200 body=%s", interactiveRecorder.Code, interactiveRecorder.Body.String())
+	}
+	var interactive struct {
+		GameState           GameState             `json:"gameState"`
+		PreviewHTML         string                `json:"preview_html"`
+		AvailableComponents []ComponentDescriptor `json:"availableComponents"`
+	}
+	if err := json.Unmarshal(interactiveRecorder.Body.Bytes(), &interactive); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, interactiveRecorder.Body.String())
+	}
+	if interactive.GameState.GlobalLevel < 7 || !strings.Contains(interactive.PreviewHTML, `data-component-id="shape-1"`) {
+		t.Fatalf("interactive = %#v preview=%s", interactive.GameState, interactive.PreviewHTML)
+	}
+	if !hasComponent(interactive.AvailableComponents, "shape-1") {
+		t.Fatalf("availableComponents = %#v, want shape-1", interactive.AvailableComponents)
+	}
+
+	randomizeRecorder := httptest.NewRecorder()
+	randomizeRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/randomize-component", strings.NewReader(`{"componentId":"shape-1","scope":"unlockedTraits"}`))
+	randomizeRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(randomizeRecorder, randomizeRequest)
+	if randomizeRecorder.Code != http.StatusOK {
+		t.Fatalf("randomize status = %d, want 200 body=%s", randomizeRecorder.Code, randomizeRecorder.Body.String())
+	}
+	var randomizePayload struct {
+		GameState       GameState       `json:"gameState"`
+		AppliedFragment json.RawMessage `json:"appliedFragment"`
+		Events          []CardEvent     `json:"events"`
+	}
+	if err := json.Unmarshal(randomizeRecorder.Body.Bytes(), &randomizePayload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, randomizeRecorder.Body.String())
+	}
+	if !strings.Contains(string(randomizePayload.AppliedFragment), `"target":"shape"`) {
+		t.Fatalf("appliedFragment = %s", string(randomizePayload.AppliedFragment))
+	}
+	if randomizePayload.GameState.ComponentProgress["shape-1"].XP != 1 || !hasEvent(randomizePayload.Events, "xpGained", "") {
+		t.Fatalf("randomize payload = %#v events=%#v", randomizePayload.GameState.ComponentProgress["shape-1"], randomizePayload.Events)
 	}
 }
 
@@ -1107,16 +1275,49 @@ func hasEvent(events []CardEvent, eventType, target string) bool {
 	return false
 }
 
+func hasComponent(components []ComponentDescriptor, componentID string) bool {
+	for _, component := range components {
+		if component.ComponentID == componentID {
+			return true
+		}
+	}
+	return false
+}
+
 func levelDraftCardToFive(t *testing.T, mux *http.ServeMux) {
 	t.Helper()
 
-	for index := 0; index < 20; index++ {
+	for index := 0; index < 12; index++ {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
 		request.Header.Set("Content-Type", "application/json")
 		mux.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("tap %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
+		}
+	}
+	for index := 0; index < 8; index++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"textarea","zone":"textarea","x":0.5,"y":0.5}`))
+		request.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("textarea tap %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
+func levelDraftCardToSeven(t *testing.T, mux *http.ServeMux) {
+	t.Helper()
+
+	levelDraftCardToFive(t, mux)
+	for index := 0; index < 9; index++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/interact", strings.NewReader(`{"componentId":"card-root","trait":"border","interaction":"longPress","x":0.05,"y":0.5}`))
+		request.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("long press %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
 		}
 	}
 }

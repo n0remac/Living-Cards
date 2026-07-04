@@ -3,6 +3,7 @@ package textarea
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"sort"
 	"strings"
 
@@ -15,28 +16,38 @@ import (
 const Type = "textarea"
 
 type Fragment struct {
-	Content    string `json:"content"`
-	FontFamily string `json:"font_family"`
-	FontSizePX int    `json:"font_size_px"`
-	FontWeight int    `json:"font_weight"`
-	FontStyle  string `json:"font_style"`
-	Color      string `json:"color"`
-	Align      string `json:"align"`
-	Position   string `json:"position"`
-	CSS        string `json:"css"`
+	Content         string `json:"content"`
+	FontFamily      string `json:"font_family"`
+	FontSizePX      int    `json:"font_size_px"`
+	FontWeight      int    `json:"font_weight"`
+	FontStyle       string `json:"font_style"`
+	Color           string `json:"color"`
+	Align           string `json:"align"`
+	Position        string `json:"position"`
+	BackgroundColor string `json:"background_color"`
+	BorderColor     string `json:"border_color"`
+	BorderWidthPX   int    `json:"border_width_px"`
+	BorderRadiusPX  int    `json:"border_radius_px"`
+	PaddingPX       int    `json:"padding_px"`
+	CSS             string `json:"css"`
 }
 
 func DefaultFragment() Fragment {
 	return Fragment{
-		Content:    "Start designing this card.",
-		FontFamily: "system",
-		FontSizePX: 16,
-		FontWeight: 400,
-		FontStyle:  "normal",
-		Color:      "#cbd5e1",
-		Align:      "left",
-		Position:   "center",
-		CSS:        "",
+		Content:         "Start designing this card.",
+		FontFamily:      "system",
+		FontSizePX:      16,
+		FontWeight:      400,
+		FontStyle:       "normal",
+		Color:           "#cbd5e1",
+		Align:           "left",
+		Position:        "center",
+		BackgroundColor: "rgba(255,255,255,0)",
+		BorderColor:     "rgba(255,255,255,0)",
+		BorderWidthPX:   0,
+		BorderRadiusPX:  12,
+		PaddingPX:       0,
+		CSS:             "",
 	}
 }
 
@@ -75,6 +86,101 @@ func Presets() []card.LibraryItem {
 			Position:   "bottom-center",
 			CSS:        "font-size: 15px; line-height: 1.45; text-align: center;",
 		}),
+	}
+}
+
+func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
+	options := []struct {
+		description string
+		part        Fragment
+	}{
+		{
+			description: "A compact centered title treatment.",
+			part: Fragment{
+				Content:         "Living Card",
+				FontFamily:      "display",
+				FontSizePX:      34,
+				FontWeight:      800,
+				FontStyle:       "normal",
+				Color:           "#f8fafc",
+				Align:           "center",
+				Position:        "center",
+				BackgroundColor: "rgba(15,23,42,0.24)",
+				BorderColor:     "rgba(255,255,255,0.16)",
+				BorderWidthPX:   1,
+				BorderRadiusPX:  16,
+				PaddingPX:       14,
+				CSS:             "text-align: center;",
+			},
+		},
+		{
+			description: "A small bottom caption with quiet contrast.",
+			part: Fragment{
+				Content:         "Tap, tune, and lock in the design.",
+				FontFamily:      "system",
+				FontSizePX:      15,
+				FontWeight:      500,
+				FontStyle:       "normal",
+				Color:           "#e2e8f0",
+				Align:           "center",
+				Position:        "bottom-center",
+				BackgroundColor: "rgba(17,24,39,0.42)",
+				BorderColor:     "rgba(148,163,184,0.22)",
+				BorderWidthPX:   1,
+				BorderRadiusPX:  14,
+				PaddingPX:       12,
+				CSS:             "line-height: 1.4; text-align: center;",
+			},
+		},
+		{
+			description: "A refined serif note in the center.",
+			part: Fragment{
+				Content:         "A small surface for deliberate edits.",
+				FontFamily:      "serif",
+				FontSizePX:      19,
+				FontWeight:      400,
+				FontStyle:       "italic",
+				Color:           "#1f2937",
+				Align:           "center",
+				Position:        "center",
+				BackgroundColor: "rgba(248,250,252,0.72)",
+				BorderColor:     "rgba(31,41,55,0.18)",
+				BorderWidthPX:   1,
+				BorderRadiusPX:  18,
+				PaddingPX:       16,
+				CSS:             "font-family: Georgia, serif; line-height: 1.5; text-align: center;",
+			},
+		},
+	}
+	if level > 2 {
+		options = append(options, struct {
+			description string
+			part        Fragment
+		}{
+			description: "A bold editorial text panel.",
+			part: Fragment{
+				Content:         "DETERMINISTIC",
+				FontFamily:      "mono",
+				FontSizePX:      24,
+				FontWeight:      700,
+				FontStyle:       "normal",
+				Color:           "#111827",
+				Align:           "center",
+				Position:        "top-center",
+				BackgroundColor: "#f8fafc",
+				BorderColor:     "#111827",
+				BorderWidthPX:   2,
+				BorderRadiusPX:  10,
+				PaddingPX:       12,
+				CSS:             "letter-spacing: 0.04em; text-align: center; text-transform: uppercase;",
+			},
+		})
+	}
+	pick := options[rand.New(rand.NewSource(seed)).Intn(len(options))]
+	return fragment.Generated[Fragment]{
+		Target:      Type,
+		Description: pick.description,
+		Fragment:    pick.part,
 	}
 }
 
@@ -122,10 +228,20 @@ func RenderLayer(componentID string, part Fragment) *godom.Node {
 		"line-height":   "1.35",
 		"max-width":     "82%",
 		"overflow-wrap": "anywhere",
+		"padding":       fmt.Sprintf("%dpx", part.PaddingPX),
 		"text-align":    part.Align,
 		"white-space":   "pre-wrap",
 		"z-index":       "1",
 	}
+	if strings.TrimSpace(part.BackgroundColor) != "" {
+		style["background-color"] = part.BackgroundColor
+	}
+	if part.BorderWidthPX > 0 {
+		style["border"] = fmt.Sprintf("%dpx solid %s", part.BorderWidthPX, part.BorderColor)
+		style["border-color"] = part.BorderColor
+		style["border-width"] = fmt.Sprintf("%dpx", part.BorderWidthPX)
+	}
+	style["border-radius"] = fmt.Sprintf("%dpx", part.BorderRadiusPX)
 	for property, value := range positionCSS(part.Position) {
 		style[property] = value
 	}
@@ -154,8 +270,44 @@ func NormalizeGenerated(generated *fragment.Generated[Fragment]) {
 	generated.Fragment.Color = strings.TrimSpace(generated.Fragment.Color)
 	generated.Fragment.Align = strings.TrimSpace(generated.Fragment.Align)
 	generated.Fragment.Position = strings.TrimSpace(generated.Fragment.Position)
+	generated.Fragment.BackgroundColor = strings.TrimSpace(generated.Fragment.BackgroundColor)
+	generated.Fragment.BorderColor = strings.TrimSpace(generated.Fragment.BorderColor)
 	generated.Fragment.CSS = strings.TrimSpace(generated.Fragment.CSS)
+	defaults := DefaultFragment()
+	if generated.Fragment.FontFamily == "" {
+		generated.Fragment.FontFamily = defaults.FontFamily
+	}
+	if generated.Fragment.FontSizePX == 0 {
+		generated.Fragment.FontSizePX = defaults.FontSizePX
+	}
+	if generated.Fragment.FontWeight == 0 {
+		generated.Fragment.FontWeight = defaults.FontWeight
+	}
+	if generated.Fragment.FontStyle == "" {
+		generated.Fragment.FontStyle = defaults.FontStyle
+	}
+	if generated.Fragment.Color == "" {
+		generated.Fragment.Color = defaults.Color
+	}
+	if generated.Fragment.Align == "" {
+		generated.Fragment.Align = defaults.Align
+	}
+	if generated.Fragment.Position == "" {
+		generated.Fragment.Position = defaults.Position
+	}
+	if generated.Fragment.BackgroundColor == "" {
+		generated.Fragment.BackgroundColor = defaults.BackgroundColor
+	}
+	if generated.Fragment.BorderColor == "" {
+		generated.Fragment.BorderColor = defaults.BorderColor
+	}
+	if generated.Fragment.BorderRadiusPX == 0 {
+		generated.Fragment.BorderRadiusPX = defaults.BorderRadiusPX
+	}
 	generated.Fragment.FontSizePX = clamp(generated.Fragment.FontSizePX, 10, 72)
+	generated.Fragment.BorderWidthPX = clamp(generated.Fragment.BorderWidthPX, 0, 12)
+	generated.Fragment.BorderRadiusPX = clamp(generated.Fragment.BorderRadiusPX, 0, 40)
+	generated.Fragment.PaddingPX = clamp(generated.Fragment.PaddingPX, 0, 32)
 }
 
 func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue {
@@ -234,22 +386,69 @@ func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue 
 			Allowed: AllowedPositions(),
 		})
 	}
+	if color := strings.TrimSpace(generated.Fragment.BackgroundColor); color != "" && !fragment.IsAllowedColor(color) {
+		issues = append(issues, fragment.Issue{
+			Path:    "fragment.background_color",
+			Code:    "invalid_color",
+			Message: "background_color must be a hex, rgb, rgba, hsl, or hsla color",
+			Actual:  color,
+		})
+	}
+	if color := strings.TrimSpace(generated.Fragment.BorderColor); color != "" && !fragment.IsAllowedColor(color) {
+		issues = append(issues, fragment.Issue{
+			Path:    "fragment.border_color",
+			Code:    "invalid_color",
+			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
+			Actual:  color,
+		})
+	}
+	if generated.Fragment.BorderWidthPX < 0 || generated.Fragment.BorderWidthPX > 12 {
+		issues = append(issues, fragment.Issue{
+			Path:    "fragment.border_width_px",
+			Code:    "out_of_range",
+			Message: "border_width_px must be between 0 and 12",
+			Actual:  generated.Fragment.BorderWidthPX,
+		})
+	}
+	if generated.Fragment.BorderRadiusPX < 0 || generated.Fragment.BorderRadiusPX > 40 {
+		issues = append(issues, fragment.Issue{
+			Path:    "fragment.border_radius_px",
+			Code:    "out_of_range",
+			Message: "border_radius_px must be between 0 and 40",
+			Actual:  generated.Fragment.BorderRadiusPX,
+		})
+	}
+	if generated.Fragment.PaddingPX < 0 || generated.Fragment.PaddingPX > 32 {
+		issues = append(issues, fragment.Issue{
+			Path:    "fragment.padding_px",
+			Code:    "out_of_range",
+			Message: "padding_px must be between 0 and 32",
+			Actual:  generated.Fragment.PaddingPX,
+		})
+	}
 	issues = append(issues, fragment.ValidateInlineCSS("fragment.css", generated.Fragment.CSS, AllowedCSS())...)
 	return issues
 }
 
 func AllowedCSS() map[string]struct{} {
 	return map[string]struct{}{
-		"color":          {},
-		"font-family":    {},
-		"font-size":      {},
-		"font-style":     {},
-		"font-weight":    {},
-		"letter-spacing": {},
-		"line-height":    {},
-		"text-align":     {},
-		"text-shadow":    {},
-		"text-transform": {},
+		"background-color": {},
+		"border":           {},
+		"border-color":     {},
+		"border-radius":    {},
+		"border-width":     {},
+		"box-shadow":       {},
+		"color":            {},
+		"font-family":      {},
+		"font-size":        {},
+		"font-style":       {},
+		"font-weight":      {},
+		"letter-spacing":   {},
+		"line-height":      {},
+		"padding":          {},
+		"text-align":       {},
+		"text-shadow":      {},
+		"text-transform":   {},
 	}
 }
 

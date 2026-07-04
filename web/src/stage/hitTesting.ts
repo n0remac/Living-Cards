@@ -1,10 +1,13 @@
-import type { CardHitZone, ComponentTarget } from "../types";
+import type { CardHitZone, ComponentTarget, ComponentType } from "../types";
 
 const borderBandPX = 24;
 
 export interface CardHit {
   target: ComponentTarget;
   zone: CardHitZone;
+  componentId: string;
+  componentType: ComponentType;
+  trait: string;
   x: number;
   y: number;
   clientX: number;
@@ -24,15 +27,56 @@ export function hitTestCard(event: PointerEvent, preview: HTMLElement): CardHit 
     rect.height - localY <= borderBandPX;
 
   if (inBorderBand) {
-    return { target: "border", zone: "border", x, y, clientX: event.clientX, clientY: event.clientY };
+    return cardRootHit("border", "border", x, y, event);
   }
 
   const target = event.target instanceof Element ? event.target : null;
-  if (target?.closest('[data-component-type="textarea"]')) {
-    return { target: "textarea", zone: "textarea", x, y, clientX: event.clientX, clientY: event.clientY };
+  const component = target?.closest<HTMLElement>("[data-component-id][data-component-type]");
+  const componentType = component?.dataset.componentType as ComponentType | undefined;
+  if (component && componentType === "shape") {
+    return componentHit(component, "shape", "shape", "geometry", x, y, event);
+  }
+  if (component && componentType === "textarea") {
+    return componentHit(component, "textarea", "textarea", "text", x, y, event);
   }
 
-  return { target: "background", zone: "background", x, y, clientX: event.clientX, clientY: event.clientY };
+  return cardRootHit("background", "background", x, y, event);
+}
+
+function cardRootHit(target: ComponentTarget, zone: CardHitZone, x: number, y: number, event: PointerEvent): CardHit {
+  return {
+    target,
+    zone,
+    componentId: "card-root",
+    componentType: "card",
+    trait: target === "border" ? "border" : "background",
+    x,
+    y,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  };
+}
+
+function componentHit(
+  element: HTMLElement,
+  target: ComponentTarget,
+  zone: CardHitZone,
+  trait: string,
+  x: number,
+  y: number,
+  event: PointerEvent,
+): CardHit {
+  return {
+    target,
+    zone,
+    componentId: element.dataset.componentId || "",
+    componentType: (element.dataset.componentType || target) as ComponentType,
+    trait,
+    x,
+    y,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  };
 }
 
 function clamp(value: number): number {

@@ -3,6 +3,8 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/components/shape"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
 )
 
@@ -48,6 +51,7 @@ func (s *designerState) interactiveSnapshot() (cardcomponent.Document, GameState
 	defer s.mu.Unlock()
 
 	s.gameState = normalizeGameState(s.gameState)
+	s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
 	return cloneValue(s.document), cloneValue(s.gameState), cloneLibrary(s.library)
 }
 
@@ -76,52 +80,8 @@ func (s *designerState) apply(raw json.RawMessage) (cardcomponent.Document, any,
 }
 
 func (s *designerState) tap(target, zone string, x, y float64) (tapResult, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	_ = x
-	_ = y
-	s.gameState = normalizeGameState(s.gameState)
-	target = canonicalTapTarget(target, zone)
-	if !isKnownTapTarget(target) {
-		return tapResult{}, fmt.Errorf("target %q is not available", target)
-	}
-	if !targetUnlocked(s.gameState, target) {
-		return tapResult{
-			document:  cloneValue(s.document),
-			gameState: cloneValue(s.gameState),
-			library:   cloneLibrary(s.library),
-			events: []CardEvent{{
-				Type:    "invalidAction",
-				Target:  target,
-				Message: target + " is locked.",
-			}},
-		}, nil
-	}
-
-	targetProgress := s.gameState.TargetProgress[target]
-	seed := tapSeed(s.gameState, target)
-	raw, err := randomGeneratedFragment(target, seed, maxInt(s.gameState.Level, targetProgress.Level))
-	if err != nil {
-		return tapResult{}, err
-	}
-	document := cloneValue(s.document)
-	normalized, item, err := applyGeneratedFragmentToDocument(raw, &document)
-	if err != nil {
-		return tapResult{}, err
-	}
-	s.document = document
-	s.lastApplied = &item
-	var events []CardEvent
-	s.gameState, events = advanceGameState(s.gameState, target)
-
-	return tapResult{
-		document:        cloneValue(s.document),
-		gameState:       cloneValue(s.gameState),
-		appliedFragment: normalized,
-		library:         cloneLibrary(s.library),
-		events:          events,
-	}, nil
+	componentID, trait := canonicalTapComponent(target, zone)
+	return s.interact(componentID, trait, interactionShortTap, x, y)
 }
 
 func (s *designerState) applyColorControl(target string, request colorControlRequest) (tapResult, error) {
@@ -133,7 +93,8 @@ func (s *designerState) applyColorControl(target string, request colorControlReq
 	if !isKnownTapTarget(target) {
 		return tapResult{}, fmt.Errorf("target %q is not available", target)
 	}
-	if !targetUnlocked(s.gameState, target) || !modeUnlocked(s.gameState, target, editModeSimpleControls) {
+	componentID, trait := canonicalTapComponent(target, target)
+	if !componentUnlocked(s.gameState, componentID) || !modeUnlocked(s.gameState, target, editModeSimpleControls) {
 		return tapResult{
 			document:  cloneValue(s.document),
 			gameState: cloneValue(s.gameState),
@@ -150,6 +111,7 @@ func (s *designerState) applyColorControl(target string, request colorControlReq
 	if err != nil {
 		return tapResult{}, err
 	}
+	before := documentSignature(s.document)
 	document := cloneValue(s.document)
 	normalized, item, err := applyGeneratedFragmentToDocument(raw, &document)
 	if err != nil {
@@ -157,17 +119,539 @@ func (s *designerState) applyColorControl(target string, request colorControlReq
 	}
 	s.document = document
 	s.lastApplied = &item
+	var events []CardEvent
+	if documentSignature(s.document) != before {
+		var xpEvents []CardEvent
+		s.gameState, xpEvents = advanceInteraction(s.gameState, componentID, xpPerInteraction)
+		events = append(events, CardEvent{Type: "fragmentApplied", Target: target, ComponentID: componentID, Trait: trait})
+		events = append(events, xpEvents...)
+	}
 
 	return tapResult{
 		document:        cloneValue(s.document),
 		gameState:       cloneValue(s.gameState),
 		appliedFragment: normalized,
 		library:         cloneLibrary(s.library),
-		events: []CardEvent{{
-			Type:   "fragmentApplied",
-			Target: target,
-		}},
+		events:          events,
+		overlay:         buildOverlay(s.document, s.gameState, componentID),
 	}, nil
+}
+
+func (s *designerState) interact(componentID, trait, interaction string, x, y float64) (tapResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_ = x
+	_ = y
+	s.gameState = normalizeGameState(s.gameState)
+	s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
+	componentID = strings.TrimSpace(componentID)
+	trait = strings.TrimSpace(trait)
+	if componentID == "" {
+		componentID = componentCardRoot
+	}
+	if !isKnownComponentID(componentID) {
+		return tapResult{}, fmt.Errorf("component %q is not available", componentID)
+	}
+	if !componentUnlocked(s.gameState, componentID) {
+		return s.invalidComponentResult(componentID, componentID+" is locked."), nil
+	}
+	progress := s.gameState.ComponentProgress[componentID]
+	if !traitUnlocked(progress, trait) {
+		return s.invalidComponentResult(componentID, trait+" is locked."), nil
+	}
+	switch strings.TrimSpace(interaction) {
+	case interactionLongPress:
+		return s.longPressComponent(componentID)
+	case "", interactionShortTap:
+		return s.shortTapComponent(componentID, trait)
+	default:
+		return tapResult{}, fmt.Errorf("interaction %q is not supported", interaction)
+	}
+}
+
+func (s *designerState) shortTapComponent(componentID, trait string) (tapResult, error) {
+	progress := s.gameState.ComponentProgress[componentID]
+	previousSelected := s.gameState.SelectedComponentID
+	s.gameState.SelectedComponentID = componentID
+	if !progress.RandomTapEnabled {
+		events := []CardEvent{{
+			Type:          "componentSelected",
+			ComponentID:   componentID,
+			ComponentType: progress.ComponentType,
+		}}
+		if previousSelected == componentID {
+			events = nil
+		}
+		return tapResult{
+			document:  cloneValue(s.document),
+			gameState: cloneValue(normalizeGameState(s.gameState)),
+			library:   cloneLibrary(s.library),
+			events:    events,
+			overlay:   buildOverlay(s.document, s.gameState, componentID),
+		}, nil
+	}
+	return s.randomizeComponentLocked(componentID, trait, "unlockedTraits")
+}
+
+func (s *designerState) longPressComponent(componentID string) (tapResult, error) {
+	progress := s.gameState.ComponentProgress[componentID]
+	s.gameState.SelectedComponentID = componentID
+	var events []CardEvent
+	var xpEvents []CardEvent
+	s.gameState, xpEvents = advanceInteraction(s.gameState, componentID, xpPerInteraction)
+	events = append(events, xpEvents...)
+	progress = s.gameState.ComponentProgress[componentID]
+	if !progress.OverlayUnlocked {
+		events = append(events, CardEvent{
+			Type:        "invalidAction",
+			ComponentID: componentID,
+			Message:     "Overlay unlocks at component level 3.",
+		})
+		return tapResult{
+			document:  cloneValue(s.document),
+			gameState: cloneValue(s.gameState),
+			library:   cloneLibrary(s.library),
+			events:    events,
+		}, nil
+	}
+	if !progress.OverlayOpened {
+		progress.OverlayOpened = true
+		s.gameState.ComponentProgress[componentID] = progress
+		s.gameState, xpEvents = advanceInteraction(s.gameState, componentID, xpPerInteraction)
+		progress = s.gameState.ComponentProgress[componentID]
+		progress.OverlayOpened = true
+		s.gameState.ComponentProgress[componentID] = progress
+		s.gameState = normalizeGameState(s.gameState)
+		events = append(events, xpEvents...)
+	}
+	events = append(events, CardEvent{
+		Type:          "overlayOpened",
+		ComponentID:   componentID,
+		ComponentType: progress.ComponentType,
+	})
+	return tapResult{
+		document:  cloneValue(s.document),
+		gameState: cloneValue(s.gameState),
+		library:   cloneLibrary(s.library),
+		events:    events,
+		overlay:   buildOverlay(s.document, s.gameState, componentID),
+	}, nil
+}
+
+func (s *designerState) randomizeComponent(componentID, trait, scope string) (tapResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.gameState = normalizeGameState(s.gameState)
+	s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
+	if !isKnownComponentID(componentID) {
+		return tapResult{}, fmt.Errorf("component %q is not available", componentID)
+	}
+	if !componentUnlocked(s.gameState, componentID) {
+		return s.invalidComponentResult(componentID, componentID+" is locked."), nil
+	}
+	progress := s.gameState.ComponentProgress[componentID]
+	if !traitUnlocked(progress, trait) {
+		return s.invalidComponentResult(componentID, trait+" is locked."), nil
+	}
+	return s.randomizeComponentLocked(componentID, trait, scope)
+}
+
+func (s *designerState) randomizeComponentLocked(componentID, trait, scope string) (tapResult, error) {
+	s.gameState.SelectedComponentID = componentID
+	normalized, item, eventTarget, appliedTrait, err := s.applyRandomMutation(componentID, trait, scope)
+	if err != nil {
+		return tapResult{}, err
+	}
+	var events []CardEvent
+	if item.ID != "" {
+		s.lastApplied = &item
+	}
+	progress := s.gameState.ComponentProgress[componentID]
+	events = append(events, CardEvent{
+		Type:          "fragmentApplied",
+		Target:        eventTarget,
+		ComponentID:   componentID,
+		ComponentType: progress.ComponentType,
+		Trait:         appliedTrait,
+	})
+	var xpEvents []CardEvent
+	s.gameState, xpEvents = advanceInteraction(s.gameState, componentID, xpPerInteraction)
+	s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
+	events = append(events, xpEvents...)
+	return tapResult{
+		document:        cloneValue(s.document),
+		gameState:       cloneValue(s.gameState),
+		appliedFragment: normalized,
+		library:         cloneLibrary(s.library),
+		events:          events,
+		overlay:         buildOverlay(s.document, s.gameState, componentID),
+	}, nil
+}
+
+func (s *designerState) applyControlChange(componentID, trait, control string, value json.RawMessage) (tapResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.gameState = normalizeGameState(s.gameState)
+	s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
+	componentID = strings.TrimSpace(componentID)
+	trait = strings.TrimSpace(trait)
+	control = strings.TrimSpace(control)
+	if componentID == "" {
+		componentID = componentCardRoot
+	}
+	if !isKnownComponentID(componentID) {
+		return tapResult{}, fmt.Errorf("component %q is not available", componentID)
+	}
+	if !componentUnlocked(s.gameState, componentID) {
+		return s.invalidComponentResult(componentID, componentID+" is locked."), nil
+	}
+	progress := s.gameState.ComponentProgress[componentID]
+	if !controlUnlocked(progress, control) {
+		return s.invalidComponentResult(componentID, "Control is locked."), nil
+	}
+	before := documentSignature(s.document)
+	normalized, item, target, err := s.applyControlMutation(componentID, trait, control, value)
+	if err != nil {
+		return tapResult{}, err
+	}
+	var events []CardEvent
+	if documentSignature(s.document) != before {
+		if item.ID != "" {
+			s.lastApplied = &item
+		}
+		events = append(events, CardEvent{
+			Type:          "fragmentApplied",
+			Target:        target,
+			ComponentID:   componentID,
+			ComponentType: progress.ComponentType,
+			Trait:         trait,
+			Control:       control,
+		})
+		var xpEvents []CardEvent
+		s.gameState, xpEvents = advanceInteraction(s.gameState, componentID, xpPerInteraction)
+		s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
+		events = append(events, xpEvents...)
+	}
+	return tapResult{
+		document:        cloneValue(s.document),
+		gameState:       cloneValue(s.gameState),
+		appliedFragment: normalized,
+		library:         cloneLibrary(s.library),
+		events:          events,
+		overlay:         buildOverlay(s.document, s.gameState, componentID),
+	}, nil
+}
+
+func (s *designerState) applyRandomMutation(componentID, trait, scope string) (any, cardcomponent.LibraryItem, string, string, error) {
+	progress := s.gameState.ComponentProgress[componentID]
+	seed := tapSeed(s.gameState, componentID)
+	switch progress.ComponentType {
+	case componentTypeCard:
+		appliedTrait := chooseRandomTrait(progress, trait, scope, seed, []string{traitBackground, traitBorder, traitShadow, traitPadding})
+		switch appliedTrait {
+		case traitBackground:
+			return s.applyRandomFragment(background.Type, appliedTrait, seed, maxInt(s.gameState.GlobalLevel, progress.Level))
+		case traitBorder:
+			return s.applyRandomFragment(border.Type, appliedTrait, seed, maxInt(s.gameState.GlobalLevel, progress.Level))
+		case traitShadow:
+			root := cardcomponent.DecodeRootFragment(s.document.Root.Fragment)
+			root.Shadow = pickString(seed, root.Shadow, []string{
+				"0 18px 48px rgba(15,23,42,0.28)",
+				"0 28px 70px rgba(15,23,42,0.42)",
+				"0 0 34px rgba(52,211,153,0.28)",
+				"",
+			})
+			s.document.Root.Fragment = cardcomponent.EncodeRootFragment(root)
+			return generatedRootTrait("Card shadow randomized", appliedTrait, root), cardcomponent.LibraryItem{}, cardcomponent.Type, appliedTrait, nil
+		case traitPadding:
+			root := cardcomponent.DecodeRootFragment(s.document.Root.Fragment)
+			root.PaddingPX = pickInt(seed, root.PaddingPX, []int{8, 16, 20, 24, 32, 40})
+			s.document.Root.Fragment = cardcomponent.EncodeRootFragment(root)
+			return generatedRootTrait("Card padding randomized", appliedTrait, root), cardcomponent.LibraryItem{}, cardcomponent.Type, appliedTrait, nil
+		default:
+			return nil, cardcomponent.LibraryItem{}, "", "", fmt.Errorf("trait %q cannot be randomized", appliedTrait)
+		}
+	case componentTypeTextarea:
+		return s.applyRandomFragment(textarea.Type, firstNonEmpty(trait, traitText), seed, maxInt(s.gameState.GlobalLevel, progress.Level))
+	case componentTypeShape:
+		return s.applyRandomFragment(shape.Type, firstNonEmpty(trait, traitGeometry), seed, maxInt(s.gameState.GlobalLevel, progress.Level))
+	default:
+		return nil, cardcomponent.LibraryItem{}, "", "", fmt.Errorf("component %q cannot be randomized", componentID)
+	}
+}
+
+func (s *designerState) applyRandomFragment(target, appliedTrait string, seed int64, level int) (any, cardcomponent.LibraryItem, string, string, error) {
+	raw, err := randomGeneratedFragment(target, seed, level)
+	if err != nil {
+		return nil, cardcomponent.LibraryItem{}, "", "", err
+	}
+	document := cloneValue(s.document)
+	normalized, item, err := applyGeneratedFragmentToDocument(raw, &document)
+	if err != nil {
+		return nil, cardcomponent.LibraryItem{}, "", "", err
+	}
+	s.document = document
+	return normalized, item, target, appliedTrait, nil
+}
+
+func (s *designerState) applyControlMutation(componentID, trait, control string, value json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
+	progress := s.gameState.ComponentProgress[componentID]
+	switch progress.ComponentType {
+	case componentTypeCard:
+		return s.applyCardControl(trait, control, value)
+	case componentTypeTextarea:
+		return s.applyTextareaControl(trait, control, value)
+	case componentTypeShape:
+		return s.applyShapeControl(trait, control, value)
+	default:
+		return nil, cardcomponent.LibraryItem{}, "", fmt.Errorf("component %q does not support controls", componentID)
+	}
+}
+
+func (s *designerState) applyCardControl(trait, control string, value json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
+	switch control {
+	case "backgroundColor":
+		color, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		raw, err := colorGeneratedFragment(s.document, background.Type, colorControlRequest{Color: color})
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		return s.applyRawFragment(raw)
+	case "borderColor":
+		color, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		raw, err := colorGeneratedFragment(s.document, border.Type, colorControlRequest{Color: color})
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		return s.applyRawFragment(raw)
+	case "borderWidthPx", "borderRadiusPx":
+		part := currentBorder(s.document)
+		next, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		if control == "borderWidthPx" {
+			part.BorderWidthPX = next
+		} else {
+			part.BorderRadiusPX = next
+		}
+		part.CSS = fmt.Sprintf("border: %dpx solid %s; border-radius: %dpx;", part.BorderWidthPX, part.BorderColor, part.BorderRadiusPX)
+		return s.applyGeneratedPart(border.Type, "Border control changed", part)
+	case "shadowPreset":
+		shadow, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		if !controlOptionValueAllowed(shadowOptions(), shadow) {
+			return nil, cardcomponent.LibraryItem{}, "", fmt.Errorf("shadow preset is not allowed")
+		}
+		root := cardcomponent.DecodeRootFragment(s.document.Root.Fragment)
+		root.Shadow = shadow
+		s.document.Root.Fragment = cardcomponent.EncodeRootFragment(root)
+		return generatedRootTrait("Card shadow changed", traitShadow, root), cardcomponent.LibraryItem{}, cardcomponent.Type, nil
+	case "paddingPx":
+		padding, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		root := cardcomponent.DecodeRootFragment(s.document.Root.Fragment)
+		root.PaddingPX = padding
+		s.document.Root.Fragment = cardcomponent.EncodeRootFragment(root)
+		return generatedRootTrait("Card padding changed", traitPadding, root), cardcomponent.LibraryItem{}, cardcomponent.Type, nil
+	default:
+		return nil, cardcomponent.LibraryItem{}, "", fmt.Errorf("control %q is not supported for card", control)
+	}
+}
+
+func (s *designerState) applyTextareaControl(trait, control string, value json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
+	part := currentTextarea(s.document)
+	switch control {
+	case "content":
+		text, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Content = text
+	case "backgroundColor":
+		color, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.BackgroundColor = color
+	case "borderColor":
+		color, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.BorderColor = color
+	case "textColor":
+		color, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Color = color
+	case "fontFamily":
+		font, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.FontFamily = font
+	case "fontSizePx":
+		size, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.FontSizePX = size
+	case "fontWeight":
+		weight, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.FontWeight = weight
+	case "paddingPx":
+		padding, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.PaddingPX = padding
+	case "borderWidthPx":
+		width, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.BorderWidthPX = width
+	case "borderRadiusPx":
+		radius, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.BorderRadiusPX = radius
+	default:
+		return nil, cardcomponent.LibraryItem{}, "", fmt.Errorf("control %q is not supported for text", control)
+	}
+	return s.applyGeneratedPart(textarea.Type, "Text control changed", part)
+}
+
+func (s *designerState) applyShapeControl(trait, control string, value json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
+	part := currentShape(s.document)
+	switch control {
+	case "shape":
+		shapeValue, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Shape = shapeValue
+	case "backgroundColor":
+		color, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.BackgroundColor = color
+	case "borderColor":
+		color, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.BorderColor = color
+	case "borderWidthPx":
+		width, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.BorderWidthPX = width
+	case "width":
+		width, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Width = width
+	case "height":
+		height, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Height = height
+	case "x":
+		x, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.X = x
+	case "y":
+		y, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Y = y
+	case "rotation":
+		rotation, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Rotation = rotation
+	case "shadowPreset":
+		shadowValue, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Shadow = shadowValue
+	default:
+		return nil, cardcomponent.LibraryItem{}, "", fmt.Errorf("control %q is not supported for shape", control)
+	}
+	return s.applyGeneratedPart(shape.Type, "Shape control changed", part)
+}
+
+func (s *designerState) applyGeneratedPart(target, description string, part any) (any, cardcomponent.LibraryItem, string, error) {
+	raw, err := json.Marshal(struct {
+		Target      string `json:"target"`
+		Description string `json:"description"`
+		Fragment    any    `json:"fragment"`
+	}{
+		Target:      target,
+		Description: description,
+		Fragment:    part,
+	})
+	if err != nil {
+		return nil, cardcomponent.LibraryItem{}, "", err
+	}
+	return s.applyRawFragment(raw)
+}
+
+func (s *designerState) applyRawFragment(raw json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
+	var envelope struct {
+		Target string `json:"target"`
+	}
+	_ = json.Unmarshal(raw, &envelope)
+	document := cloneValue(s.document)
+	normalized, item, err := applyGeneratedFragmentToDocument(raw, &document)
+	if err != nil {
+		return nil, cardcomponent.LibraryItem{}, "", err
+	}
+	s.document = document
+	return normalized, item, strings.TrimSpace(envelope.Target), nil
+}
+
+func (s *designerState) invalidComponentResult(componentID, message string) tapResult {
+	return tapResult{
+		document:  cloneValue(s.document),
+		gameState: cloneValue(s.gameState),
+		library:   cloneLibrary(s.library),
+		events: []CardEvent{{
+			Type:        "invalidAction",
+			Target:      legacyTargetForComponent(componentID),
+			ComponentID: componentID,
+			Message:     message,
+		}},
+	}
 }
 
 func (s *designerState) applyLibraryItem(id string) (cardcomponent.Document, any, error) {
@@ -262,18 +746,6 @@ func (s *designerState) currentFragment(target string) (string, string) {
 	return string(raw), node.ID
 }
 
-func findNodeByType(node cardcomponent.Node, target string) *cardcomponent.Node {
-	if node.Type == target {
-		return &node
-	}
-	for index := range node.Children {
-		if match := findNodeByType(node.Children[index], target); match != nil {
-			return match
-		}
-	}
-	return nil
-}
-
 func generatedRawFromLibraryItem(item cardcomponent.LibraryItem) (json.RawMessage, error) {
 	raw, err := json.Marshal(struct {
 		Target      string          `json:"target"`
@@ -310,9 +782,192 @@ func cloneValue[T any](value T) T {
 	return out
 }
 
-func maxInt(left, right int) int {
-	if left > right {
-		return left
+func findNodeByType(node cardcomponent.Node, target string) *cardcomponent.Node {
+	if node.Type == target {
+		copyNode := cloneValue(node)
+		return &copyNode
+	}
+	for index := range node.Children {
+		if match := findNodeByType(node.Children[index], target); match != nil {
+			return match
+		}
+	}
+	return nil
+}
+
+func findNodeByID(node cardcomponent.Node, id string) *cardcomponent.Node {
+	if node.ID == id {
+		copyNode := cloneValue(node)
+		return &copyNode
+	}
+	for index := range node.Children {
+		if match := findNodeByID(node.Children[index], id); match != nil {
+			return match
+		}
+	}
+	return nil
+}
+
+func findNodeByIDPtr(node *cardcomponent.Node, id string) *cardcomponent.Node {
+	if node == nil {
+		return nil
+	}
+	if node.ID == id {
+		return node
+	}
+	for index := range node.Children {
+		if match := findNodeByIDPtr(&node.Children[index], id); match != nil {
+			return match
+		}
+	}
+	return nil
+}
+
+func ensureUnlockedDocumentComponents(document cardcomponent.Document, state GameState) cardcomponent.Document {
+	if len(document.Root.Fragment) == 0 {
+		document.Root.Fragment = cardcomponent.EncodeRootFragment(cardcomponent.DefaultRootFragment())
+	}
+	if componentTypeUnlocked(state, componentTypeShape) && findNodeByID(document.Root, componentShape) == nil {
+		part := shape.DefaultFragment()
+		raw, err := json.Marshal(part)
+		if err != nil {
+			panic(err)
+		}
+		document.Root.Children = append(document.Root.Children, cardcomponent.Node{
+			ID:       componentShape,
+			Type:     shape.Type,
+			Fragment: raw,
+		})
+	}
+	return document
+}
+
+func generatedRootTrait(description, trait string, part cardcomponent.RootFragment) map[string]any {
+	return map[string]any{
+		"target":      cardcomponent.Type,
+		"description": description,
+		"trait":       trait,
+		"fragment":    part,
+	}
+}
+
+func documentSignature(document cardcomponent.Document) string {
+	raw, err := json.Marshal(document)
+	if err != nil {
+		panic(err)
+	}
+	return string(raw)
+}
+
+func chooseRandomTrait(progress ComponentProgress, trait, scope string, seed int64, candidates []string) string {
+	trait = strings.TrimSpace(trait)
+	if trait != "" {
+		return trait
+	}
+	var available []string
+	for _, candidate := range candidates {
+		if traitUnlocked(progress, candidate) {
+			available = append(available, candidate)
+		}
+	}
+	if len(available) == 0 {
+		return ""
+	}
+	if scope == "trait" && trait != "" {
+		return trait
+	}
+	return available[rand.New(rand.NewSource(seed)).Intn(len(available))]
+}
+
+func pickString(seed int64, current string, values []string) string {
+	var candidates []string
+	for _, value := range values {
+		if value != current {
+			candidates = append(candidates, value)
+		}
+	}
+	if len(candidates) == 0 {
+		candidates = values
+	}
+	return candidates[rand.New(rand.NewSource(seed)).Intn(len(candidates))]
+}
+
+func pickInt(seed int64, current int, values []int) int {
+	var candidates []int
+	for _, value := range values {
+		if value != current {
+			candidates = append(candidates, value)
+		}
+	}
+	if len(candidates) == 0 {
+		candidates = values
+	}
+	return candidates[rand.New(rand.NewSource(seed)).Intn(len(candidates))]
+}
+
+func firstNonEmpty(left, right string) string {
+	if strings.TrimSpace(left) != "" {
+		return strings.TrimSpace(left)
 	}
 	return right
+}
+
+func readStringValue(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", fmt.Errorf("value is required")
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return strings.TrimSpace(text), nil
+	}
+	var number float64
+	if err := json.Unmarshal(raw, &number); err == nil {
+		return strconv.Itoa(int(number)), nil
+	}
+	return "", fmt.Errorf("value must be a string")
+}
+
+func readIntValue(raw json.RawMessage) (int, error) {
+	if len(raw) == 0 {
+		return 0, fmt.Errorf("value is required")
+	}
+	var number int
+	if err := json.Unmarshal(raw, &number); err == nil {
+		return number, nil
+	}
+	var floatNumber float64
+	if err := json.Unmarshal(raw, &floatNumber); err == nil {
+		return int(floatNumber), nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		value, parseErr := strconv.Atoi(strings.TrimSpace(text))
+		if parseErr != nil {
+			return 0, fmt.Errorf("value must be a number")
+		}
+		return value, nil
+	}
+	return 0, fmt.Errorf("value must be a number")
+}
+
+func controlOptionValueAllowed(options []ControlOption, value string) bool {
+	for _, option := range options {
+		if option.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
+func legacyTargetForComponent(componentID string) string {
+	switch componentID {
+	case componentTextarea:
+		return textarea.Type
+	case componentShape:
+		return shape.Type
+	case componentCardRoot:
+		return cardcomponent.Type
+	default:
+		return ""
+	}
 }

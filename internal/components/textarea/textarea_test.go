@@ -1,6 +1,7 @@
 package textarea
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/n0remac/Living-Card/internal/fragment"
@@ -93,6 +94,41 @@ func TestValidateGeneratedRejectsUnsupportedTextCSSProperty(t *testing.T) {
 	})
 	if len(issues) != 1 || issues[0].Path != "fragment.css" || issues[0].Code != "unsupported_css_property" {
 		t.Fatalf("issues = %#v", issues)
+	}
+}
+
+func TestRenderLayerIncludesExtendedTextareaStyles(t *testing.T) {
+	t.Parallel()
+
+	node := RenderLayer("textarea-main", Fragment{
+		Content:         "Styled text",
+		FontFamily:      "system",
+		FontSizePX:      18,
+		FontWeight:      600,
+		FontStyle:       "normal",
+		Color:           "#111827",
+		Align:           "center",
+		Position:        "center",
+		BackgroundColor: "#f8fafc",
+		BorderColor:     "#111827",
+		BorderWidthPX:   2,
+		BorderRadiusPX:  14,
+		PaddingPX:       12,
+		CSS:             "",
+	})
+	body := node.Render()
+	for _, marker := range []string{
+		`data-component-id="textarea-main"`,
+		`data-component-type="textarea"`,
+		`background-color: #f8fafc`,
+		`border: 2px solid #111827`,
+		`border-radius: 14px`,
+		`padding: 12px`,
+		`Styled text`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("render missing %q:\n%s", marker, body)
+		}
 	}
 }
 

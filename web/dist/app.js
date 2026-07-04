@@ -34,25 +34,36 @@ async function resetDraftCard() {
   }
   return await response.json();
 }
-async function tapCardZone(target, zone, x, y) {
-  const response = await fetch("/api/draft-card/tap", {
+async function interactWithComponent(componentId, trait, interaction, x, y) {
+  const response = await fetch("/api/draft-card/interact", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target, zone, x, y })
+    body: JSON.stringify({ componentId, trait, interaction, x, y })
   });
   if (!response.ok) {
-    throw new Error(await readError(response, "Failed to apply card tap."));
+    throw new Error(await readError(response, "Failed to apply interaction."));
   }
   return await response.json();
 }
-async function applyColorControl(target, control) {
+async function applyComponentControl(componentId, trait, control, value) {
   const response = await fetch("/api/draft-card/control-change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target, ...control })
+    body: JSON.stringify({ componentId, trait, control, value })
   });
   if (!response.ok) {
-    throw new Error(await readError(response, "Failed to apply color."));
+    throw new Error(await readError(response, "Failed to apply control."));
+  }
+  return await response.json();
+}
+async function randomizeComponent(componentId, trait = "", scope = "unlockedTraits") {
+  const response = await fetch("/api/draft-card/randomize-component", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ componentId, trait, scope })
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to randomize component."));
   }
   return await response.json();
 }
@@ -494,7 +505,7 @@ function runAnimation(element, keyframes, duration) {
   });
 }
 
-// web/src/stage/colorControls.ts
+// web/src/stage/componentControls.ts
 var swatches = [
   "#22c55e",
   "#38bdf8",
@@ -505,130 +516,162 @@ var swatches = [
   "#111827",
   "#f5e6c8"
 ];
-function openColorControls(options) {
+function openComponentOverlay(options) {
   const root = options.root;
   if (!root) return;
-  closeColorControls(root);
+  closeComponentOverlay(root);
   const panel = document.createElement("div");
-  panel.dataset.stageControlOverlay = "color";
-  panel.className = "stage-control-panel pointer-events-auto fixed rounded-md border border-[var(--app-border-strong)] bg-[var(--app-surface-muted)] p-2 shadow-2xl backdrop-blur";
-  panel.style.left = clampPX(options.anchorX, 12, window.innerWidth - 260) + "px";
-  panel.style.top = clampPX(options.anchorY, 88, window.innerHeight - 270) + "px";
+  panel.dataset.stageControlOverlay = "component";
+  panel.className = "stage-component-panel pointer-events-auto fixed grid max-h-[min(28rem,calc(100dvh-6rem))] w-72 gap-3 overflow-y-auto rounded-md border border-[var(--app-border-strong)] bg-[var(--app-surface-muted)] p-3 shadow-2xl backdrop-blur";
+  panel.style.left = clampPX(options.anchorX, 12, window.innerWidth - 300) + "px";
+  panel.style.top = clampPX(options.anchorY, 84, window.innerHeight - 360) + "px";
+  stopCardTapEvents(panel);
   const header = document.createElement("div");
-  header.className = "flex items-center justify-between gap-2";
-  const palette = document.createElement("button");
-  palette.type = "button";
-  palette.className = "flex h-9 items-center gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 text-sm font-semibold text-[var(--app-fg)]";
-  palette.title = labelForTarget(options.target) + " color";
-  palette.innerHTML = '<span class="block h-5 w-5 rounded-sm border border-white/35" style="background:' + escapeAttribute(hexOrFallback(options.currentColor)) + '"></span><span>Palette</span>';
+  header.className = "flex items-center justify-between gap-3";
+  const title = document.createElement("div");
+  title.className = "min-w-0 text-sm font-semibold text-[var(--app-fg)]";
+  title.textContent = options.overlay.title;
   const close = document.createElement("button");
   close.type = "button";
-  close.className = "h-9 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 text-sm text-[var(--app-fg-soft)]";
+  close.className = "h-8 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 text-xs font-semibold text-[var(--app-fg-soft)]";
   close.textContent = "Close";
   close.addEventListener("click", () => panel.remove());
-  const chooser = document.createElement("div");
-  chooser.className = "mt-2 hidden grid w-56 gap-3";
-  const primaryColor = hexOrFallback(options.currentColor);
-  let secondaryColor = defaultSecondary(primaryColor);
-  let angle = 135;
-  let gradientEnabled = false;
-  const swatchGrid = document.createElement("div");
-  swatchGrid.className = "grid grid-cols-4 gap-1.5";
+  header.append(title, close);
+  panel.appendChild(header);
+  if (options.overlay.randomizeEnabled) {
+    const randomize = document.createElement("button");
+    randomize.type = "button";
+    randomize.className = "h-9 rounded-md border border-emerald-300/30 bg-emerald-300 px-3 text-sm font-semibold text-zinc-950";
+    randomize.textContent = "Randomize";
+    randomize.addEventListener("click", options.onRandomize);
+    panel.appendChild(randomize);
+  }
+  const controls = document.createElement("div");
+  controls.className = "grid gap-3";
+  options.overlay.controls.forEach((control) => {
+    controls.appendChild(renderControl(control, (value) => options.onControl(control, value)));
+  });
+  panel.appendChild(controls);
+  root.appendChild(panel);
+}
+function closeComponentOverlay(root) {
+  root?.querySelectorAll("[data-stage-control-overlay]").forEach((element) => element.remove());
+}
+function renderControl(control, onValue) {
+  switch (control.kind) {
+    case "color":
+      return renderColorControl(control, onValue);
+    case "range":
+      return renderRangeControl(control, onValue);
+    case "select":
+      return renderSelectControl(control, onValue);
+    case "text":
+      return renderTextControl(control, onValue);
+    default:
+      return document.createElement("div");
+  }
+}
+function renderColorControl(control, onValue) {
+  const wrapper = controlWrapper(control.label);
+  const current = hexOrFallback(String(control.value || "#22c55e"));
+  const row = document.createElement("div");
+  row.className = "grid grid-cols-[1fr_auto] gap-2";
+  const input = document.createElement("input");
+  input.type = "color";
+  input.value = current;
+  input.className = "h-9 w-full cursor-pointer rounded-md border border-[var(--app-border)] bg-[var(--app-panel)]";
+  input.addEventListener("change", () => onValue(input.value));
+  const preview = document.createElement("span");
+  preview.className = "block h-9 w-9 rounded-md border border-white/25";
+  preview.style.background = current;
+  input.addEventListener("input", () => {
+    preview.style.background = input.value;
+  });
+  row.append(input, preview);
+  const grid = document.createElement("div");
+  grid.className = "grid grid-cols-8 gap-1";
   swatches.forEach((color) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "h-8 rounded-md border border-white/25 shadow-sm";
+    button.className = "h-6 rounded-sm border border-white/25";
     button.title = color;
     button.style.background = color;
     button.addEventListener("click", () => {
-      if (gradientEnabled) {
-        secondaryColor = color;
-        secondaryInput.value = color;
-        preview.style.background = gradientCSS(input.value, secondaryColor, angle);
-        return;
-      }
-      options.onColor({ color });
+      input.value = color;
+      preview.style.background = color;
+      onValue(color);
     });
-    swatchGrid.appendChild(button);
+    grid.appendChild(button);
   });
+  wrapper.append(row, grid);
+  return wrapper;
+}
+function renderRangeControl(control, onValue) {
+  const wrapper = controlWrapper(control.label);
+  const value = document.createElement("span");
+  value.className = "text-xs font-semibold text-[var(--app-fg-soft)]";
+  value.textContent = String(control.value ?? control.min ?? 0);
   const input = document.createElement("input");
-  input.type = "color";
-  input.className = "h-9 w-full cursor-pointer rounded-md border border-[var(--app-border)] bg-[var(--app-panel)]";
-  input.value = primaryColor;
-  input.addEventListener("change", () => {
-    preview.style.background = gradientEnabled ? gradientCSS(input.value, secondaryColor, angle) : input.value;
-    if (!gradientEnabled) {
-      options.onColor({ color: input.value });
+  input.type = "range";
+  input.min = String(control.min ?? 0);
+  input.max = String(control.max ?? 100);
+  input.step = String(control.step ?? 1);
+  input.value = String(control.value ?? control.min ?? 0);
+  input.className = "w-full accent-emerald-300";
+  input.addEventListener("input", () => {
+    value.textContent = input.value;
+  });
+  input.addEventListener("change", () => onValue(Number(input.value)));
+  wrapper.firstElementChild?.appendChild(value);
+  wrapper.appendChild(input);
+  return wrapper;
+}
+function renderSelectControl(control, onValue) {
+  const wrapper = controlWrapper(control.label);
+  const select = document.createElement("select");
+  select.className = "h-9 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 text-sm text-[var(--app-fg)] outline-none";
+  (control.options || []).forEach((option) => {
+    const item = document.createElement("option");
+    item.value = option.value;
+    item.textContent = option.label;
+    select.appendChild(item);
+  });
+  select.value = String(control.value ?? "");
+  select.addEventListener("change", () => onValue(select.value));
+  wrapper.appendChild(select);
+  return wrapper;
+}
+function renderTextControl(control, onValue) {
+  const wrapper = controlWrapper(control.label);
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = String(control.value ?? "");
+  input.className = "h-9 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 text-sm text-[var(--app-fg)] outline-none";
+  input.addEventListener("change", () => onValue(input.value));
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      input.blur();
+      onValue(input.value);
     }
   });
-  const gradientRow = document.createElement("label");
-  gradientRow.className = "flex items-center justify-between gap-3 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 py-2 text-sm text-[var(--app-fg)]";
-  gradientRow.innerHTML = "<span>Gradient</span>";
-  const gradientToggle = document.createElement("input");
-  gradientToggle.type = "checkbox";
-  gradientToggle.className = "h-4 w-4 accent-emerald-300";
-  const gradientControls = document.createElement("div");
-  gradientControls.className = "hidden grid gap-2";
-  const secondaryInput = document.createElement("input");
-  secondaryInput.type = "color";
-  secondaryInput.className = "h-9 w-full cursor-pointer rounded-md border border-[var(--app-border)] bg-[var(--app-panel)]";
-  secondaryInput.value = secondaryColor;
-  secondaryInput.addEventListener("input", () => {
-    secondaryColor = secondaryInput.value;
-    preview.style.background = gradientCSS(input.value, secondaryColor, angle);
-  });
-  const angleInput = document.createElement("input");
-  angleInput.type = "range";
-  angleInput.min = "0";
-  angleInput.max = "315";
-  angleInput.step = "45";
-  angleInput.value = String(angle);
-  angleInput.className = "w-full accent-emerald-300";
-  angleInput.addEventListener("input", () => {
-    angle = Number(angleInput.value) || 135;
-    angleValue.textContent = angle + "deg";
-    preview.style.background = gradientCSS(input.value, secondaryColor, angle);
-  });
-  const angleValue = document.createElement("span");
-  angleValue.className = "text-xs font-semibold text-[var(--app-fg-soft)]";
-  angleValue.textContent = angle + "deg";
-  const preview = document.createElement("div");
-  preview.className = "h-8 rounded-md border border-white/20";
-  preview.style.background = primaryColor;
-  const applyGradient = document.createElement("button");
-  applyGradient.type = "button";
-  applyGradient.className = "h-9 rounded-md border border-emerald-300/30 bg-emerald-300 px-3 text-sm font-semibold text-zinc-950";
-  applyGradient.textContent = "Apply Gradient";
-  applyGradient.addEventListener("click", () => {
-    options.onColor({
-      color: input.value,
-      secondaryColor,
-      gradient: true,
-      angle
-    });
-  });
-  gradientToggle.addEventListener("change", () => {
-    gradientEnabled = gradientToggle.checked;
-    gradientControls.classList.toggle("hidden", !gradientEnabled);
-    preview.style.background = gradientEnabled ? gradientCSS(input.value, secondaryColor, angle) : input.value;
-  });
-  palette.addEventListener("click", () => {
-    chooser.classList.toggle("hidden");
-  });
-  gradientRow.appendChild(gradientToggle);
-  gradientControls.append(
-    labeledControl("Second Color", secondaryInput),
-    labeledControl("Angle", angleInput, angleValue),
-    preview,
-    applyGradient
-  );
-  header.append(palette, close);
-  chooser.append(swatchGrid, labeledControl("Color", input), gradientRow, gradientControls);
-  panel.append(header, chooser);
-  root.appendChild(panel);
+  wrapper.appendChild(input);
+  return wrapper;
 }
-function closeColorControls(root) {
-  root?.querySelectorAll("[data-stage-control-overlay]").forEach((element) => element.remove());
+function controlWrapper(label) {
+  const wrapper = document.createElement("label");
+  wrapper.className = "grid gap-1 text-xs font-semibold uppercase text-[var(--app-fg-soft)]";
+  const text = document.createElement("span");
+  text.textContent = label;
+  wrapper.appendChild(text);
+  return wrapper;
+}
+function stopCardTapEvents(element) {
+  for (const eventName of ["pointerdown", "pointermove", "pointerup", "pointercancel", "contextmenu"]) {
+    element.addEventListener(eventName, (event) => {
+      event.stopPropagation();
+    });
+  }
 }
 function clampPX(value, min, max) {
   if (!Number.isFinite(value)) return min;
@@ -637,37 +680,6 @@ function clampPX(value, min, max) {
 function hexOrFallback(value) {
   const trimmed = String(value || "").trim();
   return /^#[0-9a-fA-F]{6}$/.test(trimmed) ? trimmed : "#22c55e";
-}
-function defaultSecondary(primary) {
-  return primary.toLowerCase() === "#38bdf8" ? "#22c55e" : "#38bdf8";
-}
-function gradientCSS(primary, secondary, angle) {
-  return "linear-gradient(" + angle + "deg, " + primary + " 0%, " + secondary + " 100%)";
-}
-function labeledControl(label, control, aside) {
-  const wrapper = document.createElement("label");
-  wrapper.className = "grid gap-1 text-xs font-semibold uppercase text-[var(--app-fg-soft)]";
-  const row = document.createElement("span");
-  row.className = "flex items-center justify-between gap-2";
-  const text = document.createElement("span");
-  text.textContent = label;
-  row.appendChild(text);
-  if (aside) row.appendChild(aside);
-  wrapper.append(row, control);
-  return wrapper;
-}
-function labelForTarget(target) {
-  switch (target) {
-    case "background":
-      return "Background";
-    case "border":
-      return "Border";
-    default:
-      return "Card";
-  }
-}
-function escapeAttribute(value) {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
 // web/src/stage/hitTesting.ts
@@ -680,13 +692,44 @@ function hitTestCard(event, preview) {
   const localY = event.clientY - rect.top;
   const inBorderBand = localX <= borderBandPX || localY <= borderBandPX || rect.width - localX <= borderBandPX || rect.height - localY <= borderBandPX;
   if (inBorderBand) {
-    return { target: "border", zone: "border", x, y, clientX: event.clientX, clientY: event.clientY };
+    return cardRootHit("border", "border", x, y, event);
   }
   const target = event.target instanceof Element ? event.target : null;
-  if (target?.closest('[data-component-type="textarea"]')) {
-    return { target: "textarea", zone: "textarea", x, y, clientX: event.clientX, clientY: event.clientY };
+  const component = target?.closest("[data-component-id][data-component-type]");
+  const componentType = component?.dataset.componentType;
+  if (component && componentType === "shape") {
+    return componentHit(component, "shape", "shape", "geometry", x, y, event);
   }
-  return { target: "background", zone: "background", x, y, clientX: event.clientX, clientY: event.clientY };
+  if (component && componentType === "textarea") {
+    return componentHit(component, "textarea", "textarea", "text", x, y, event);
+  }
+  return cardRootHit("background", "background", x, y, event);
+}
+function cardRootHit(target, zone, x, y, event) {
+  return {
+    target,
+    zone,
+    componentId: "card-root",
+    componentType: "card",
+    trait: target === "border" ? "border" : "background",
+    x,
+    y,
+    clientX: event.clientX,
+    clientY: event.clientY
+  };
+}
+function componentHit(element, target, zone, trait, x, y, event) {
+  return {
+    target,
+    zone,
+    componentId: element.dataset.componentId || "",
+    componentType: element.dataset.componentType || target,
+    trait,
+    x,
+    y,
+    clientX: event.clientX,
+    clientY: event.clientY
+  };
 }
 function clamp(value) {
   if (!Number.isFinite(value)) return 0;
@@ -702,10 +745,10 @@ var activeNotification = false;
 function initNotifications() {
   const section = notificationSection();
   if (!section) return;
-  stopCardTapEvents(section);
+  stopCardTapEvents2(section);
   const history = notificationHistoryPanel();
   if (history) {
-    stopCardTapEvents(history);
+    stopCardTapEvents2(history);
   }
   section.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -736,11 +779,21 @@ function showEvent(root, event) {
       return;
     case "levelUp":
       return;
+    case "componentLevelUp":
+      showMessage(root, labelForComponent(event.componentType) + " level " + event.level);
+      return;
+    case "componentUnlocked":
+      showMessage(root, event.message || labelForComponent(event.componentType) + " unlocked");
+      return;
+    case "componentSelected":
+      return;
+    case "overlayOpened":
+      return;
     case "targetUnlocked":
-      showMessage(root, labelForTarget2(event.target) + " unlocked");
+      showMessage(root, labelForTarget(event.target) + " unlocked");
       return;
     case "modeUnlocked":
-      showMessage(root, labelForTarget2(event.target) + " " + event.mode + " unlocked");
+      showMessage(root, labelForTarget(event.target) + " " + event.mode + " unlocked");
       return;
     case "invalidAction":
       showMessage(root, event.message || "Locked", "error");
@@ -782,7 +835,7 @@ function toggleHistory() {
   history.classList.toggle("hidden");
   renderHistory();
 }
-function stopCardTapEvents(element) {
+function stopCardTapEvents2(element) {
   for (const eventName of ["pointerdown", "pointermove", "pointerup", "pointercancel", "contextmenu"]) {
     element.addEventListener(eventName, (event) => {
       event.stopPropagation();
@@ -820,7 +873,7 @@ function notificationHistoryPanel() {
 function notificationHistoryList() {
   return document.getElementById("stage-notification-history-list");
 }
-function labelForTarget2(target) {
+function labelForTarget(target) {
   switch (target) {
     case "background":
       return "Background";
@@ -832,10 +885,20 @@ function labelForTarget2(target) {
       return "Card";
   }
 }
+function labelForComponent(componentType) {
+  switch (componentType) {
+    case "textarea":
+      return "Text";
+    case "shape":
+      return "Shape";
+    default:
+      return "Card";
+  }
+}
 
 // web/src/stage/StageController.ts
 var tapBusy = false;
-var colorBusy = false;
+var controlBusy = false;
 var latestDocument = null;
 var latestGameState = null;
 var pressState = null;
@@ -866,6 +929,7 @@ function applyInteractiveResponse(response) {
   latestGameState = response.gameState;
   replacePreviewHTML(response.preview_html);
   updateHUD(response.gameState);
+  renderSelection(response.gameState);
 }
 function bindTapLayer() {
   const workspace = byID("card-workspace");
@@ -891,7 +955,7 @@ function startPress(event, workspace) {
   const preview = currentPreview();
   if (!preview) return;
   const hit = hitTestCard(event, preview);
-  closeColorControls(overlayRoot());
+  closeComponentOverlay(overlayRoot());
   cancelPress();
   workspace.setPointerCapture?.(event.pointerId);
   pressState = {
@@ -903,7 +967,7 @@ function startPress(event, workspace) {
     timer: window.setTimeout(() => {
       if (!pressState || pressState.pointerID !== event.pointerId) return;
       pressState.longPressed = true;
-      openLongPressControls(hit);
+      void openLongPressControls(hit);
     }, longPressMS)
   };
 }
@@ -936,7 +1000,7 @@ async function handleCardTap(hit) {
   animateCardTap(preview, hit.x, hit.y);
   tapBusy = true;
   try {
-    const response = await tapCardZone(hit.target, hit.zone, hit.x, hit.y);
+    const response = await interactWithComponent(hit.componentId, hit.trait, "shortTap", hit.x, hit.y);
     applyTapResponse(response);
     const nextPreview = currentPreview();
     if (hasInvalidAction(response.events)) {
@@ -953,35 +1017,70 @@ async function handleCardTap(hit) {
     tapBusy = false;
   }
 }
-function openLongPressControls(hit) {
+async function openLongPressControls(hit) {
+  if (tapBusy || document.body.classList.contains("designer-open")) return;
   const preview = currentPreview();
-  if (!targetSupportsColorControls(hit.target) || !colorControlsUnlocked(hit.target)) {
+  tapBusy = true;
+  try {
+    const response = await interactWithComponent(hit.componentId, hit.trait, "longPress", hit.x, hit.y);
+    applyTapResponse(response);
+    renderEvents(notificationRoot(), response.events);
+    if (response.overlay) {
+      openOverlay(response.overlay, hit.clientX, hit.clientY);
+      return;
+    }
     if (preview) animateInvalidTap(preview);
-    showMessage(notificationRoot(), lockedControlMessage(hit.target), "error");
-    return;
+  } catch (error) {
+    if (preview) animateInvalidTap(preview);
+    showMessage(notificationRoot(), error instanceof Error ? error.message : "Overlay failed.", "error");
+  } finally {
+    tapBusy = false;
   }
-  openColorControls({
+}
+function openOverlay(overlay, anchorX, anchorY) {
+  openComponentOverlay({
     root: overlayRoot(),
-    target: hit.target,
-    anchorX: hit.clientX,
-    anchorY: hit.clientY,
-    currentColor: currentColorForTarget(hit.target),
-    onColor: (control) => {
-      void applyColor(hit.target, control);
+    overlay,
+    anchorX,
+    anchorY,
+    onControl: (control, value) => {
+      void applyControl(overlay.componentId, control.trait, control.control, value);
+    },
+    onRandomize: () => {
+      void applyRandomize(overlay.componentId);
     }
   });
 }
-async function applyColor(target, control) {
-  if (colorBusy) return;
-  colorBusy = true;
+async function applyControl(componentId, trait, control, value) {
+  if (controlBusy) return;
+  controlBusy = true;
   try {
-    const response = await applyColorControl(target, control);
+    const response = await applyComponentControl(componentId, trait, control, value);
     applyTapResponse(response);
     renderEvents(notificationRoot(), response.events);
+    if (response.overlay) {
+      openOverlay(response.overlay, window.innerWidth - 320, 110);
+    }
   } catch (error) {
-    showMessage(notificationRoot(), error instanceof Error ? error.message : "Color change failed.", "error");
+    showMessage(notificationRoot(), error instanceof Error ? error.message : "Control change failed.", "error");
   } finally {
-    colorBusy = false;
+    controlBusy = false;
+  }
+}
+async function applyRandomize(componentId) {
+  if (controlBusy) return;
+  controlBusy = true;
+  try {
+    const response = await randomizeComponent(componentId);
+    applyTapResponse(response);
+    renderEvents(notificationRoot(), response.events);
+    if (response.overlay) {
+      openOverlay(response.overlay, window.innerWidth - 320, 110);
+    }
+  } catch (error) {
+    showMessage(notificationRoot(), error instanceof Error ? error.message : "Randomize failed.", "error");
+  } finally {
+    controlBusy = false;
   }
 }
 function applyTapResponse(response) {
@@ -989,6 +1088,7 @@ function applyTapResponse(response) {
   latestGameState = response.gameState;
   replacePreviewHTML(response.preview_html);
   updateHUD(response.gameState);
+  renderSelection(response.gameState);
 }
 function bindDesignerOverlay() {
   const open = byID("designer-toggle-btn");
@@ -1022,47 +1122,34 @@ function updateHUD(gameState) {
   const xp = byID("card-xp");
   const taps = byID("card-taps");
   const bar = byID("card-xp-bar");
-  if (level) level.textContent = "Lv " + gameState.level;
-  if (xp) xp.textContent = gameState.xp + " XP";
-  if (taps) taps.textContent = gameState.tapCount + " taps";
+  const globalLevel = gameState.globalLevel || gameState.level || 1;
+  const totalXP = gameState.totalXp ?? gameState.xp ?? 0;
+  const totalInteractions = gameState.totalInteractions ?? gameState.tapCount ?? 0;
+  if (level) level.textContent = "Lv " + globalLevel;
+  if (xp) xp.textContent = totalXP + " XP";
+  if (taps) taps.textContent = totalInteractions + " actions";
   if (bar) {
-    const currentLevelStart = Math.max(0, gameState.level - 1) * 5;
-    const progress = Math.max(0, Math.min(5, gameState.xp - currentLevelStart));
+    const currentLevelStart = Math.max(0, globalLevel - 1) * 5;
+    const progress = Math.max(0, Math.min(5, totalXP - currentLevelStart));
     bar.style.width = String(progress / 5 * 100) + "%";
   }
 }
-function colorControlsUnlocked(target) {
-  if (!latestGameState) return false;
-  const modes = latestGameState.targetProgress[target]?.unlockedModes || [];
-  return modes.includes("simpleControls");
-}
-function targetSupportsColorControls(target) {
-  return target === "background" || target === "border";
-}
-function lockedControlMessage(target) {
-  if (targetSupportsColorControls(target)) {
-    return "Color controls unlock at level 5.";
-  }
-  return "Color controls are locked.";
-}
-function currentColorForTarget(target) {
-  const node = latestDocument ? findNode(latestDocument.root, target) : null;
-  const fragment = node?.fragment || {};
-  if (target === "background") {
-    return typeof fragment.background_color === "string" ? fragment.background_color : "#22c55e";
-  }
-  if (target === "border") {
-    return typeof fragment.border_color === "string" ? fragment.border_color : "#22c55e";
-  }
-  return "#22c55e";
-}
-function findNode(node, target) {
-  if (node.type === target) return node;
-  for (const child of node.children || []) {
-    const match = findNode(child, target);
-    if (match) return match;
-  }
-  return null;
+function renderSelection(gameState) {
+  const preview = currentPreview();
+  if (!preview) return;
+  preview.querySelectorAll("[data-selected-component]").forEach((element2) => {
+    element2.removeAttribute("data-selected-component");
+    element2.style.outline = "";
+    element2.style.outlineOffset = "";
+  });
+  const selected = gameState.selectedComponentId;
+  if (!selected) return;
+  const selector = '[data-component-id="' + escapeSelectorValue(selected) + '"]';
+  const element = preview.matches(selector) ? preview : preview.querySelector(selector);
+  if (!element) return;
+  element.dataset.selectedComponent = "true";
+  element.style.outline = "2px solid rgba(52, 211, 153, 0.86)";
+  element.style.outlineOffset = "3px";
 }
 function hasInvalidAction(events) {
   return events.some((event) => event.type === "invalidAction");
@@ -1075,6 +1162,9 @@ function overlayRoot() {
 }
 function notificationRoot() {
   return byID("stage-notification-section");
+}
+function escapeSelectorValue(value) {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
 // web/src/app.ts
