@@ -59,6 +59,25 @@ export async function tapCardZone(target: ComponentTarget, zone: CardHitZone, x:
   return await response.json() as TapCardResponse;
 }
 
+export interface ColorControlPayload {
+  color: string;
+  secondaryColor?: string;
+  gradient?: boolean;
+  angle?: number;
+}
+
+export async function applyColorControl(target: ComponentTarget, control: ColorControlPayload): Promise<TapCardResponse> {
+  const response = await fetch("/api/draft-card/control-change", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target, ...control }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to apply color."));
+  }
+  return await response.json() as TapCardResponse;
+}
+
 export async function generateFragment(target: string, instruction: string, update = false): Promise<GeneratedStyleFragment> {
   const response = await fetch("/api/draft-card/fragments/" + encodeURIComponent(target), {
     method: "POST",

@@ -31,9 +31,13 @@ func TestPageRendersInteractiveStageWorkflow(t *testing.T) {
 		`data-card-preview-root`,
 		`id="draft-card-preview"`,
 		`id="stage-overlay-root"`,
+		`id="stage-hud"`,
 		`id="card-level"`,
 		`id="card-xp"`,
-		`id="designer-toggle-btn"`,
+		`id="card-taps"`,
+		`id="stage-notification-section"`,
+		`id="stage-notification-history"`,
+		`id="reset-draft-btn"`,
 		`id="designer-overlay"`,
 		`id="fragment-target"`,
 		`value="background"`,
@@ -50,6 +54,7 @@ func TestPageRendersInteractiveStageWorkflow(t *testing.T) {
 	}
 	for _, marker := range []string{
 		`id="app-header"`,
+		`id="designer-toggle-btn"`,
 		`<aside`,
 		`lg:grid-cols`,
 		`value="title"`,
@@ -241,6 +246,47 @@ func TestTapDraftCardReturnsLevelUpEvent(t *testing.T) {
 	}
 }
 
+func TestTapDraftCardUnlocksSimpleControlsAtLevelFive(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	var payload struct {
+		GameState GameState   `json:"gameState"`
+		Events    []CardEvent `json:"events"`
+	}
+	for index := 0; index < 20; index++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("tap %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
+		}
+		payload = struct {
+			GameState GameState   `json:"gameState"`
+			Events    []CardEvent `json:"events"`
+		}{}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+		}
+	}
+	if payload.GameState.Level != 5 || payload.GameState.XP != 20 || payload.GameState.TapCount != 20 {
+		t.Fatalf("gameState = %#v", payload.GameState)
+	}
+	if !hasEvent(payload.Events, "modeUnlocked", "background") || !hasEvent(payload.Events, "modeUnlocked", "border") {
+		t.Fatalf("events = %#v, want background and border mode unlocks", payload.Events)
+	}
+	if !hasString(payload.GameState.UnlockedModes, "simpleControls") {
+		t.Fatalf("unlocked modes = %#v, want simpleControls", payload.GameState.UnlockedModes)
+	}
+	if !hasString(payload.GameState.TargetProgress["background"].UnlockedModes, "simpleControls") {
+		t.Fatalf("background progress = %#v, want simpleControls", payload.GameState.TargetProgress["background"])
+	}
+	if !hasString(payload.GameState.TargetProgress["border"].UnlockedModes, "simpleControls") {
+		t.Fatalf("border progress = %#v, want simpleControls", payload.GameState.TargetProgress["border"])
+	}
+}
+
 func TestTapDraftCardHandlesLockedAndInvalidTargets(t *testing.T) {
 	t.Parallel()
 
@@ -269,6 +315,168 @@ func TestTapDraftCardHandlesLockedAndInvalidTargets(t *testing.T) {
 	mux.ServeHTTP(invalidRecorder, invalidRequest)
 	if invalidRecorder.Code != http.StatusBadRequest {
 		t.Fatalf("invalid status = %d, want 400 body=%s", invalidRecorder.Code, invalidRecorder.Body.String())
+	}
+}
+
+func TestControlChangeDraftCardAppliesUnlockedColors(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		target string
+		color  string
+		field  string
+	}{
+		{name: "background", target: "background", color: "#22c55e", field: `"background_color":"#22c55e"`},
+		{name: "border", target: "border", color: "#f59e0b", field: `"border_color":"#f59e0b"`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			mux := testMux(t, nil)
+			levelDraftCardToFive(t, mux)
+
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"target":"`+test.target+`","color":"`+test.color+`"}`))
+			request.Header.Set("Content-Type", "application/json")
+			mux.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+			}
+			var payload struct {
+				GameState       GameState       `json:"gameState"`
+				AppliedFragment json.RawMessage `json:"appliedFragment"`
+				PreviewHTML     string          `json:"preview_html"`
+				Events          []CardEvent     `json:"events"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+			}
+			if payload.GameState.Level < 5 || payload.GameState.TapCount != 20 {
+				t.Fatalf("gameState = %#v", payload.GameState)
+			}
+			if !strings.Contains(string(payload.AppliedFragment), test.field) {
+				t.Fatalf("appliedFragment = %s, want %s", string(payload.AppliedFragment), test.field)
+			}
+			if !strings.Contains(payload.PreviewHTML, test.color) {
+				t.Fatalf("preview_html did not include %s: %s", test.color, payload.PreviewHTML)
+			}
+			if !hasEvent(payload.Events, "fragmentApplied", test.target) {
+				t.Fatalf("events = %#v, want fragmentApplied", payload.Events)
+			}
+		})
+	}
+}
+
+func TestControlChangeDraftCardAppliesUnlockedGradients(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		target string
+		body   string
+		field  string
+		css    string
+	}{
+		{
+			name:   "background",
+			target: "background",
+			body:   `{"target":"background","color":"#22c55e","secondaryColor":"#38bdf8","gradient":true,"angle":45}`,
+			field:  `"background_color":"#22c55e"`,
+			css:    `linear-gradient(45deg, #22c55e 0%, #38bdf8 100%)`,
+		},
+		{
+			name:   "border",
+			target: "border",
+			body:   `{"target":"border","color":"#f59e0b","secondaryColor":"#a78bfa","gradient":true,"angle":210}`,
+			field:  `"border_color":"#f59e0b"`,
+			css:    `border-image: linear-gradient(210deg, #f59e0b 0%, #a78bfa 100%) 1`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			mux := testMux(t, nil)
+			levelDraftCardToFive(t, mux)
+
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(test.body))
+			request.Header.Set("Content-Type", "application/json")
+			mux.ServeHTTP(recorder, request)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+			}
+			var payload struct {
+				AppliedFragment json.RawMessage `json:"appliedFragment"`
+				PreviewHTML     string          `json:"preview_html"`
+				Events          []CardEvent     `json:"events"`
+			}
+			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+			}
+			if !strings.Contains(string(payload.AppliedFragment), test.field) || !strings.Contains(string(payload.AppliedFragment), test.css) {
+				t.Fatalf("appliedFragment = %s, want field %s and css %s", string(payload.AppliedFragment), test.field, test.css)
+			}
+			if !strings.Contains(payload.PreviewHTML, test.css) {
+				t.Fatalf("preview_html did not include %s: %s", test.css, payload.PreviewHTML)
+			}
+			if !hasEvent(payload.Events, "fragmentApplied", test.target) {
+				t.Fatalf("events = %#v, want fragmentApplied", payload.Events)
+			}
+		})
+	}
+}
+
+func TestControlChangeDraftCardRequiresUnlockedMode(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"target":"background","color":"#22c55e"}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload struct {
+		GameState GameState   `json:"gameState"`
+		Events    []CardEvent `json:"events"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if payload.GameState.TapCount != 0 || !hasEvent(payload.Events, "invalidAction", "background") {
+		t.Fatalf("payload = %#v", payload)
+	}
+}
+
+func TestControlChangeDraftCardRejectsInvalidColor(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	levelDraftCardToFive(t, mux)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"target":"background","color":"url(https://example.test)"}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestControlChangeDraftCardRejectsInvalidGradient(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	levelDraftCardToFive(t, mux)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"target":"background","color":"#22c55e","gradient":true}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -897,4 +1105,18 @@ func hasEvent(events []CardEvent, eventType, target string) bool {
 		}
 	}
 	return false
+}
+
+func levelDraftCardToFive(t *testing.T, mux *http.ServeMux) {
+	t.Helper()
+
+	for index := 0; index < 20; index++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("tap %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
+		}
+	}
 }

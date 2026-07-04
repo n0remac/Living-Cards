@@ -218,6 +218,7 @@ func AllowedCSS() map[string]struct{} {
 	return map[string]struct{}{
 		"border":        {},
 		"border-color":  {},
+		"border-image":  {},
 		"border-radius": {},
 		"border-width":  {},
 		"box-shadow":    {},
@@ -279,5 +280,5 @@ Rules:
 - border_radius_px is clamped to 0..64.
 - border_color must be a safe color: hex, rgb(...), rgba(...), hsl(...), or hsla(...).
 - css is optional inline declarations only.
-- Allowed css properties: border, border-color, border-width, border-radius, box-shadow.
+- Allowed css properties: border, border-color, border-width, border-radius, border-image, box-shadow.
 - Do not output url(...), javascript:, expression(...), @import, position, content, raw HTML, selectors, braces, or JavaScript.`

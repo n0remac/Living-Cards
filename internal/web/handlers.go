@@ -135,6 +135,10 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 			tapDraftCardHandler(w, r, state)
 			return
 		}
+		if path == "control-change" {
+			controlChangeDraftCardHandler(w, r, state)
+			return
+		}
 		if path == "library" {
 			designLibraryHandler(w, r, state)
 			return
@@ -219,6 +223,14 @@ type tapDraftCardRequest struct {
 	Y      float64 `json:"y"`
 }
 
+type controlChangeDraftCardRequest struct {
+	Target         string `json:"target"`
+	Color          string `json:"color"`
+	SecondaryColor string `json:"secondaryColor,omitempty"`
+	Gradient       bool   `json:"gradient,omitempty"`
+	Angle          int    `json:"angle,omitempty"`
+}
+
 type tapDraftCardResponse struct {
 	Document        cardcomponent.Document      `json:"document"`
 	GameState       GameState                   `json:"gameState"`
@@ -279,6 +291,31 @@ func tapDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designer
 		return
 	}
 	result, err := state.tap(request.Target, request.Zone, request.X, request.Y)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeTappedDraftCard(w, result)
+}
+
+func controlChangeDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request controlChangeDraftCardRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	result, err := state.applyColorControl(request.Target, colorControlRequest{
+		Color:          request.Color,
+		SecondaryColor: request.SecondaryColor,
+		Gradient:       request.Gradient,
+		Angle:          request.Angle,
+	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

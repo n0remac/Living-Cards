@@ -19,7 +19,7 @@ func Page() *Node {
 				Id("living-card-stage"),
 				Class("living-card-stage"),
 				Div(Class("living-card-atmosphere")),
-				stageHUDView(),
+				stageResetView(),
 				cardWorkspaceView(),
 				Div(
 					Id("stage-overlay-root"),
@@ -46,44 +46,55 @@ func cardWorkspaceView() *Node {
 		Id("card-workspace"),
 		Attr("data-card-preview-root", ""),
 		Class("stage-card-wrap"),
-		preview,
+		Div(
+			Class("stage-card-stack"),
+			stageHUDView(),
+			preview,
+		),
 	)
 }
 
 func stageHUDView() *Node {
 	return Div(
-		Class("pointer-events-none fixed inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-3 sm:p-5"),
+		Id("stage-hud"),
+		Class("stage-hud"),
 		Div(
-			Class("pointer-events-auto flex min-w-0 flex-col gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-surface)]/90 px-3 py-2 shadow-lg backdrop-blur"),
+			Class("stage-xp-panel"),
 			Div(
-				Class("flex items-center gap-3"),
-				H1(Class("text-sm font-semibold text-[var(--app-fg)]"), T("Living Card")),
-				Span(Id("card-level"), Class("rounded-full bg-emerald-400/15 px-2 py-0.5 text-xs font-semibold text-emerald-100"), T("Lv 1")),
-			),
-			Div(
-				Class("h-1.5 w-44 max-w-[42vw] overflow-hidden rounded-full bg-black/30"),
-				Div(Id("card-xp-bar"), Class("h-full w-0 rounded-full bg-emerald-300 transition-[width] duration-300")),
-			),
-			Div(
-				Class("flex gap-3 text-[0.7rem] font-medium uppercase text-[var(--app-fg-soft)]"),
+				Class("stage-xp-stats"),
+				Span(Id("card-level"), T("Lv 1")),
 				Span(Id("card-xp"), T("0 XP")),
 				Span(Id("card-taps"), T("0 taps")),
 			),
+			Div(
+				Class("stage-xp-track"),
+				Div(Id("card-xp-bar"), Class("stage-xp-fill")),
+			),
+		),
+		Button(
+			Id("stage-notification-section"),
+			Type("button"),
+			Attr("aria-live", "polite"),
+			Class("stage-notification-section"),
+			Span(Id("stage-notification-current"), T("No notifications")),
 		),
 		Div(
-			Class("pointer-events-auto flex gap-2"),
-			Button(
-				Id("designer-toggle-btn"),
-				Type("button"),
-				Class(uiSecondaryButtonClass("sm")),
-				T("Designer"),
-			),
-			Button(
-				Id("reset-draft-btn"),
-				Type("button"),
-				Class(uiSecondaryButtonClass("sm")),
-				T("Reset"),
-			),
+			Id("stage-notification-history"),
+			Class("stage-notification-history hidden"),
+			Div(Class("stage-notification-history-title"), T("Notifications")),
+			Div(Id("stage-notification-history-list"), Class("stage-notification-history-list")),
+		),
+	)
+}
+
+func stageResetView() *Node {
+	return Div(
+		Class("pointer-events-none fixed right-3 top-3 z-20 sm:right-5 sm:top-5"),
+		Button(
+			Id("reset-draft-btn"),
+			Type("button"),
+			Class(uiSecondaryButtonClass("sm")+" pointer-events-auto"),
+			T("Reset"),
 		),
 	)
 }
@@ -235,26 +246,146 @@ func pageCSS() string {
   place-items: center;
   width: 100%;
   height: 100%;
-  padding: 5.5rem 1rem 4rem;
+  padding: 1rem;
   perspective: 1000px;
   touch-action: manipulation;
 }
 
+.stage-card-stack {
+  width: min(94vw, 34rem, calc((100dvh - 6.5rem) * 5 / 7));
+  display: grid;
+  gap: 0;
+}
+
+.stage-hud {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  display: grid;
+  gap: 0.45rem;
+  pointer-events: none;
+}
+
+.stage-xp-panel {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  padding: 0 0 0.45rem;
+}
+
+.stage-xp-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: rgba(244, 244, 245, 0.78);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.stage-xp-track {
+  height: 0.2rem;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.stage-xp-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: #34d399;
+  transition: width 220ms ease;
+}
+
+.stage-notification-section {
+  pointer-events: auto;
+  min-height: 2rem;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.45rem;
+  background: rgba(9, 9, 11, 0.58);
+  padding: 0.45rem 0.6rem;
+  color: rgba(244, 244, 245, 0.84);
+  font-size: 0.76rem;
+  font-weight: 650;
+  text-align: left;
+  backdrop-filter: blur(10px);
+}
+
+.stage-notification-section[data-tone="info"] {
+  border-color: rgba(52, 211, 153, 0.28);
+  color: rgba(236, 253, 245, 0.94);
+}
+
+.stage-notification-section[data-tone="error"] {
+  border-color: rgba(251, 191, 36, 0.3);
+  color: rgba(254, 243, 199, 0.95);
+}
+
+.stage-notification-section[data-tone="empty"] {
+  color: rgba(244, 244, 245, 0.44);
+}
+
+.stage-notification-history {
+  pointer-events: auto;
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-height: min(16rem, 38dvh);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.45rem;
+  background: rgba(12, 12, 14, 0.94);
+  color: rgba(244, 244, 245, 0.88);
+  box-shadow: 0 1.25rem 3rem rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(16px);
+}
+
+.stage-notification-history-title {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.55rem 0.7rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: rgba(244, 244, 245, 0.62);
+}
+
+.stage-notification-history-list {
+  display: grid;
+  max-height: calc(min(16rem, 38dvh) - 2rem);
+  overflow-y: auto;
+}
+
+.stage-notification-history-item {
+  padding: 0.6rem 0.7rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+
+.stage-notification-history-item[data-tone="error"] {
+  color: rgba(254, 243, 199, 0.95);
+}
+
+.stage-notification-history-empty {
+  padding: 0.7rem;
+  color: rgba(244, 244, 245, 0.5);
+  font-size: 0.8rem;
+}
+
 .stage-card-wrap #draft-card-preview {
-  width: min(76vw, 28rem, calc((100dvh - 10rem) * 5 / 7));
-  max-width: min(76vw, 28rem, calc((100dvh - 10rem) * 5 / 7));
+  width: 100%;
+  max-width: none;
   cursor: pointer;
   transform-origin: center;
   will-change: transform;
   color: var(--app-fg);
-}
-
-.stage-toast {
-  position: absolute;
-  left: 50%;
-  top: 18%;
-  transform: translateX(-50%);
-  max-width: min(28rem, calc(100vw - 2rem));
 }
 
 .designer-open #designer-overlay {

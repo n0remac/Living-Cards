@@ -7,6 +7,8 @@ export interface CardHit {
   zone: CardHitZone;
   x: number;
   y: number;
+  clientX: number;
+  clientY: number;
 }
 
 export function hitTestCard(event: PointerEvent, preview: HTMLElement): CardHit {
@@ -22,15 +24,15 @@ export function hitTestCard(event: PointerEvent, preview: HTMLElement): CardHit 
     rect.height - localY <= borderBandPX;
 
   if (inBorderBand) {
-    return { target: "border", zone: "border", x, y };
+    return { target: "border", zone: "border", x, y, clientX: event.clientX, clientY: event.clientY };
   }
 
   const target = event.target instanceof Element ? event.target : null;
   if (target?.closest('[data-component-type="textarea"]')) {
-    return { target: "textarea", zone: "textarea", x, y };
+    return { target: "textarea", zone: "textarea", x, y, clientX: event.clientX, clientY: event.clientY };
   }
 
-  return { target: "background", zone: "background", x, y };
+  return { target: "background", zone: "background", x, y, clientX: event.clientX, clientY: event.clientY };
 }
 
 function clamp(value: number): number {

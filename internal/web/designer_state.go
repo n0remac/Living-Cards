@@ -124,6 +124,52 @@ func (s *designerState) tap(target, zone string, x, y float64) (tapResult, error
 	}, nil
 }
 
+func (s *designerState) applyColorControl(target string, request colorControlRequest) (tapResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.gameState = normalizeGameState(s.gameState)
+	target = canonicalTapTarget(target, target)
+	if !isKnownTapTarget(target) {
+		return tapResult{}, fmt.Errorf("target %q is not available", target)
+	}
+	if !targetUnlocked(s.gameState, target) || !modeUnlocked(s.gameState, target, editModeSimpleControls) {
+		return tapResult{
+			document:  cloneValue(s.document),
+			gameState: cloneValue(s.gameState),
+			library:   cloneLibrary(s.library),
+			events: []CardEvent{{
+				Type:    "invalidAction",
+				Target:  target,
+				Message: "Color controls unlock at level 5.",
+			}},
+		}, nil
+	}
+
+	raw, err := colorGeneratedFragment(s.document, target, request)
+	if err != nil {
+		return tapResult{}, err
+	}
+	document := cloneValue(s.document)
+	normalized, item, err := applyGeneratedFragmentToDocument(raw, &document)
+	if err != nil {
+		return tapResult{}, err
+	}
+	s.document = document
+	s.lastApplied = &item
+
+	return tapResult{
+		document:        cloneValue(s.document),
+		gameState:       cloneValue(s.gameState),
+		appliedFragment: normalized,
+		library:         cloneLibrary(s.library),
+		events: []CardEvent{{
+			Type:   "fragmentApplied",
+			Target: target,
+		}},
+	}, nil
+}
+
 func (s *designerState) applyLibraryItem(id string) (cardcomponent.Document, any, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
