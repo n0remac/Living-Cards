@@ -9,6 +9,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
 	"github.com/n0remac/Living-Card/internal/components/shape"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
 	"github.com/n0remac/Living-Card/internal/fragment"
@@ -18,6 +19,7 @@ const (
 	componentTypeCard     = cardcomponent.Type
 	componentTypeTextarea = cardcomponent.TypeTextarea
 	componentTypeShape    = cardcomponent.TypeShape
+	componentTypeImage    = cardcomponent.TypeImage
 
 	componentCardRoot = cardcomponent.DefaultRootID
 	componentTextarea = cardcomponent.DefaultTextareaID
@@ -28,6 +30,7 @@ const (
 	traitShadow     = "shadow"
 	traitPadding    = "padding"
 	traitText       = "text"
+	traitImage      = "image"
 	traitTypography = "typography"
 	traitFill       = "fill"
 	traitGeometry   = "geometry"
@@ -229,6 +232,9 @@ func syncLegacyGameState(state GameState) GameState {
 	if componentTypeUnlocked(state, componentTypeShape) {
 		state.UnlockedTargets = appendStringOnce(state.UnlockedTargets, shape.Type)
 	}
+	if componentTypeUnlocked(state, componentTypeImage) {
+		state.UnlockedTargets = appendStringOnce(state.UnlockedTargets, imagecomponent.Type)
+	}
 	state.UnlockedModes = []string{editModeRandom}
 	if state.GlobalLevel >= 5 {
 		state.UnlockedModes = appendStringOnce(state.UnlockedModes, editModeSimpleControls)
@@ -254,6 +260,16 @@ func syncLegacyGameState(state GameState) GameState {
 			modes = appendStringOnce(modes, editModeSimpleControls)
 		}
 		state.TargetProgress[shape.Type] = TargetProgress{Taps: shapeProgress.Interactions, Level: shapeProgress.Level, UnlockedModes: modes}
+	}
+	for id, imageProgress := range state.ComponentProgress {
+		if imageProgress.ComponentType != componentTypeImage {
+			continue
+		}
+		modes := []string{editModeRandom}
+		if len(imageProgress.UnlockedControls) > 0 {
+			modes = appendStringOnce(modes, editModeSimpleControls)
+		}
+		state.TargetProgress[id] = TargetProgress{Taps: imageProgress.Interactions, Level: imageProgress.Level, UnlockedModes: modes}
 	}
 	return state
 }
@@ -290,6 +306,8 @@ func unlockedTraits(componentType string, globalLevel, componentLevel int) []str
 			traits = append(traits, traitShadow)
 		}
 		return traits
+	case componentTypeImage:
+		return []string{traitImage, traitPosition, traitSize, traitBorder}
 	default:
 		return nil
 	}
@@ -346,6 +364,11 @@ func unlockedControls(componentType string, globalLevel, componentLevel int) []s
 			controls = append(controls, "shadowPreset")
 		}
 		return controls
+	case componentTypeImage:
+		if componentLevel < overlayUnlockLevel {
+			return nil
+		}
+		return append(randomLockControls(componentLevel), "src", "alt", "x", "y", "position", "width", "height", "rotation", "borderColor", "borderWidthPx", "borderRadiusPx")
 	default:
 		return nil
 	}
@@ -369,6 +392,8 @@ func canonicalTapComponent(target, zone string) (string, string) {
 		return componentTextarea, traitText
 	case shape.Type:
 		return componentShape, traitGeometry
+	case imagecomponent.Type:
+		return target, traitImage
 	case componentCardRoot:
 		return componentCardRoot, ""
 	default:
@@ -395,7 +420,7 @@ func isKnownComponentID(componentID string) bool {
 	case componentCardRoot, componentTextarea, componentShape:
 		return true
 	default:
-		return false
+		return strings.TrimSpace(componentID) != ""
 	}
 }
 
@@ -418,7 +443,8 @@ func componentUnlocked(state GameState, componentID string) bool {
 	case componentShape:
 		return componentTypeUnlocked(state, componentTypeShape)
 	default:
-		return false
+		progress, ok := state.ComponentProgress[componentID]
+		return ok && componentTypeUnlocked(state, progress.ComponentType)
 	}
 }
 
@@ -444,7 +470,7 @@ func traitUnlocked(progress ComponentProgress, trait string) bool {
 }
 
 func controlUnlocked(progress ComponentProgress, control string) bool {
-	if control == "position" && (progress.ComponentType == componentTypeTextarea || progress.ComponentType == componentTypeShape) {
+	if control == "position" && (progress.ComponentType == componentTypeTextarea || progress.ComponentType == componentTypeShape || progress.ComponentType == componentTypeImage) {
 		return true
 	}
 	for _, candidate := range progress.UnlockedControls {
@@ -485,6 +511,8 @@ func randomGeneratedFragment(target string, seed int64, level int) (json.RawMess
 		value = textarea.RandomGenerated(seed, level)
 	case shape.Type:
 		value = shape.RandomGenerated(seed, level)
+	case imagecomponent.Type:
+		value = imagecomponent.RandomGenerated(seed, level)
 	default:
 		return nil, fmt.Errorf("target %q does not support random fragments", target)
 	}
@@ -568,21 +596,18 @@ func availableComponents(state GameState, document cardcomponent.Document) []Com
 		Label:         "Card",
 		Traits:        state.ComponentProgress[componentCardRoot].UnlockedTraits,
 	}}
-	if componentUnlocked(state, componentTextarea) && findNodeByID(document.Root, componentTextarea) != nil {
-		progress := state.ComponentProgress[componentTextarea]
+	for _, node := range document.Root.Children {
+		if node.Type != componentTypeTextarea && node.Type != componentTypeShape && node.Type != componentTypeImage {
+			continue
+		}
+		if !componentUnlocked(state, node.ID) {
+			continue
+		}
+		progress := state.ComponentProgress[node.ID]
 		out = append(out, ComponentDescriptor{
-			ComponentID:   componentTextarea,
-			ComponentType: componentTypeTextarea,
-			Label:         "Text",
-			Traits:        progress.UnlockedTraits,
-		})
-	}
-	if componentUnlocked(state, componentShape) && findNodeByID(document.Root, componentShape) != nil {
-		progress := state.ComponentProgress[componentShape]
-		out = append(out, ComponentDescriptor{
-			ComponentID:   componentShape,
-			ComponentType: componentTypeShape,
-			Label:         "Shape",
+			ComponentID:   node.ID,
+			ComponentType: node.Type,
+			Label:         componentLabel(node.Type),
 			Traits:        progress.UnlockedTraits,
 		})
 	}
@@ -608,6 +633,8 @@ func buildOverlay(document cardcomponent.Document, state GameState, componentID 
 		overlay.Controls = append(overlay.Controls, textareaControls(document, progress)...)
 	case componentTypeShape:
 		overlay.Controls = append(overlay.Controls, shapeControls(document, progress)...)
+	case componentTypeImage:
+		overlay.Controls = append(overlay.Controls, imageControls(document, progress)...)
 	}
 	return overlay
 }
@@ -639,7 +666,7 @@ func cardControls(document cardcomponent.Document, progress ComponentProgress) [
 }
 
 func textareaControls(document cardcomponent.Document, progress ComponentProgress) []ControlDescriptor {
-	part := currentTextarea(document)
+	part := currentTextarea(document, progress.ComponentID)
 	controls := randomLockControl(progress)
 	if controlUnlocked(progress, "content") {
 		controls = append(controls, ControlDescriptor{Trait: traitText, Control: "content", Kind: "text", Label: "Text", Value: part.Content})
@@ -692,7 +719,7 @@ func textareaControls(document cardcomponent.Document, progress ComponentProgres
 }
 
 func shapeControls(document cardcomponent.Document, progress ComponentProgress) []ControlDescriptor {
-	part := currentShape(document)
+	part := currentShape(document, progress.ComponentID)
 	controls := randomLockControl(progress)
 	if controlUnlocked(progress, "shape") {
 		controls = append(controls, selectControl(traitGeometry, "shape", "Shape", part.Shape, shapeOptions()))
@@ -723,6 +750,42 @@ func shapeControls(document cardcomponent.Document, progress ComponentProgress) 
 	}
 	if controlUnlocked(progress, "shadowPreset") {
 		controls = append(controls, selectControl(traitShadow, "shadowPreset", "Shadow", part.Shadow, shapeShadowOptions()))
+	}
+	return controls
+}
+
+func imageControls(document cardcomponent.Document, progress ComponentProgress) []ControlDescriptor {
+	part := currentImage(document, progress.ComponentID)
+	controls := randomLockControl(progress)
+	if controlUnlocked(progress, "src") {
+		controls = append(controls, ControlDescriptor{Trait: traitImage, Control: "src", Kind: "text", Label: "Image Data", Value: part.Src})
+	}
+	if controlUnlocked(progress, "alt") {
+		controls = append(controls, ControlDescriptor{Trait: traitImage, Control: "alt", Kind: "text", Label: "Alt Text", Value: part.Alt})
+	}
+	if controlUnlocked(progress, "x") {
+		controls = append(controls, rangeControl(traitPosition, "x", "X", part.X, 0, 100, 1))
+	}
+	if controlUnlocked(progress, "y") {
+		controls = append(controls, rangeControl(traitPosition, "y", "Y", part.Y, 0, 100, 1))
+	}
+	if controlUnlocked(progress, "width") {
+		controls = append(controls, rangeControl(traitSize, "width", "Width", part.Width, 8, 100, 1))
+	}
+	if controlUnlocked(progress, "height") {
+		controls = append(controls, rangeControl(traitSize, "height", "Height", part.Height, 8, 100, 1))
+	}
+	if controlUnlocked(progress, "rotation") {
+		controls = append(controls, rangeControl(traitImage, "rotation", "Rotation", part.Rotation, 0, 359, 1))
+	}
+	if controlUnlocked(progress, "borderColor") {
+		controls = append(controls, colorControl(traitBorder, "borderColor", "Border", part.BorderColor))
+	}
+	if controlUnlocked(progress, "borderWidthPx") {
+		controls = append(controls, rangeControl(traitBorder, "borderWidthPx", "Border Width", part.BorderWidthPX, 0, 12, 1))
+	}
+	if controlUnlocked(progress, "borderRadiusPx") {
+		controls = append(controls, rangeControl(traitBorder, "borderRadiusPx", "Radius", part.BorderRadiusPX, 0, 48, 1))
 	}
 	return controls
 }
@@ -768,9 +831,12 @@ func currentBorder(document cardcomponent.Document) border.Fragment {
 	return part
 }
 
-func currentTextarea(document cardcomponent.Document) textarea.Fragment {
+func currentTextarea(document cardcomponent.Document, componentID string) textarea.Fragment {
 	part := textarea.DefaultFragment()
-	if node := findNodeByID(document.Root, componentTextarea); node != nil && len(node.Fragment) > 0 {
+	if strings.TrimSpace(componentID) == "" {
+		componentID = componentTextarea
+	}
+	if node := findNodeByID(document.Root, componentID); node != nil && len(node.Fragment) > 0 {
 		_ = json.Unmarshal(node.Fragment, &part)
 	}
 	generated := fragment.Generated[textarea.Fragment]{Target: textarea.Type, Description: "Current textarea", Fragment: part}
@@ -778,13 +844,26 @@ func currentTextarea(document cardcomponent.Document) textarea.Fragment {
 	return generated.Fragment
 }
 
-func currentShape(document cardcomponent.Document) shape.Fragment {
+func currentShape(document cardcomponent.Document, componentID string) shape.Fragment {
 	part := shape.DefaultFragment()
-	if node := findNodeByID(document.Root, componentShape); node != nil && len(node.Fragment) > 0 {
+	if strings.TrimSpace(componentID) == "" {
+		componentID = componentShape
+	}
+	if node := findNodeByID(document.Root, componentID); node != nil && len(node.Fragment) > 0 {
 		_ = json.Unmarshal(node.Fragment, &part)
 	}
 	generated := fragment.Generated[shape.Fragment]{Target: shape.Type, Description: "Current shape", Fragment: part}
 	shape.NormalizeGenerated(&generated)
+	return generated.Fragment
+}
+
+func currentImage(document cardcomponent.Document, componentID string) imagecomponent.Fragment {
+	part := imagecomponent.DefaultFragment()
+	if node := findNodeByID(document.Root, componentID); node != nil && len(node.Fragment) > 0 {
+		_ = json.Unmarshal(node.Fragment, &part)
+	}
+	generated := fragment.Generated[imagecomponent.Fragment]{Target: imagecomponent.Type, Description: "Current image", Fragment: part}
+	imagecomponent.NormalizeGenerated(&generated)
 	return generated.Fragment
 }
 
@@ -837,6 +916,8 @@ func componentTitle(componentType string) string {
 		return "Text"
 	case componentTypeShape:
 		return "Shape"
+	case componentTypeImage:
+		return "Image"
 	default:
 		return "Card"
 	}

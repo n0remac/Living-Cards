@@ -5,7 +5,7 @@ import (
 
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
-	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
 )
 
@@ -19,8 +19,7 @@ func Page() *Node {
 				Id("living-card-stage"),
 				Class("living-card-stage"),
 				Div(Class("living-card-atmosphere")),
-				stageResetView(),
-				cardWorkspaceView(),
+				gameStageView(),
 				Div(
 					Id("stage-overlay-root"),
 					Class("stage-overlay-root pointer-events-none fixed inset-0 z-30"),
@@ -34,23 +33,49 @@ func Page() *Node {
 	)
 }
 
-func cardWorkspaceView() *Node {
-	preview, err := cardcomponent.RenderDocument(cardcomponent.DefaultDocument(), cardComponentRegistry())
-	if err != nil {
-		preview = Div(
-			Id("draft-card-preview"),
-			Class("relative aspect-[5/7] w-full max-w-md overflow-hidden rounded-3xl border border-red-400/40 p-6 text-red-100"),
-			T(err.Error()),
-		)
-	}
+func gameStageView() *Node {
 	return Div(
 		Id("card-workspace"),
-		Attr("data-card-preview-root", ""),
-		Class("stage-card-wrap"),
+		Attr("data-game-stage", ""),
+		Class("game-stage-shell"),
 		Div(
-			Class("stage-card-stack"),
-			stageHUDView(),
-			preview,
+			Class("game-topbar"),
+			Div(
+				Class("game-title-block"),
+				H1(Class("game-title"), T("Living Card")),
+				Div(Id("game-progress"), Class("game-progress"), T("0 cards collected")),
+			),
+			Button(
+				Id("reset-draft-btn"),
+				Type("button"),
+				Class(uiSecondaryButtonClass("sm")),
+				T("Reset"),
+			),
+		),
+		Div(
+			Class("game-board"),
+			Button(Id("game-prev-card"), Type("button"), Class("game-cycle-button"), Attr("aria-label", "Previous card"), T("‹")),
+			Div(
+				Class("game-active-column"),
+				Div(Id("game-world-card"), Class("game-world-card"), Attr("aria-live", "polite"),
+					Div(Class("game-loading-card"), T("Loading card...")),
+				),
+				Div(
+					Class("game-action-row"),
+					Div(Id("game-status"), Class("game-status"), T("Loading scene...")),
+					Button(Id("game-collect-card"), Type("button"), Class(uiPrimaryButtonClass("sm")), T("Collect")),
+				),
+			),
+			Button(Id("game-next-card"), Type("button"), Class("game-cycle-button"), Attr("aria-label", "Next card"), T("›")),
+		),
+		Div(
+			Class("game-library-panel"),
+			Div(
+				Class("game-library-header"),
+				H2(Class("game-library-title"), T("Library")),
+				Span(Id("game-library-count"), Class("game-library-count"), T("Empty")),
+			),
+			Div(Id("game-library-list"), Class("game-library-list"), T("No cards collected.")),
 		),
 	)
 }
@@ -169,6 +194,7 @@ func designerControlsView() *Node {
 					Option(Value(background.Type), T("Background")),
 					Option(Value(border.Type), T("Border")),
 					Option(Value(textarea.Type), T("Text area")),
+					Option(Value(imagecomponent.Type), T("Image")),
 				),
 			),
 			Div(
@@ -225,6 +251,20 @@ func designerControlsView() *Node {
 			Div(Id("design-library-list"), Class("grid gap-2")),
 		),
 		Div(
+			Class("mt-5 space-y-3 border-t border-[var(--app-border)] pt-5"),
+			H3(Class("text-[0.72rem] font-semibold uppercase text-[var(--app-fg-soft)]"), T("Add component")),
+			Div(
+				Class("flex flex-wrap gap-2"),
+				Button(Id("add-textarea-component-btn"), Type("button"), Class(uiSecondaryButtonClass("xs")), T("Text")),
+				Button(Id("add-shape-component-btn"), Type("button"), Class(uiSecondaryButtonClass("xs")), T("Shape")),
+				Label(
+					Class(uiSecondaryButtonClass("xs")+" cursor-pointer"),
+					T("Image"),
+					Input(Id("add-image-component-input"), Type("file"), Attr("accept", "image/png,image/jpeg,image/webp,image/gif"), Class("hidden")),
+				),
+			),
+		),
+		Div(
 			Class("mt-5 space-y-2"),
 			H3(Class("text-[0.72rem] font-semibold uppercase text-[var(--app-fg-soft)]"), T("Generated fragment")),
 			P(Id("fragment-description"), Class("text-sm text-[var(--app-fg-muted)]"), T("No generated fragment yet.")),
@@ -245,9 +285,8 @@ func pageCSS() string {
   inset: 0;
   width: 100vw;
   height: 100dvh;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
+  overflow: auto;
+  display: block;
   isolation: isolate;
 }
 
@@ -259,6 +298,202 @@ func pageCSS() string {
     radial-gradient(circle at 18% 18%, rgba(16, 185, 129, 0.18), transparent 28%),
     radial-gradient(circle at 82% 72%, rgba(245, 158, 11, 0.14), transparent 30%),
     linear-gradient(145deg, #111111 0%, #1f2933 48%, #271c30 100%);
+}
+
+.game-stage-shell {
+  min-height: 100dvh;
+  width: min(100%, 76rem);
+  margin: 0 auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.game-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.game-title-block {
+  min-width: 0;
+}
+
+.game-title {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.5vw, 1.7rem);
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.game-progress {
+  margin-top: 0.2rem;
+  color: rgba(244, 244, 245, 0.62);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.game-board {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) 3rem;
+  gap: 1rem;
+  align-items: center;
+}
+
+.game-active-column {
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+}
+
+.game-world-card {
+  width: min(86vw, 27rem, calc((100dvh - 14rem) * 5 / 7));
+}
+
+.game-world-card > [data-card-id] {
+  width: 100%;
+  max-width: none;
+  color: var(--app-fg);
+}
+
+.game-loading-card {
+  aspect-ratio: 5 / 7;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 1rem;
+  background: rgba(15,23,42,0.72);
+  color: rgba(244,244,245,0.7);
+  font-weight: 700;
+}
+
+.game-cycle-button {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(9,9,11,0.66);
+  color: rgba(244,244,245,0.9);
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.game-cycle-button:hover {
+  border-color: rgba(52,211,153,0.45);
+  background: rgba(16,185,129,0.16);
+}
+
+.game-action-row {
+  width: min(86vw, 27rem);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.game-status {
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 0.45rem;
+  background: rgba(9,9,11,0.62);
+  padding: 0.5rem 0.7rem;
+  color: rgba(244,244,245,0.78);
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.game-library-panel {
+  display: grid;
+  gap: 0.65rem;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  padding-top: 0.85rem;
+}
+
+.game-library-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.game-library-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: rgba(244,244,245,0.72);
+}
+
+.game-library-count {
+  color: rgba(244,244,245,0.52);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.game-library-list {
+  min-height: 7rem;
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  color: rgba(244,244,245,0.52);
+  font-size: 0.85rem;
+}
+
+.game-library-card {
+  flex: 0 0 8rem;
+  display: grid;
+  gap: 0.35rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: grab;
+}
+
+.game-library-card:active {
+  cursor: grabbing;
+}
+
+.game-library-card [data-card-id] {
+  width: 8rem;
+  max-width: none;
+  pointer-events: none;
+}
+
+.game-library-card-name {
+  color: rgba(244,244,245,0.82);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+@media (max-width: 42rem) {
+  .game-stage-shell {
+    padding: 0.75rem;
+  }
+
+  .game-board {
+    grid-template-columns: 2.5rem minmax(0, 1fr) 2.5rem;
+    gap: 0.5rem;
+  }
+
+  .game-cycle-button {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .game-action-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .stage-card-wrap {

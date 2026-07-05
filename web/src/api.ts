@@ -4,6 +4,8 @@ import type {
   ComponentTarget,
   DesignLibraryItem,
   FragmentIssue,
+  FragmentJSON,
+  GameSessionSnapshot,
   GeneratedStyleFragment,
   InteractiveDraftCardResponse,
   LibraryResponse,
@@ -172,6 +174,70 @@ export async function applyLibraryDesign(itemID: string): Promise<ApplyFragmentR
     throw new Error(await readError(response, "Failed to apply library design."));
   }
   return await response.json() as ApplyFragmentResponse;
+}
+
+export async function fetchGameSession(): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/session", { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to load game session."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function resetGameSession(): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/reset", { method: "POST" });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to reset game session."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function cycleGameCard(direction: "next" | "previous"): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/cycle", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ direction }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to cycle card."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function collectGameCard(cardId: string): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/collect", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cardId }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to collect card."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function playGameCard(sourceCardId: string, targetCardId: string): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/play-card", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sourceCardId, targetCardId }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to play card."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function addDraftComponent(componentType: "textarea" | "shape" | "image", fragment?: FragmentJSON): Promise<TapCardResponse> {
+  const response = await fetch("/api/draft-card/components", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ componentType, fragment }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to add component."));
+  }
+  return await response.json() as TapCardResponse;
 }
 
 async function readError(response: Response, fallback: string): Promise<string> {

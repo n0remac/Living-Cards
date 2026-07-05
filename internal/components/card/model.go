@@ -17,10 +17,12 @@ const (
 	DefaultBorderID      = "border-primary"
 	DefaultTextareaID    = "textarea-main"
 	DefaultShapeID       = "shape-1"
+	DefaultImageID       = "image-1"
 	TypeBackground       = "background"
 	TypeBorder           = "border"
 	TypeTextarea         = "textarea"
 	TypeShape            = "shape"
+	TypeImage            = "image"
 	defaultRootRaw       = `{"padding_px":24,"shadow":""}`
 	defaultBackgroundRaw = `{"background_color":"#111827","css":""}`
 	defaultBorderRaw     = `{"border_width_px":1,"border_radius_px":24,"border_color":"rgba(255,255,255,0.16)","css":""}`
@@ -119,6 +121,10 @@ func DefaultDocument() Document {
 }
 
 func RenderDocument(document Document, registry *Registry) (*godom.Node, error) {
+	return RenderDocumentWithID(document, registry, "draft-card-preview")
+}
+
+func RenderDocumentWithID(document Document, registry *Registry, elementID string) (*godom.Node, error) {
 	if registry == nil {
 		return nil, fmt.Errorf("card component registry is not initialized")
 	}
@@ -153,15 +159,18 @@ func RenderDocument(document Document, registry *Registry) (*godom.Node, error) 
 	if strings.TrimSpace(rootStyle.Shadow) != "" {
 		shellStyle["box-shadow"] = strings.TrimSpace(rootStyle.Shadow)
 	}
-	return godom.Div(
-		godom.Id("draft-card-preview"),
+	attributes := []*godom.Node{
 		godom.Class("relative aspect-[5/7] w-full max-w-md overflow-hidden p-6 shadow-2xl transition-[background,border,border-radius,box-shadow] duration-200"),
 		godom.Attr("data-card-id", document.CardID),
 		godom.Attr("data-component-id", document.Root.ID),
 		godom.Attr("data-component-type", Type),
 		godom.Attr("style", styleString(shellStyle)),
 		godom.Ch(layers),
-	), nil
+	}
+	if strings.TrimSpace(elementID) != "" {
+		attributes = append([]*godom.Node{godom.Id(strings.TrimSpace(elementID))}, attributes...)
+	}
+	return godom.Div(attributes...), nil
 }
 
 func DefaultRootFragment() RootFragment {

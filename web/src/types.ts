@@ -11,10 +11,10 @@ export interface ComponentNode {
   children?: ComponentNode[];
 }
 
-export type FragmentTarget = "background" | "border" | "textarea" | "shape";
-export type ComponentType = "card" | "textarea" | "shape";
-export type ComponentTarget = FragmentTarget | "card" | "shadow" | "padding" | "textblock" | "image" | "button" | "layout";
-export type CardHitZone = "border" | "background" | "textarea" | "shape";
+export type FragmentTarget = "background" | "border" | "textarea" | "shape" | "image";
+export type ComponentType = "card" | "textarea" | "shape" | "image";
+export type ComponentTarget = FragmentTarget | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
+export type CardHitZone = "border" | "background" | "textarea" | "shape" | "image";
 export type EditMode = "random" | "preset" | "simpleControls" | "advancedControls" | "aiPrompt" | "library";
 
 export type FragmentJSON = Record<string, unknown>;
@@ -120,6 +120,7 @@ export interface ComponentOverlay {
 export type CardEvent =
   | { type: "fragmentApplied"; target?: ComponentTarget; componentId?: string; componentType?: ComponentType; trait?: string; control?: string }
   | { type: "controlChanged"; componentId: string; componentType: ComponentType; control: string }
+  | { type: "componentAdded"; componentId: string; componentType: ComponentType; message?: string }
   | { type: "xpGained"; amount: number }
   | { type: "levelUp"; level: number }
   | { type: "componentLevelUp"; componentId: string; componentType: ComponentType; level: number }
@@ -160,4 +161,26 @@ export interface ApplyFragmentResponse {
 export interface LibraryResponse {
   item?: DesignLibraryItem;
   library: DesignLibraryItem[];
+}
+
+export interface RenderedGameCard {
+  id: string;
+  name: string;
+  kind: "world" | "item" | "clue" | string;
+  tags?: string[];
+  collectible: boolean;
+  collected?: boolean;
+  state?: Record<string, unknown>;
+  document: CardDocument;
+  preview_html: string;
+}
+
+export interface GameSessionSnapshot {
+  worldDeck: RenderedGameCard[];
+  activeWorldCard: RenderedGameCard;
+  activeWorldCardId: string;
+  activeIndex: number;
+  library: RenderedGameCard[];
+  solvedFlags: Record<string, boolean>;
+  message?: string;
 }

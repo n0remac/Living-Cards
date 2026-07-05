@@ -28,8 +28,14 @@ func TestPageRendersInteractiveStageWorkflow(t *testing.T) {
 		`src="/assets/app.js"`,
 		`id="living-card-stage"`,
 		`id="card-workspace"`,
-		`data-card-preview-root`,
-		`id="draft-card-preview"`,
+		`data-game-stage`,
+		`id="game-world-card"`,
+		`id="game-prev-card"`,
+		`id="game-next-card"`,
+		`id="game-collect-card"`,
+		`id="game-status"`,
+		`id="game-library-list"`,
+		`id="game-library-count"`,
 		`id="stage-overlay-root"`,
 		`id="stage-edge-controls"`,
 		`id="stage-edge-controls-top"`,
@@ -37,21 +43,19 @@ func TestPageRendersInteractiveStageWorkflow(t *testing.T) {
 		`id="stage-edge-controls-right"`,
 		`id="stage-edge-controls-bottom"`,
 		`id="stage-edge-controls-status"`,
-		`id="stage-hud"`,
-		`id="card-level"`,
-		`id="card-xp"`,
-		`id="card-taps"`,
-		`id="stage-notification-section"`,
-		`id="stage-notification-history"`,
 		`id="reset-draft-btn"`,
 		`id="designer-overlay"`,
 		`id="fragment-target"`,
 		`value="background"`,
 		`value="border"`,
 		`value="textarea"`,
+		`value="image"`,
 		`id="generate-fragment-btn"`,
 		`id="update-fragment-btn"`,
 		`id="design-library-list"`,
+		`id="add-textarea-component-btn"`,
+		`id="add-shape-component-btn"`,
+		`id="add-image-component-input"`,
 		`id="fragment-preview"`,
 	} {
 		if !strings.Contains(body, marker) {
@@ -167,6 +171,113 @@ func TestInteractiveDraftCardResourceReturnsGameStateAndPreviewHTML(t *testing.T
 	}
 	if !strings.Contains(payload.PreviewHTML, `id="draft-card-preview"`) {
 		t.Fatalf("preview_html did not include rendered card: %s", payload.PreviewHTML)
+	}
+}
+
+func TestGameSessionStartsWithEmptyLibraryAndScriptedDeck(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/game/session", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload GameSessionSnapshot
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if len(payload.Library) != 0 {
+		t.Fatalf("library = %#v, want empty", payload.Library)
+	}
+	if len(payload.WorldDeck) < 5 {
+		t.Fatalf("worldDeck length = %d, want scripted deck", len(payload.WorldDeck))
+	}
+	if payload.ActiveWorldCard.ID != "rusted-cell-door" || !strings.Contains(payload.ActiveWorldCard.PreviewHTML, `game-card-rusted-cell-door`) {
+		t.Fatalf("activeWorldCard = %#v", payload.ActiveWorldCard)
+	}
+	if payload.SolvedFlags["doorUnlocked"] {
+		t.Fatalf("solvedFlags = %#v, want locked door", payload.SolvedFlags)
+	}
+}
+
+func TestGameCycleCollectAndUnlockDoor(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+
+	for index := 0; index < 2; index++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/game/cycle", strings.NewReader(`{"direction":"next"}`))
+		request.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("cycle %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	collectRecorder := httptest.NewRecorder()
+	collectRequest := httptest.NewRequest(http.MethodPost, "/api/game/collect", strings.NewReader(`{"cardId":"bent-iron-key"}`))
+	collectRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(collectRecorder, collectRequest)
+	if collectRecorder.Code != http.StatusOK {
+		t.Fatalf("collect status = %d, want 200 body=%s", collectRecorder.Code, collectRecorder.Body.String())
+	}
+	var collected GameSessionSnapshot
+	if err := json.Unmarshal(collectRecorder.Body.Bytes(), &collected); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, collectRecorder.Body.String())
+	}
+	if len(collected.Library) != 1 || collected.Library[0].ID != "bent-iron-key" {
+		t.Fatalf("library = %#v, want collected key", collected.Library)
+	}
+
+	wrongRecorder := httptest.NewRecorder()
+	wrongRequest := httptest.NewRequest(http.MethodPost, "/api/game/play-card", strings.NewReader(`{"sourceCardId":"bent-iron-key","targetCardId":"faded-photograph"}`))
+	wrongRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(wrongRecorder, wrongRequest)
+	if wrongRecorder.Code != http.StatusOK {
+		t.Fatalf("wrong play status = %d, want 200 body=%s", wrongRecorder.Code, wrongRecorder.Body.String())
+	}
+	var wrong GameSessionSnapshot
+	if err := json.Unmarshal(wrongRecorder.Body.Bytes(), &wrong); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, wrongRecorder.Body.String())
+	}
+	if wrong.SolvedFlags["doorUnlocked"] {
+		t.Fatalf("wrong play unlocked door: %#v", wrong.SolvedFlags)
+	}
+
+	playRecorder := httptest.NewRecorder()
+	playRequest := httptest.NewRequest(http.MethodPost, "/api/game/play-card", strings.NewReader(`{"sourceCardId":"bent-iron-key","targetCardId":"rusted-cell-door"}`))
+	playRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(playRecorder, playRequest)
+	if playRecorder.Code != http.StatusOK {
+		t.Fatalf("play status = %d, want 200 body=%s", playRecorder.Code, playRecorder.Body.String())
+	}
+	var unlocked GameSessionSnapshot
+	if err := json.Unmarshal(playRecorder.Body.Bytes(), &unlocked); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, playRecorder.Body.String())
+	}
+	if !unlocked.SolvedFlags["doorUnlocked"] {
+		t.Fatalf("solvedFlags = %#v, want doorUnlocked", unlocked.SolvedFlags)
+	}
+	if len(unlocked.Library) != 1 || unlocked.Library[0].ID != "bent-iron-key" {
+		t.Fatalf("library = %#v, key should remain visible as history", unlocked.Library)
+	}
+	if !strings.Contains(gameCardHTML(unlocked.WorldDeck, "rusted-cell-door"), "OPEN") {
+		t.Fatalf("door preview did not update: %s", gameCardHTML(unlocked.WorldDeck, "rusted-cell-door"))
+	}
+}
+
+func TestGameCollectRejectsDecoyCards(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/game/collect", strings.NewReader(`{"cardId":"inventory-label"}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -728,6 +839,66 @@ func TestGenericControlChangeMovesTextareaAndShape(t *testing.T) {
 	}
 	if !hasEvent(shapePayload.Events, "xpGained", "") {
 		t.Fatalf("shape events = %#v, want xpGained", shapePayload.Events)
+	}
+}
+
+func TestAddDraftComponentsSupportsMultipleImagesAndControlByID(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	for index := 0; index < 2; index++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/components", strings.NewReader(`{"componentType":"image"}`))
+		request.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("add image %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	moveRecorder := httptest.NewRecorder()
+	moveRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"componentId":"image-2","trait":"position","control":"position","value":{"x":72,"y":22}}`))
+	moveRequest.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(moveRecorder, moveRequest)
+	if moveRecorder.Code != http.StatusOK {
+		t.Fatalf("move status = %d, want 200 body=%s", moveRecorder.Code, moveRecorder.Body.String())
+	}
+	var payload struct {
+		Document    cardcomponent.Document `json:"document"`
+		PreviewHTML string                 `json:"preview_html"`
+	}
+	if err := json.Unmarshal(moveRecorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, moveRecorder.Body.String())
+	}
+	imageOne := findTestNode(payload.Document.Root, "image-1")
+	imageTwo := findTestNode(payload.Document.Root, "image-2")
+	if imageOne == nil || imageTwo == nil {
+		t.Fatalf("document should contain image-1 and image-2: %#v", payload.Document.Root.Children)
+	}
+	if strings.Contains(string(imageOne.Fragment), `"x":72`) {
+		t.Fatalf("image-1 was mutated instead of image-2: %s", string(imageOne.Fragment))
+	}
+	if !strings.Contains(string(imageTwo.Fragment), `"x":72`) || !strings.Contains(string(imageTwo.Fragment), `"y":22`) {
+		t.Fatalf("image-2 fragment was not moved: %s", string(imageTwo.Fragment))
+	}
+	for _, marker := range []string{`data-component-id="image-1"`, `data-component-id="image-2"`, `left: 72%`, `top: 22%`} {
+		if !strings.Contains(payload.PreviewHTML, marker) {
+			t.Fatalf("preview missing %q: %s", marker, payload.PreviewHTML)
+		}
+	}
+}
+
+func TestAddDraftImageRejectsUnsafeSource(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	recorder := httptest.NewRecorder()
+	body := `{"componentType":"image","fragment":{"src":"data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=","alt":"svg","x":50,"y":50,"width":20,"height":20,"border_color":"#ffffff"}}`
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/components", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -1423,6 +1594,27 @@ func hasControl(controls []ControlDescriptor, control string) bool {
 		}
 	}
 	return false
+}
+
+func gameCardHTML(cards []RenderedGameCard, cardID string) string {
+	for _, card := range cards {
+		if card.ID == cardID {
+			return card.PreviewHTML
+		}
+	}
+	return ""
+}
+
+func findTestNode(node cardcomponent.Node, id string) *cardcomponent.Node {
+	if node.ID == id {
+		return &node
+	}
+	for _, child := range node.Children {
+		if match := findTestNode(child, id); match != nil {
+			return match
+		}
+	}
+	return nil
 }
 
 func levelDraftCardToFive(t *testing.T, mux *http.ServeMux) {

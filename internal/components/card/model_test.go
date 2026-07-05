@@ -8,6 +8,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
 	"github.com/n0remac/Living-Card/internal/components/card"
+	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
 	"github.com/n0remac/Living-Card/internal/components/shape"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
 )
@@ -93,6 +94,70 @@ func TestRenderDocumentRendersShapeLayer(t *testing.T) {
 	}
 }
 
+func TestRenderDocumentSupportsMultipleLayerComponentsAndCustomID(t *testing.T) {
+	t.Parallel()
+
+	document := card.DefaultDocument()
+	document.CardID = "fixture-card"
+	document.Root.Children = append(document.Root.Children,
+		card.Node{
+			ID:   "textarea-extra",
+			Type: textarea.Type,
+			Fragment: mustRaw(t, textarea.Fragment{
+				Content:    "Second text layer",
+				FontFamily: "system",
+				FontSizePX: 16,
+				FontWeight: 500,
+				FontStyle:  "normal",
+				Color:      "#f8fafc",
+				Align:      "center",
+				Position:   "center",
+			}),
+		},
+		card.Node{
+			ID:   "shape-extra",
+			Type: shape.Type,
+			Fragment: mustRaw(t, shape.Fragment{
+				Shape:           "diamond",
+				X:               64,
+				Y:               36,
+				Width:           18,
+				Height:          18,
+				BackgroundColor: "#38bdf8",
+				BorderColor:     "#111827",
+				BorderWidthPX:   1,
+			}),
+		},
+		card.Node{
+			ID:       "image-extra",
+			Type:     imagecomponent.Type,
+			Fragment: mustRaw(t, imagecomponent.DefaultFragment()),
+		},
+	)
+
+	node, err := card.RenderDocumentWithID(document, testRegistry(), "game-card-fixture")
+	if err != nil {
+		t.Fatalf("RenderDocumentWithID() error = %v", err)
+	}
+	body := node.Render()
+	for _, marker := range []string{
+		`id="game-card-fixture"`,
+		`data-card-id="fixture-card"`,
+		`data-component-id="textarea-extra"`,
+		`Second text layer`,
+		`data-component-id="shape-extra"`,
+		`data-component-id="image-extra"`,
+		`data-component-type="image"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("render missing %q:\n%s", marker, body)
+		}
+	}
+	if strings.Contains(body, `id="draft-card-preview"`) {
+		t.Fatalf("custom render should not include default preview id:\n%s", body)
+	}
+}
+
 func TestRenderDocumentLaterShellContributionsWin(t *testing.T) {
 	t.Parallel()
 
@@ -127,6 +192,7 @@ func testRegistry() *card.Registry {
 		border.Definition(),
 		textarea.Definition(),
 		shape.Definition(),
+		imagecomponent.Definition(),
 	)
 }
 

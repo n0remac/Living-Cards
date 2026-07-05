@@ -1,4 +1,4 @@
-import { applyDraftFragment, applyLibraryDesign, fetchDesignLibrary, fetchRenderedDraftCard, resetDraftCard, saveAppliedDesign } from "../api";
+import { addDraftComponent, applyDraftFragment, applyLibraryDesign, fetchDesignLibrary, fetchRenderedDraftCard, resetDraftCard, saveAppliedDesign } from "../api";
 import { byID } from "../dom";
 import { replacePreviewHTML } from "./document";
 import { formatIssues, generateTargetFragment, isFragmentGenerationError, parseGeneratedFragment } from "./fragments";
@@ -49,6 +49,7 @@ export function initDesigner(): void {
       void resetDraft();
     });
   }
+  bindAddComponentControls();
   renderProposedFragment(null);
   setSaveEnabled(false);
   void loadDesigner();
@@ -250,10 +251,75 @@ function readTarget(): string {
   switch (select?.value) {
     case "border":
     case "textarea":
+    case "image":
       return select.value;
     default:
       return "background";
   }
+}
+
+function bindAddComponentControls(): void {
+  byID<HTMLButtonElement>("add-textarea-component-btn")?.addEventListener("click", () => {
+    void addComponent("textarea");
+  });
+  byID<HTMLButtonElement>("add-shape-component-btn")?.addEventListener("click", () => {
+    void addComponent("shape");
+  });
+  byID<HTMLInputElement>("add-image-component-input")?.addEventListener("change", (event) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file) return;
+    void addImageComponent(file);
+  });
+}
+
+async function addComponent(componentType: "textarea" | "shape"): Promise<void> {
+  try {
+    setDesignerStatus("Adding component...", false);
+    const response = await addDraftComponent(componentType);
+    renderDesignLibraryItems(response.library);
+    setDesignerStatus("Component added to the draft card.", false);
+    document.dispatchEvent(new CustomEvent("living-card:interactive-refresh"));
+  } catch (error) {
+    setDesignerStatus(error instanceof Error ? error.message : "Component could not be added.", true);
+  }
+}
+
+async function addImageComponent(file: File): Promise<void> {
+  try {
+    if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) {
+      throw new Error("Image must be PNG, JPEG, WebP, or GIF.");
+    }
+    const src = await fileToDataURL(file);
+    setDesignerStatus("Adding image component...", false);
+    const response = await addDraftComponent("image", {
+      src,
+      alt: file.name || "Uploaded image",
+      x: 50,
+      y: 48,
+      width: 46,
+      height: 32,
+      rotation: 0,
+      border_color: "rgba(255,255,255,0.2)",
+      border_width_px: 1,
+      border_radius_px: 14,
+    });
+    renderDesignLibraryItems(response.library);
+    setDesignerStatus("Image component added to the draft card.", false);
+    document.dispatchEvent(new CustomEvent("living-card:interactive-refresh"));
+  } catch (error) {
+    setDesignerStatus(error instanceof Error ? error.message : "Image component could not be added.", true);
+  }
+}
+
+function fileToDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result || "")));
+    reader.addEventListener("error", () => reject(new Error("Could not read image file.")));
+    reader.readAsDataURL(file);
+  });
 }
 
 function setBusy(isBusy: boolean, isUpdate = false): void {

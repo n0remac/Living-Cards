@@ -1,22 +1,24 @@
 # Living Card
 
-Living Card is a Go web app for one process-local editable card document. The current primary surface is an interactive card stage: the user taps card zones to mutate the card, earns XP, levels up, and unlocks simple color controls. An AI JSON fragment designer still exists as a hidden overlay/API workflow for prompt-generated or manually edited fragments.
+Living Card is a Go web app for one process-local editable card document. The primary surface is an interactive card stage: the user taps or long-presses card components, earns XP, unlocks component traits and controls, and edits the rendered card through server-owned state. A hidden AI JSON fragment designer still exists as an overlay/API workflow for prompt-generated or manually edited fragments.
 
-The current architecture has removed the older multi-card, chat, memory, profile, embedding, and patch-proposal product flows. State is backend-owned, mutex-protected, and in-memory for the life of the server process.
+The older multi-card, chat, memory, profile, embedding, and patch-proposal product flows have been removed. State is backend-owned, mutex-protected, and in-memory for the life of the server process.
 
-Latest reviewed commit: `704461e Tighten up card taping screen`.
+Latest reviewed commit: `30b4f38 static editing controls in overlay`.
 
 ## Current Scope
 
 - One draft card document is active per running server process.
-- The draft document has a `card` root with `background`, `border`, and `textarea` child components.
-- The stage is tap-first: short taps apply random generated fragments for unlocked tap targets.
-- Random tap generation currently supports `background` and `border`.
-- `textarea` remains part of the card document, preset library, AI generation, validation, and rendering paths, but it is locked in the tap loop and has no random tap generator.
-- Game progress tracks total taps, XP, level, unlocked targets, unlocked modes, and per-target progress.
-- Simple color controls unlock at level 5 for background and border.
+- The default document has a `card` root with `background`, `border`, and `textarea` children.
+- A `shape` child is appended when the shape component unlocks at global level 7.
+- Known component IDs are `card-root`, `textarea-main`, and `shape-1`.
+- The stage is component-first: short taps randomize unlocked traits while randomization is enabled; long presses request an editable component overlay; dragging moves text and shape components through the position control.
+- Card-root randomization covers background, border, shadow, and padding as those traits unlock.
+- Textarea and shape have their own random fragment generators, component progress, overlays, and controls.
+- Game progress tracks total XP, global level, unlocked component types, selected component, and per-component progress. Legacy target fields remain in API responses for compatibility with earlier background/border flows.
+- Component overlays unlock at component level 3. The latest UI renders overlay controls into fixed edge slots around the stage instead of pointer-anchored floating panels.
 - The designer library is backend-owned and seeded with background, border, and textarea presets. Saved items live only in memory.
-- Frontend JavaScript does not own card state. It sends interactions to the backend, replaces server-rendered preview HTML, updates HUD/notifications, and manages transient UI state.
+- Frontend JavaScript does not own card state. It sends interactions to the backend, replaces server-rendered preview HTML, updates HUD/notifications, and manages transient pointer/UI state.
 
 ## Runtime Flow
 
@@ -25,14 +27,16 @@ Latest reviewed commit: `704461e Tighten up card taping screen`.
 - `GET /assets/app.js` and `GET /assets/app.js.map` serve the committed frontend bundle from `web/dist`.
 - `GET /api/draft-card` returns the current backend-owned draft card document.
 - `GET /api/draft-card/rendered` returns the current draft document, server-rendered preview HTML, and library items.
-- `GET /api/draft-card/interactive` returns the current draft document, game state, rendered preview HTML, available targets, and library items.
+- `GET /api/draft-card/interactive` returns the current draft document, game state, rendered preview HTML, available legacy targets, available component descriptors, the selected component overlay when unlocked, and library items.
 - `POST /api/draft-card/reset` resets the draft document, game progress, and last applied fragment; the in-memory library is preserved.
-- `POST /api/draft-card/tap` applies a random fragment for an unlocked tap target and returns updated game events.
-- `POST /api/draft-card/control-change` applies an unlocked background or border color/gradient control.
+- `POST /api/draft-card/tap` is the legacy target/zone interaction endpoint. It maps background, border, textarea, and shape targets to component interactions.
+- `POST /api/draft-card/interact` applies a component interaction such as `shortTap` or `longPress`.
+- `POST /api/draft-card/control-change` applies generic component controls. It also retains the older target color/gradient payload shape for background and border controls.
+- `POST /api/draft-card/randomize-component` randomizes a component trait directly.
 - `POST /api/draft-card/fragments/background` asks Ollama for a background fragment.
 - `POST /api/draft-card/fragments/border` asks Ollama for a border fragment.
 - `POST /api/draft-card/fragments/textarea` asks Ollama for a text-area fragment.
-- `POST /api/draft-card/apply-fragment` validates a generated or manually edited fragment, applies the normalized fragment to the draft document, and returns updated preview HTML.
+- `POST /api/draft-card/apply-fragment` validates a generated or manually edited fragment, applies the normalized fragment to the draft document, and returns updated preview HTML. The apply path accepts background, border, textarea, and shape targets.
 - `GET /api/draft-card/library?target=...` returns presets and saved library items, optionally filtered by target.
 - `POST /api/draft-card/library/save-applied` saves the last applied fragment unless an identical item already exists.
 - `POST /api/draft-card/library/apply` applies a library item to the current draft.
@@ -41,13 +45,20 @@ When the frontend requests an AI update instead of a new generation, the backend
 
 ## Game Rules
 
-- Initial level is 1 with `background` and `border` unlocked.
-- Each successful tap grants 1 XP.
-- Global level is `XP / 5 + 1`.
-- Per-target level is based on taps to that target: `target taps / 3 + 1`.
-- Level 5 unlocks `simpleControls` for background and border.
-- Locked but known targets return an `invalidAction` event without mutating state.
-- Unknown targets return a bad request.
+- Initial global level is 1 with only the `card` component type unlocked and `card-root` selected.
+- Each XP-bearing interaction grants 1 XP. Global level is `total XP / 5 + 1`.
+- Component level is `component XP / 3 + 1`.
+- Card-root traits start with `background` and `border`; `shadow` unlocks at global level 2; `padding` unlocks at global level 4.
+- Textarea unlocks at global level 3. Shape unlocks at global level 7 and creates `shape-1` if it is missing from the document.
+- Component overlays unlock at component level 3.
+- Long press grants interaction XP. The first successful overlay open also records an additional interaction bonus and marks the overlay as opened.
+- Short taps mutate and grant XP while randomization is enabled. If `preventRandomizing` is enabled for a component, short taps select the component without mutating or granting XP.
+- Control changes grant XP only when they actually change document or component-progress state.
+- Card-root controls include `preventRandomizing` at component level 3, then background/border color and border width/radius controls at global level 5. Shadow and padding controls are included once the global control gate is open.
+- Text controls unlock progressively from component level 3: content, background, border, x/y/position, then typography, padding, and border shape controls at later global or component levels.
+- Shape controls unlock progressively from component level 3: shape, fill, x/y/position, then border, size, rotation, and shadow controls at later global or component levels.
+- Locked known components or traits return an `invalidAction` event without mutating state.
+- Unknown component IDs, targets, controls, or interactions return a bad request.
 - Color controls validate colors with the same safe color rules used by generated fragments.
 - Gradient controls require both a primary and secondary safe color. A zero angle defaults to 135 degrees.
 
@@ -56,10 +67,11 @@ When the frontend requests an AI update instead of a new generation, the backend
 - `internal/config` owns environment config and validation.
 - `internal/ollama` owns the Ollama chat client used by fragment generation. Embedding and model-list helpers remain in this package, but the current app path uses chat.
 - `internal/fragment` owns the generic generation pipeline: prompt calls, strict JSON decoding, normalization, structured validation issues, one repair attempt, safe inline CSS helpers, and raw-output error reporting.
-- `internal/components/card` owns the card document model, component registry, default document, library item shape, and GoDom preview shell rendering.
-- `internal/components/background` owns background fragment schema, prompts, validation, defaults, render contribution, seeded presets, and random tap fragments.
-- `internal/components/border` owns border fragment schema, prompts, validation, defaults, render contribution, seeded presets, and random tap fragments.
-- `internal/components/textarea` owns text-area fragment schema, prompts, validation, defaults, render layer, and seeded presets.
+- `internal/components/card` owns the card document model, root fragment, component registry, default document, library item shape, and GoDom preview shell rendering.
+- `internal/components/background` owns background fragment schema, prompts, validation, defaults, render contribution, seeded presets, and random fragments.
+- `internal/components/border` owns border fragment schema, prompts, validation, defaults, render contribution, seeded presets, and random fragments.
+- `internal/components/textarea` owns text-area fragment schema, prompts, validation, defaults, render layer, seeded presets, and random fragments.
+- `internal/components/shape` owns shape fragment schema, prompts, validation, defaults, SVG layer rendering, and random fragments.
 - `internal/web` owns HTTP routing, page rendering, preview rendering, component registration, game state, designer state, and mutex-protected process-local state.
 - `internal/webbuild` builds the TypeScript bundle with esbuild.
 - `internal/web/components/appheader` is retained but not mounted by the current stage page.
@@ -67,32 +79,36 @@ When the frontend requests an AI update instead of a new generation, the backend
 ## Component Model
 
 - `card.Document` is a tree of `card.Node` values.
+- The root card fragment currently stores card padding and shell shadow.
 - Each leaf component stores its target-specific fragment as `json.RawMessage`.
 - A component `Definition` contributes shell styles or preview layers through the card registry.
 - Background and border components contribute card shell styles.
-- Text area contributes an absolutely positioned text layer with `data-component-type="textarea"` for hit testing.
-- Render failures are treated as server errors for full preview reads and bad-request errors when applying a fragment.
+- Textarea contributes an absolutely positioned text layer with `data-component-id` and `data-component-type="textarea"` for hit testing and dragging.
+- Shape contributes an absolutely positioned SVG layer with `data-component-id` and `data-component-type="shape"` for hit testing and dragging.
+- Render failures are treated as server errors for full preview reads and bad-request errors when applying a fragment or interaction.
 
 ## Fragment Safety
 
 - AI output must be one strict JSON object with `target`, `description`, and `fragment`.
 - Unknown JSON fields are rejected during fragment decoding.
-- Targets are restricted to `background`, `border`, and `textarea`.
+- Fragment apply targets are restricted to `background`, `border`, `textarea`, and `shape`.
+- The active AI generation routes currently cover `background`, `border`, and `textarea`.
 - Colors must be hex, `rgb(...)`, `rgba(...)`, `hsl(...)`, or `hsla(...)`.
 - Inline CSS is allowlisted per component and rejects markers such as raw angle brackets, braces, `url(`, `javascript:`, `expression(`, `@import`, `position`, and `content`.
-- Numeric fields such as border width/radius and text size are normalized with bounded ranges.
+- Numeric fields such as border width/radius, text size, shape size, and component position are normalized with bounded ranges.
 - Invalid model output includes structured issues and, when available, the raw response so the frontend can show an editable recovery path.
 
 ## Frontend Layout
 
 - `web/src/app.ts` boots the designer controller and the interactive stage controller.
 - `web/src/api.ts` contains HTTP client functions and fragment error parsing.
-- `web/src/types.ts` mirrors API payload shapes, game state, card events, and fragment/library contracts.
-- `web/src/stage/StageController.ts` loads interactive state, binds pointer input, handles taps/long-presses, updates the HUD, refreshes previews, and coordinates reset.
-- `web/src/stage/hitTesting.ts` maps pointer events to `border`, `background`, or `textarea` hit zones.
+- `web/src/types.ts` mirrors API payload shapes, game state, component progress, overlays, controls, card events, and fragment/library contracts.
+- `web/src/stage/StageController.ts` loads interactive state, binds pointer input, handles taps/long-presses/drags, updates the HUD, refreshes previews, coordinates reset, and opens component overlays.
+- `web/src/stage/hitTesting.ts` maps pointer events to card-root background/border traits or to text/shape components.
 - `web/src/stage/cardMotion.ts` owns tap and invalid-tap animations.
-- `web/src/stage/colorControls.ts` renders the unlocked color/gradient popover.
-- `web/src/stage/overlays.ts` owns the notification queue and notification history panel.
+- `web/src/stage/componentControls.ts` renders the active fixed edge-control overlay, splits controls into left/right rails, and manages overlay close/open state.
+- `web/src/stage/overlays.ts` owns the notification queue and notification history panel; while controls are open, notifications can also write into the edge-control status line.
+- `web/src/stage/colorControls.ts` is a retained older pointer-anchored color popover module and is not imported by the current stage.
 - `web/src/designer/controller.ts` wires the hidden designer overlay: AI generate/update/apply, manual JSON edits, reset, library apply, save, and status messages.
 - `web/src/designer/fragments.ts` parses editable generated JSON and formats validation issues.
 - `web/src/designer/document.ts` replaces the server-rendered preview node after validating the returned HTML shape.
@@ -101,17 +117,21 @@ The generated bundle is committed under `web/dist`.
 
 ## Recent Changes Reviewed
 
-- The page now renders a full-screen interactive stage instead of the older header/sidebar designer layout.
-- A compact HUD shows level, XP, taps, and notification history above the card.
-- Taps use pointer hit testing and card animations before/after backend mutation.
-- The latest commit added long-press color controls, gradient support, and the `/api/draft-card/control-change` route.
-- Notifications moved from temporary toast elements to a queue/history UI in the HUD.
-- Tests now cover interactive stage rendering, tap progression, level-up events, simple control unlocks, color/gradient controls, reset behavior, AI fragment generation/repair, and library flows.
+- `30b4f38` moved component controls into a static edge overlay with top, left, right, and bottom slots.
+- The stage now hides the HUD and reset button while component controls are open.
+- Component controls split range/color controls to the right rail and other controls to the left rail.
+- Overlay close/open state is now tracked on `document.body` with `stage-controls-open`.
+- Pointer handling closes the overlay before a new press, suppresses accidental taps after close, and still allows drag-to-move for text and shape components.
+- Notifications can mirror into `stage-edge-controls-status` while controls are open.
+- Page-rendering tests now assert the edge-control overlay scaffold.
 
 ## Known Gaps
 
 - The designer overlay is still rendered and wired, but the current page does not render a visible `designer-toggle-btn`, so there is no normal UI path to open it.
-- `textarea` is declared as a known tap target, but it is not initially unlocked and has no random tap fragment generator.
+- Shape fragments can be applied manually and generated randomly, but there is no `/api/draft-card/fragments/shape` AI generation route or visible designer target for shape.
+- The seeded library does not include shape presets.
+- The retained `web/src/stage/colorControls.ts` module and some older API helpers are unused by the active stage UI.
+- Edge-control status can be overwritten when an overlay rerenders after a control response, so some unlock/level notifications may only remain visible in notification history.
 - All document, game, and library state is process-local and is lost when the server exits.
 
 ## Development

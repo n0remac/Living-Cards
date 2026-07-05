@@ -8,7 +8,7 @@ func pageHead(title, extraCSS string, extraNodes ...*Node) *Node {
 		Meta(Name("viewport"), Content("width=device-width, initial-scale=1.0")),
 		Title(T(title)),
 		Script(Src("https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4")),
-		Style(T(sharedPageCSS() + extraCSS)),
+		Style(Raw(sharedPageCSS() + extraCSS)),
 	}
 	nodes = append(nodes, extraNodes...)
 	return Head(nodes...)

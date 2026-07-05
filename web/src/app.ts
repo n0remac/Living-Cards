@@ -1,7 +1,7 @@
-import { initDesigner, resetDraft } from "./designer/controller";
-import { initStage } from "./stage/StageController";
+import { initDesigner } from "./designer/controller";
+import { initGameStage } from "./game/GameController";
 
 document.addEventListener("DOMContentLoaded", () => {
   initDesigner();
-  initStage({ resetDraft });
+  initGameStage();
 });

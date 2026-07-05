@@ -14,6 +14,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
 	"github.com/n0remac/Living-Card/internal/components/shape"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
 	"github.com/n0remac/Living-Card/internal/fragment"
@@ -26,9 +27,11 @@ type Dependencies struct {
 
 func Register(mux *http.ServeMux, deps Dependencies) {
 	state := newDesignerState()
+	game := newGameSession()
 	mux.HandleFunc("/", pageHandler())
 	mux.HandleFunc("/api/", http.NotFound)
 	mux.HandleFunc("/assets/", frontendAssetHandler())
+	mux.HandleFunc("/api/game/", gameResourceHandler(game))
 	mux.HandleFunc("/api/draft-card", draftCardResourceHandler(deps, state))
 	mux.HandleFunc("/api/draft-card/", draftCardResourceHandler(deps, state))
 }
@@ -148,6 +151,10 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 			randomizeDraftCardHandler(w, r, state)
 			return
 		}
+		if path == "components" {
+			addDraftComponentHandler(w, r, state)
+			return
+		}
 		if path == "library" {
 			designLibraryHandler(w, r, state)
 			return
@@ -194,6 +201,8 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 			generateDraftFragment(w, r, deps, request.Instruction, request.OldCode, request.ComponentID, border.Spec())
 		case textarea.Type:
 			generateDraftFragment(w, r, deps, request.Instruction, request.OldCode, request.ComponentID, textarea.Spec())
+		case imagecomponent.Type:
+			generateDraftFragment(w, r, deps, request.Instruction, request.OldCode, request.ComponentID, imagecomponent.Spec())
 		default:
 			http.NotFound(w, r)
 		}
@@ -202,6 +211,7 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 
 type applyDraftFragmentRequest struct {
 	GeneratedFragment json.RawMessage `json:"generated_fragment"`
+	ComponentID       string          `json:"component_id,omitempty"`
 }
 
 type applyDraftFragmentResponse struct {
@@ -260,6 +270,11 @@ type randomizeDraftCardRequest struct {
 	Scope       string `json:"scope,omitempty"`
 }
 
+type addDraftComponentRequest struct {
+	ComponentType string          `json:"componentType"`
+	Fragment      json.RawMessage `json:"fragment,omitempty"`
+}
+
 type tapDraftCardResponse struct {
 	Document        cardcomponent.Document      `json:"document"`
 	GameState       GameState                   `json:"gameState"`
@@ -299,7 +314,7 @@ func applyDraftFragmentHandler(w http.ResponseWriter, r *http.Request, state *de
 		writeApplyFragmentError(w, err, http.StatusBadRequest)
 		return
 	}
-	document, normalized, err := state.apply(request.GeneratedFragment)
+	document, normalized, err := state.apply(request.GeneratedFragment, request.ComponentID)
 	if err != nil {
 		writeApplyFragmentError(w, err, http.StatusBadRequest)
 		return
@@ -402,6 +417,26 @@ func randomizeDraftCardHandler(w http.ResponseWriter, r *http.Request, state *de
 	writeTappedDraftCard(w, result)
 }
 
+func addDraftComponentHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request addDraftComponentRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	result, err := state.addComponent(request.ComponentType, request.Fragment)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeTappedDraftCard(w, result)
+}
+
 func validateGeneratedFragmentEnvelope(raw json.RawMessage) error {
 	var envelope struct {
 		Target string `json:"target"`
@@ -414,15 +449,15 @@ func validateGeneratedFragmentEnvelope(raw json.RawMessage) error {
 		}}, fragment.ErrInvalidModelOutput)
 	}
 	switch strings.TrimSpace(envelope.Target) {
-	case background.Type, border.Type, textarea.Type, shape.Type:
+	case background.Type, border.Type, textarea.Type, shape.Type, imagecomponent.Type:
 		return nil
 	default:
 		return fragment.NewInvalidModelOutputError(string(raw), []fragment.Issue{{
 			Path:    "target",
 			Code:    "invalid_target",
-			Message: "target must be background, border, textarea, or shape",
+			Message: "target must be background, border, textarea, shape, or image",
 			Actual:  envelope.Target,
-			Allowed: []string{background.Type, border.Type, textarea.Type, shape.Type},
+			Allowed: []string{background.Type, border.Type, textarea.Type, shape.Type, imagecomponent.Type},
 		}}, fragment.ErrInvalidModelOutput)
 	}
 }
@@ -551,8 +586,14 @@ func renderDraftPreview(w http.ResponseWriter, document cardcomponent.Document, 
 }
 
 func applyGeneratedFragmentToDocument(raw json.RawMessage, document *cardcomponent.Document) (any, cardcomponent.LibraryItem, error) {
+	return applyGeneratedFragmentToDocumentForComponent(raw, document, "")
+}
+
+func applyGeneratedFragmentToDocumentForComponent(raw json.RawMessage, document *cardcomponent.Document, componentID string) (any, cardcomponent.LibraryItem, error) {
 	var envelope struct {
-		Target string `json:"target"`
+		Target         string `json:"target"`
+		ComponentID    string `json:"component_id"`
+		ComponentIDAlt string `json:"componentId"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return nil, cardcomponent.LibraryItem{}, fragment.NewInvalidModelOutputError(string(raw), []fragment.Issue{{
@@ -561,28 +602,37 @@ func applyGeneratedFragmentToDocument(raw json.RawMessage, document *cardcompone
 			Message: "generated_fragment must be one JSON object: " + err.Error(),
 		}}, fragment.ErrInvalidModelOutput)
 	}
+	if strings.TrimSpace(componentID) == "" {
+		componentID = strings.TrimSpace(firstNonEmpty(envelope.ComponentID, envelope.ComponentIDAlt))
+	}
 	switch strings.TrimSpace(envelope.Target) {
 	case background.Type:
-		return applyDraftFragment(raw, background.Spec(), document)
+		return applyDraftFragment(raw, background.Spec(), document, componentID)
 	case border.Type:
-		return applyDraftFragment(raw, border.Spec(), document)
+		return applyDraftFragment(raw, border.Spec(), document, componentID)
 	case textarea.Type:
-		return applyDraftFragment(raw, textarea.Spec(), document)
+		return applyDraftFragment(raw, textarea.Spec(), document, componentID)
 	case shape.Type:
-		return applyDraftFragment(raw, shape.Spec(), document)
+		return applyDraftFragment(raw, shape.Spec(), document, componentID)
+	case imagecomponent.Type:
+		return applyDraftFragment(raw, imagecomponent.Spec(), document, componentID)
 	default:
 		return nil, cardcomponent.LibraryItem{}, fragment.NewInvalidModelOutputError(string(raw), []fragment.Issue{{
 			Path:    "target",
 			Code:    "invalid_target",
-			Message: "target must be background, border, textarea, or shape",
+			Message: "target must be background, border, textarea, shape, or image",
 			Actual:  envelope.Target,
-			Allowed: []string{background.Type, border.Type, textarea.Type, shape.Type},
+			Allowed: []string{background.Type, border.Type, textarea.Type, shape.Type, imagecomponent.Type},
 		}}, fragment.ErrInvalidModelOutput)
 	}
 }
 
-func applyDraftFragment[T any](raw json.RawMessage, spec fragment.Spec[T], document *cardcomponent.Document) (fragment.Generated[T], cardcomponent.LibraryItem, error) {
-	generated, err := fragment.DecodeNormalizeValidate[T](string(raw), spec)
+func applyDraftFragment[T any](raw json.RawMessage, spec fragment.Spec[T], document *cardcomponent.Document, componentID string) (fragment.Generated[T], cardcomponent.LibraryItem, error) {
+	decodeRaw, err := generatedFragmentDecodeRaw(raw)
+	if err != nil {
+		return fragment.Generated[T]{}, cardcomponent.LibraryItem{}, err
+	}
+	generated, err := fragment.DecodeNormalizeValidate[T](string(decodeRaw), spec)
 	if err != nil {
 		return fragment.Generated[T]{}, cardcomponent.LibraryItem{}, err
 	}
@@ -590,7 +640,13 @@ func applyDraftFragment[T any](raw json.RawMessage, spec fragment.Spec[T], docum
 	if err != nil {
 		return fragment.Generated[T]{}, cardcomponent.LibraryItem{}, err
 	}
-	if !replaceComponentFragment(&document.Root, spec.Target, fragmentRaw) {
+	replaced := false
+	if strings.TrimSpace(componentID) != "" {
+		replaced = replaceComponentFragmentByID(&document.Root, componentID, spec.Target, fragmentRaw)
+	} else {
+		replaced = replaceComponentFragment(&document.Root, spec.Target, fragmentRaw)
+	}
+	if !replaced {
 		return fragment.Generated[T]{}, cardcomponent.LibraryItem{}, fragment.NewInvalidModelOutputError(string(raw), []fragment.Issue{{
 			Path:    "target",
 			Code:    "missing_component",
@@ -605,6 +661,35 @@ func applyDraftFragment[T any](raw json.RawMessage, spec fragment.Spec[T], docum
 		Description: generated.Description,
 		Fragment:    fragmentRaw,
 	}, nil
+}
+
+func generatedFragmentDecodeRaw(raw json.RawMessage) (json.RawMessage, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, err
+	}
+	delete(envelope, "component_id")
+	delete(envelope, "componentId")
+	return json.Marshal(envelope)
+}
+
+func replaceComponentFragmentByID(node *cardcomponent.Node, componentID, target string, raw json.RawMessage) bool {
+	if node == nil {
+		return false
+	}
+	if node.ID == componentID {
+		if node.Type != target {
+			return false
+		}
+		node.Fragment = append(json.RawMessage(nil), raw...)
+		return true
+	}
+	for index := range node.Children {
+		if replaceComponentFragmentByID(&node.Children[index], componentID, target, raw) {
+			return true
+		}
+	}
+	return false
 }
 
 func fallbackLibraryName(target, description string) string {

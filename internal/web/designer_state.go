@@ -12,8 +12,10 @@ import (
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
 	"github.com/n0remac/Living-Card/internal/components/shape"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
+	"github.com/n0remac/Living-Card/internal/fragment"
 )
 
 type designerState struct {
@@ -52,6 +54,7 @@ func (s *designerState) interactiveSnapshot() (cardcomponent.Document, GameState
 
 	s.gameState = normalizeGameState(s.gameState)
 	s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
+	s.gameState = syncGameStateWithDocument(s.gameState, s.document)
 	return cloneValue(s.document), cloneValue(s.gameState), cloneLibrary(s.library)
 }
 
@@ -65,16 +68,17 @@ func (s *designerState) reset() (cardcomponent.Document, []cardcomponent.Library
 	return cloneValue(s.document), cloneLibrary(s.library)
 }
 
-func (s *designerState) apply(raw json.RawMessage) (cardcomponent.Document, any, error) {
+func (s *designerState) apply(raw json.RawMessage, componentID string) (cardcomponent.Document, any, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	document := cloneValue(s.document)
-	normalized, item, err := applyGeneratedFragmentToDocument(raw, &document)
+	normalized, item, err := applyGeneratedFragmentToDocumentForComponent(raw, &document, componentID)
 	if err != nil {
 		return cardcomponent.Document{}, nil, err
 	}
 	s.document = document
+	s.gameState = syncGameStateWithDocument(s.gameState, s.document)
 	s.lastApplied = &item
 	return cloneValue(s.document), normalized, nil
 }
@@ -145,12 +149,13 @@ func (s *designerState) interact(componentID, trait, interaction string, x, y fl
 	_ = y
 	s.gameState = normalizeGameState(s.gameState)
 	s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
+	s.gameState = syncGameStateWithDocument(s.gameState, s.document)
 	componentID = strings.TrimSpace(componentID)
 	trait = strings.TrimSpace(trait)
 	if componentID == "" {
 		componentID = componentCardRoot
 	}
-	if !isKnownComponentID(componentID) {
+	if !componentExistsInDocument(s.document, componentID) {
 		return tapResult{}, fmt.Errorf("component %q is not available", componentID)
 	}
 	if !componentUnlocked(s.gameState, componentID) {
@@ -245,7 +250,8 @@ func (s *designerState) randomizeComponent(componentID, trait, scope string) (ta
 
 	s.gameState = normalizeGameState(s.gameState)
 	s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
-	if !isKnownComponentID(componentID) {
+	s.gameState = syncGameStateWithDocument(s.gameState, s.document)
+	if !componentExistsInDocument(s.document, componentID) {
 		return tapResult{}, fmt.Errorf("component %q is not available", componentID)
 	}
 	if !componentUnlocked(s.gameState, componentID) {
@@ -296,13 +302,14 @@ func (s *designerState) applyControlChange(componentID, trait, control string, v
 
 	s.gameState = normalizeGameState(s.gameState)
 	s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
+	s.gameState = syncGameStateWithDocument(s.gameState, s.document)
 	componentID = strings.TrimSpace(componentID)
 	trait = strings.TrimSpace(trait)
 	control = strings.TrimSpace(control)
 	if componentID == "" {
 		componentID = componentCardRoot
 	}
-	if !isKnownComponentID(componentID) {
+	if !componentExistsInDocument(s.document, componentID) {
 		return tapResult{}, fmt.Errorf("component %q is not available", componentID)
 	}
 	if !componentUnlocked(s.gameState, componentID) {
@@ -376,6 +383,42 @@ func (s *designerState) applyControlChange(componentID, trait, control string, v
 	}, nil
 }
 
+func (s *designerState) addComponent(componentType string, rawFragment json.RawMessage) (tapResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	componentType = strings.TrimSpace(componentType)
+	if componentType != componentTypeTextarea && componentType != componentTypeShape && componentType != componentTypeImage {
+		return tapResult{}, fmt.Errorf("componentType must be textarea, shape, or image")
+	}
+	fragmentRaw, err := defaultOrValidatedComponentFragment(componentType, rawFragment)
+	if err != nil {
+		return tapResult{}, err
+	}
+	s.gameState = normalizeGameState(s.gameState)
+	s.document = ensureUnlockedDocumentComponents(s.document, s.gameState)
+	componentID := nextComponentID(s.document, componentType)
+	s.document.Root.Children = append(s.document.Root.Children, cardcomponent.Node{
+		ID:       componentID,
+		Type:     componentType,
+		Fragment: fragmentRaw,
+	})
+	s.gameState = syncGameStateWithDocument(s.gameState, s.document)
+	s.gameState.SelectedComponentID = componentID
+	return tapResult{
+		document:  cloneValue(s.document),
+		gameState: cloneValue(s.gameState),
+		library:   cloneLibrary(s.library),
+		events: []CardEvent{{
+			Type:          "componentAdded",
+			ComponentID:   componentID,
+			ComponentType: componentType,
+			Message:       componentLabel(componentType) + " added",
+		}},
+		overlay: buildOverlay(s.document, s.gameState, componentID),
+	}, nil
+}
+
 func (s *designerState) applyRandomMutation(componentID, trait, scope string) (any, cardcomponent.LibraryItem, string, string, error) {
 	progress := s.gameState.ComponentProgress[componentID]
 	seed := tapSeed(s.gameState, componentID)
@@ -384,9 +427,9 @@ func (s *designerState) applyRandomMutation(componentID, trait, scope string) (a
 		appliedTrait := chooseRandomTrait(progress, trait, scope, seed, []string{traitBackground, traitBorder, traitShadow, traitPadding})
 		switch appliedTrait {
 		case traitBackground:
-			return s.applyRandomFragment(background.Type, appliedTrait, seed, maxInt(s.gameState.GlobalLevel, progress.Level))
+			return s.applyRandomFragment("", background.Type, appliedTrait, seed, maxInt(s.gameState.GlobalLevel, progress.Level))
 		case traitBorder:
-			return s.applyRandomFragment(border.Type, appliedTrait, seed, maxInt(s.gameState.GlobalLevel, progress.Level))
+			return s.applyRandomFragment("", border.Type, appliedTrait, seed, maxInt(s.gameState.GlobalLevel, progress.Level))
 		case traitShadow:
 			root := cardcomponent.DecodeRootFragment(s.document.Root.Fragment)
 			root.Shadow = pickString(seed, root.Shadow, []string{
@@ -406,21 +449,23 @@ func (s *designerState) applyRandomMutation(componentID, trait, scope string) (a
 			return nil, cardcomponent.LibraryItem{}, "", "", fmt.Errorf("trait %q cannot be randomized", appliedTrait)
 		}
 	case componentTypeTextarea:
-		return s.applyRandomFragment(textarea.Type, firstNonEmpty(trait, traitText), seed, maxInt(s.gameState.GlobalLevel, progress.Level))
+		return s.applyRandomFragment(componentID, textarea.Type, firstNonEmpty(trait, traitText), seed, maxInt(s.gameState.GlobalLevel, progress.Level))
 	case componentTypeShape:
-		return s.applyRandomFragment(shape.Type, firstNonEmpty(trait, traitGeometry), seed, maxInt(s.gameState.GlobalLevel, progress.Level))
+		return s.applyRandomFragment(componentID, shape.Type, firstNonEmpty(trait, traitGeometry), seed, maxInt(s.gameState.GlobalLevel, progress.Level))
+	case componentTypeImage:
+		return s.applyRandomFragment(componentID, imagecomponent.Type, firstNonEmpty(trait, traitImage), seed, maxInt(s.gameState.GlobalLevel, progress.Level))
 	default:
 		return nil, cardcomponent.LibraryItem{}, "", "", fmt.Errorf("component %q cannot be randomized", componentID)
 	}
 }
 
-func (s *designerState) applyRandomFragment(target, appliedTrait string, seed int64, level int) (any, cardcomponent.LibraryItem, string, string, error) {
+func (s *designerState) applyRandomFragment(componentID, target, appliedTrait string, seed int64, level int) (any, cardcomponent.LibraryItem, string, string, error) {
 	raw, err := randomGeneratedFragment(target, seed, level)
 	if err != nil {
 		return nil, cardcomponent.LibraryItem{}, "", "", err
 	}
 	document := cloneValue(s.document)
-	normalized, item, err := applyGeneratedFragmentToDocument(raw, &document)
+	normalized, item, err := applyGeneratedFragmentToDocumentForComponent(raw, &document, componentID)
 	if err != nil {
 		return nil, cardcomponent.LibraryItem{}, "", "", err
 	}
@@ -434,9 +479,11 @@ func (s *designerState) applyControlMutation(componentID, trait, control string,
 	case componentTypeCard:
 		return s.applyCardControl(trait, control, value)
 	case componentTypeTextarea:
-		return s.applyTextareaControl(trait, control, value)
+		return s.applyTextareaControl(componentID, trait, control, value)
 	case componentTypeShape:
-		return s.applyShapeControl(trait, control, value)
+		return s.applyShapeControl(componentID, trait, control, value)
+	case componentTypeImage:
+		return s.applyImageControl(componentID, trait, control, value)
 	default:
 		return nil, cardcomponent.LibraryItem{}, "", fmt.Errorf("component %q does not support controls", componentID)
 	}
@@ -503,8 +550,8 @@ func (s *designerState) applyCardControl(trait, control string, value json.RawMe
 	}
 }
 
-func (s *designerState) applyTextareaControl(trait, control string, value json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
-	part := currentTextarea(s.document)
+func (s *designerState) applyTextareaControl(componentID, trait, control string, value json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
+	part := currentTextarea(s.document, componentID)
 	switch control {
 	case "content":
 		text, err := readStringValue(value)
@@ -588,11 +635,11 @@ func (s *designerState) applyTextareaControl(trait, control string, value json.R
 	default:
 		return nil, cardcomponent.LibraryItem{}, "", fmt.Errorf("control %q is not supported for text", control)
 	}
-	return s.applyGeneratedPart(textarea.Type, "Text control changed", part)
+	return s.applyGeneratedPartForComponent(componentID, textarea.Type, "Text control changed", part)
 }
 
-func (s *designerState) applyShapeControl(trait, control string, value json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
-	part := currentShape(s.document)
+func (s *designerState) applyShapeControl(componentID, trait, control string, value json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
+	part := currentShape(s.document, componentID)
 	switch control {
 	case "shape":
 		shapeValue, err := readStringValue(value)
@@ -664,10 +711,90 @@ func (s *designerState) applyShapeControl(trait, control string, value json.RawM
 	default:
 		return nil, cardcomponent.LibraryItem{}, "", fmt.Errorf("control %q is not supported for shape", control)
 	}
-	return s.applyGeneratedPart(shape.Type, "Shape control changed", part)
+	return s.applyGeneratedPartForComponent(componentID, shape.Type, "Shape control changed", part)
+}
+
+func (s *designerState) applyImageControl(componentID, trait, control string, value json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
+	part := currentImage(s.document, componentID)
+	switch control {
+	case "src":
+		src, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Src = src
+	case "alt":
+		alt, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Alt = alt
+	case "x":
+		x, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.X = x
+	case "y":
+		y, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Y = y
+	case "position":
+		position, err := readPositionValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.X = position.X
+		part.Y = position.Y
+	case "width":
+		width, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Width = width
+	case "height":
+		height, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Height = height
+	case "rotation":
+		rotation, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.Rotation = rotation
+	case "borderColor":
+		color, err := readStringValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.BorderColor = color
+	case "borderWidthPx":
+		width, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.BorderWidthPX = width
+	case "borderRadiusPx":
+		radius, err := readIntValue(value)
+		if err != nil {
+			return nil, cardcomponent.LibraryItem{}, "", err
+		}
+		part.BorderRadiusPX = radius
+	default:
+		return nil, cardcomponent.LibraryItem{}, "", fmt.Errorf("control %q is not supported for image", control)
+	}
+	return s.applyGeneratedPartForComponent(componentID, imagecomponent.Type, "Image control changed", part)
 }
 
 func (s *designerState) applyGeneratedPart(target, description string, part any) (any, cardcomponent.LibraryItem, string, error) {
+	return s.applyGeneratedPartForComponent("", target, description, part)
+}
+
+func (s *designerState) applyGeneratedPartForComponent(componentID, target, description string, part any) (any, cardcomponent.LibraryItem, string, error) {
 	raw, err := json.Marshal(struct {
 		Target      string `json:"target"`
 		Description string `json:"description"`
@@ -680,16 +807,20 @@ func (s *designerState) applyGeneratedPart(target, description string, part any)
 	if err != nil {
 		return nil, cardcomponent.LibraryItem{}, "", err
 	}
-	return s.applyRawFragment(raw)
+	return s.applyRawFragmentForComponent(raw, componentID)
 }
 
 func (s *designerState) applyRawFragment(raw json.RawMessage) (any, cardcomponent.LibraryItem, string, error) {
+	return s.applyRawFragmentForComponent(raw, "")
+}
+
+func (s *designerState) applyRawFragmentForComponent(raw json.RawMessage, componentID string) (any, cardcomponent.LibraryItem, string, error) {
 	var envelope struct {
 		Target string `json:"target"`
 	}
 	_ = json.Unmarshal(raw, &envelope)
 	document := cloneValue(s.document)
-	normalized, item, err := applyGeneratedFragmentToDocument(raw, &document)
+	normalized, item, err := applyGeneratedFragmentToDocumentForComponent(raw, &document, componentID)
 	if err != nil {
 		return nil, cardcomponent.LibraryItem{}, "", err
 	}
@@ -819,6 +950,82 @@ func generatedRawFromLibraryItem(item cardcomponent.LibraryItem) (json.RawMessag
 	return raw, nil
 }
 
+func defaultOrValidatedComponentFragment(componentType string, raw json.RawMessage) (json.RawMessage, error) {
+	if len(raw) == 0 {
+		switch componentType {
+		case componentTypeTextarea:
+			return json.Marshal(textarea.DefaultFragment())
+		case componentTypeShape:
+			return json.Marshal(shape.DefaultFragment())
+		case componentTypeImage:
+			return json.Marshal(imagecomponent.DefaultFragment())
+		default:
+			return nil, fmt.Errorf("component type %q is not supported", componentType)
+		}
+	}
+	switch componentType {
+	case componentTypeTextarea:
+		var part textarea.Fragment
+		if err := json.Unmarshal(raw, &part); err != nil {
+			return nil, fmt.Errorf("invalid textarea fragment")
+		}
+		generated := fragment.Generated[textarea.Fragment]{Target: textarea.Type, Description: "Added textarea", Fragment: part}
+		textarea.NormalizeGenerated(&generated)
+		if issues := textarea.ValidateGenerated(generated); len(issues) > 0 {
+			return nil, fmt.Errorf("invalid textarea fragment at %s: %s", issues[0].Path, issues[0].Message)
+		}
+		return json.Marshal(generated.Fragment)
+	case componentTypeShape:
+		var part shape.Fragment
+		if err := json.Unmarshal(raw, &part); err != nil {
+			return nil, fmt.Errorf("invalid shape fragment")
+		}
+		generated := fragment.Generated[shape.Fragment]{Target: shape.Type, Description: "Added shape", Fragment: part}
+		shape.NormalizeGenerated(&generated)
+		if issues := shape.ValidateGenerated(generated); len(issues) > 0 {
+			return nil, fmt.Errorf("invalid shape fragment at %s: %s", issues[0].Path, issues[0].Message)
+		}
+		return json.Marshal(generated.Fragment)
+	case componentTypeImage:
+		var part imagecomponent.Fragment
+		if err := json.Unmarshal(raw, &part); err != nil {
+			return nil, fmt.Errorf("invalid image fragment")
+		}
+		generated := fragment.Generated[imagecomponent.Fragment]{Target: imagecomponent.Type, Description: "Added image", Fragment: part}
+		imagecomponent.NormalizeGenerated(&generated)
+		if issues := imagecomponent.ValidateGenerated(generated); len(issues) > 0 {
+			return nil, fmt.Errorf("invalid image fragment at %s: %s", issues[0].Path, issues[0].Message)
+		}
+		return json.Marshal(generated.Fragment)
+	default:
+		return nil, fmt.Errorf("component type %q is not supported", componentType)
+	}
+}
+
+func nextComponentID(document cardcomponent.Document, componentType string) string {
+	prefix := componentType
+	switch componentType {
+	case componentTypeTextarea:
+		prefix = "textarea"
+	case componentTypeShape:
+		prefix = "shape"
+	case componentTypeImage:
+		prefix = "image"
+	}
+	for index := 1; ; index++ {
+		id := fmt.Sprintf("%s-%d", prefix, index)
+		if componentType == componentTypeTextarea && index == 1 {
+			id = componentTextarea
+		}
+		if componentType == componentTypeShape && index == 1 {
+			id = componentShape
+		}
+		if findNodeByID(document.Root, id) == nil {
+			return id
+		}
+	}
+}
+
 func cloneLibrary(items []cardcomponent.LibraryItem) []cardcomponent.LibraryItem {
 	out := make([]cardcomponent.LibraryItem, len(items))
 	for index, item := range items {
@@ -878,6 +1085,36 @@ func findNodeByIDPtr(node *cardcomponent.Node, id string) *cardcomponent.Node {
 		}
 	}
 	return nil
+}
+
+func componentExistsInDocument(document cardcomponent.Document, componentID string) bool {
+	componentID = strings.TrimSpace(componentID)
+	if componentID == "" {
+		return false
+	}
+	return findNodeByID(document.Root, componentID) != nil
+}
+
+func syncGameStateWithDocument(state GameState, document cardcomponent.Document) GameState {
+	state = normalizeGameState(state)
+	var visit func(cardcomponent.Node)
+	visit = func(node cardcomponent.Node) {
+		switch node.Type {
+		case componentTypeCard, componentTypeTextarea, componentTypeShape, componentTypeImage:
+			progress := state.ComponentProgress[node.ID]
+			progress.ComponentID = node.ID
+			progress.ComponentType = node.Type
+			state.ComponentProgress[node.ID] = progress
+			if node.Type == componentTypeImage {
+				state.UnlockedComponentTypes = appendStringOnce(state.UnlockedComponentTypes, componentTypeImage)
+			}
+		}
+		for _, child := range node.Children {
+			visit(child)
+		}
+	}
+	visit(document.Root)
+	return normalizeGameState(state)
 }
 
 func ensureUnlockedDocumentComponents(document cardcomponent.Document, state GameState) cardcomponent.Document {
