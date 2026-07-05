@@ -158,6 +158,41 @@ func TestRenderDocumentSupportsMultipleLayerComponentsAndCustomID(t *testing.T) 
 	}
 }
 
+func TestRenderDocumentScopesLayerIDsAndPreservesComponentIDs(t *testing.T) {
+	t.Parallel()
+
+	document := card.DefaultDocument()
+	first, err := card.RenderDocumentWithOptions(document, testRegistry(), card.RenderOptions{
+		ElementID:   "world-card",
+		DOMIDPrefix: "world-card",
+	})
+	if err != nil {
+		t.Fatalf("RenderDocumentWithOptions() first error = %v", err)
+	}
+	second, err := card.RenderDocumentWithOptions(document, testRegistry(), card.RenderOptions{
+		ElementID:   "library-card",
+		DOMIDPrefix: "library-card",
+	})
+	if err != nil {
+		t.Fatalf("RenderDocumentWithOptions() second error = %v", err)
+	}
+	body := first.Render() + second.Render()
+	for _, marker := range []string{
+		`id="world-card"`,
+		`id="world-card-textarea-main-layer"`,
+		`id="library-card"`,
+		`id="library-card-textarea-main-layer"`,
+		`data-component-id="textarea-main"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("render missing %q:\n%s", marker, body)
+		}
+	}
+	if strings.Contains(body, `id="textarea-main-layer"`) {
+		t.Fatalf("scoped render should not include unscoped layer id:\n%s", body)
+	}
+}
+
 func TestRenderDocumentLaterShellContributionsWin(t *testing.T) {
 	t.Parallel()
 

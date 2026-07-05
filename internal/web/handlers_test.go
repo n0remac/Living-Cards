@@ -193,7 +193,7 @@ func TestGameSessionStartsWithEmptyLibraryAndScriptedDeck(t *testing.T) {
 	if len(payload.WorldDeck) < 5 {
 		t.Fatalf("worldDeck length = %d, want scripted deck", len(payload.WorldDeck))
 	}
-	if payload.ActiveWorldCard.ID != "rusted-cell-door" || !strings.Contains(payload.ActiveWorldCard.PreviewHTML, `game-card-rusted-cell-door`) {
+	if payload.ActiveWorldCard.ID != "rusted-cell-door" || !strings.Contains(payload.ActiveWorldCard.PreviewHTML, `game-world-rusted-cell-door`) {
 		t.Fatalf("activeWorldCard = %#v", payload.ActiveWorldCard)
 	}
 	if payload.SolvedFlags["doorUnlocked"] {
@@ -265,6 +265,61 @@ func TestGameCycleCollectAndUnlockDoor(t *testing.T) {
 	}
 	if !strings.Contains(gameCardHTML(unlocked.WorldDeck, "rusted-cell-door"), "OPEN") {
 		t.Fatalf("door preview did not update: %s", gameCardHTML(unlocked.WorldDeck, "rusted-cell-door"))
+	}
+}
+
+func TestGameRendersActiveAndLibraryCardsWithUniqueDOMIDs(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	for index := 0; index < 2; index++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/game/cycle", strings.NewReader(`{"direction":"next"}`))
+		request.Header.Set("Content-Type", "application/json")
+		mux.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("cycle %d status = %d, want 200 body=%s", index+1, recorder.Code, recorder.Body.String())
+		}
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/game/collect", strings.NewReader(`{"cardId":"bent-iron-key"}`))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("collect status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload GameSessionSnapshot
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	if payload.ActiveWorldCard.ID != "bent-iron-key" || len(payload.Library) != 1 || payload.Library[0].ID != "bent-iron-key" {
+		t.Fatalf("payload active/library = %#v / %#v", payload.ActiveWorldCard, payload.Library)
+	}
+	combined := payload.ActiveWorldCard.PreviewHTML + payload.Library[0].PreviewHTML
+	for _, marker := range []string{
+		`id="game-world-bent-iron-key"`,
+		`id="game-world-bent-iron-key-key-title-layer"`,
+		`id="game-library-0-bent-iron-key"`,
+		`id="game-library-0-bent-iron-key-key-title-layer"`,
+		`data-component-id="key-title"`,
+	} {
+		if !strings.Contains(combined, marker) {
+			t.Fatalf("combined render missing %q:\n%s", marker, combined)
+		}
+	}
+	for _, duplicated := range []string{
+		`id="game-world-bent-iron-key"`,
+		`id="game-library-0-bent-iron-key"`,
+		`id="game-world-bent-iron-key-key-title-layer"`,
+		`id="game-library-0-bent-iron-key-key-title-layer"`,
+	} {
+		if strings.Count(combined, duplicated) != 1 {
+			t.Fatalf("render should include %q exactly once:\n%s", duplicated, combined)
+		}
+	}
+	if strings.Contains(combined, `id="key-title-layer"`) {
+		t.Fatalf("render should not include unscoped key title layer id:\n%s", combined)
 	}
 }
 

@@ -81,7 +81,7 @@ func Spec() fragment.Spec[Fragment] {
 func Definition() card.Definition {
 	return card.Definition{
 		Type: Type,
-		Contribute: func(node card.Node) (card.Contribution, error) {
+		Contribute: func(node card.Node, renderContext card.RenderContext) (card.Contribution, error) {
 			part, err := card.DecodeFragment[Fragment](node)
 			if err != nil {
 				return card.Contribution{}, err
@@ -96,7 +96,7 @@ func Definition() card.Definition {
 				return card.Contribution{}, fmt.Errorf("invalid image fragment at %s: %s", issues[0].Path, issues[0].Message)
 			}
 			return card.Contribution{
-				Layers: []*godom.Node{RenderLayer(node.ID, generated.Fragment)},
+				Layers: []*godom.Node{RenderLayerWithContext(node.ID, generated.Fragment, renderContext)},
 			}, nil
 		},
 	}
@@ -202,6 +202,10 @@ func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue 
 }
 
 func RenderLayer(componentID string, part Fragment) *godom.Node {
+	return RenderLayerWithContext(componentID, part, card.RenderContext{})
+}
+
+func RenderLayerWithContext(componentID string, part Fragment, renderContext card.RenderContext) *godom.Node {
 	part = normalizedFragment(part)
 	style := map[string]string{
 		"border":           fmt.Sprintf("%dpx solid %s", part.BorderWidthPX, part.BorderColor),
@@ -217,7 +221,7 @@ func RenderLayer(componentID string, part Fragment) *godom.Node {
 		"z-index":          "1",
 	}
 	return godom.Div(
-		godom.Id(componentID+"-layer"),
+		godom.Id(renderContext.LayerID(componentID)),
 		godom.Class("absolute bg-black/10"),
 		godom.Attr("data-component-id", componentID),
 		godom.Attr("data-component-type", Type),

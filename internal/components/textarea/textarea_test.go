@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/fragment"
 )
 
@@ -135,6 +136,20 @@ func TestRenderLayerIncludesExtendedTextareaStyles(t *testing.T) {
 		`padding: 12px`,
 		`top: 58%`,
 		`Styled text`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("render missing %q:\n%s", marker, body)
+		}
+	}
+}
+
+func TestRenderLayerWithContextScopesTextareaID(t *testing.T) {
+	t.Parallel()
+
+	body := RenderLayerWithContext("textarea-main", validFragment(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
+	for _, marker := range []string{
+		`id="game-world-card-textarea-main-layer"`,
+		`data-component-id="textarea-main"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("render missing %q:\n%s", marker, body)

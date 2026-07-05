@@ -1,0 +1,717 @@
+{
+  "id": "seeded_world",
+  "name": "Seeded World",
+  "initialActiveCardId": "rusted-cell-door",
+  "initialMessage": "Cycle through the cards. Some are useful; some only remember the room.",
+  "initialSolvedFlags": {
+    "doorUnlocked": false
+  },
+  "cards": [
+    {
+      "id": "rusted-cell-door",
+      "name": "Rusted Cell Door",
+      "kind": "world",
+      "tags": ["door", "locked", "iron-key"],
+      "collectible": false,
+      "state": {
+        "locked": true
+      },
+      "initialDocument": "locked",
+      "documents": {
+        "locked": {
+          "card_id": "rusted-cell-door",
+          "name": "Rusted Cell Door",
+          "root": {
+            "id": "rusted-cell-door-root",
+            "type": "card",
+            "fragment": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
+            "children": [
+              {
+                "id": "rusted-cell-door-background",
+                "type": "background",
+                "fragment": {
+                  "background_color": "#201815",
+                  "css": "background: #201815;"
+                }
+              },
+              {
+                "id": "rusted-cell-door-border",
+                "type": "border",
+                "fragment": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#5b4636",
+                  "css": "border: 2px solid #5b4636; border-radius: 22px;"
+                }
+              },
+              {
+                "id": "door-title",
+                "type": "textarea",
+                "fragment": {
+                  "content": "LOCKED",
+                  "font_family": "system",
+                  "font_size_px": 34,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#f59e0b",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 15,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "door-panel",
+                "type": "shape",
+                "fragment": {
+                  "shape": "roundedRectangle",
+                  "x": 50,
+                  "y": 51,
+                  "width": 64,
+                  "height": 64,
+                  "rotation": 0,
+                  "background_color": "#35251d",
+                  "border_color": "#a16207",
+                  "border_width_px": 3
+                }
+              },
+              {
+                "id": "door-window",
+                "type": "shape",
+                "fragment": {
+                  "shape": "roundedRectangle",
+                  "x": 50,
+                  "y": 32,
+                  "width": 34,
+                  "height": 14,
+                  "rotation": 0,
+                  "background_color": "#111827",
+                  "border_color": "#fbbf24",
+                  "border_width_px": 2
+                }
+              },
+              {
+                "id": "door-knob",
+                "type": "shape",
+                "fragment": {
+                  "shape": "circle",
+                  "x": 68,
+                  "y": 54,
+                  "width": 10,
+                  "height": 10,
+                  "rotation": 0,
+                  "background_color": "#f59e0b",
+                  "border_color": "#111827",
+                  "border_width_px": 2
+                }
+              },
+              {
+                "id": "door-status",
+                "type": "textarea",
+                "fragment": {
+                  "content": "Requires a bent iron key.",
+                  "font_family": "system",
+                  "font_size_px": 15,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#f8fafc",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 88,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              }
+            ]
+          }
+        },
+        "open": {
+          "card_id": "rusted-cell-door",
+          "name": "Rusted Cell Door",
+          "root": {
+            "id": "rusted-cell-door-root",
+            "type": "card",
+            "fragment": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
+            "children": [
+              {
+                "id": "rusted-cell-door-background",
+                "type": "background",
+                "fragment": {
+                  "background_color": "#10231f",
+                  "css": "background: #10231f;"
+                }
+              },
+              {
+                "id": "rusted-cell-door-border",
+                "type": "border",
+                "fragment": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#5b4636",
+                  "css": "border: 2px solid #5b4636; border-radius: 22px;"
+                }
+              },
+              {
+                "id": "door-title",
+                "type": "textarea",
+                "fragment": {
+                  "content": "OPEN",
+                  "font_family": "system",
+                  "font_size_px": 34,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#34d399",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 15,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "door-panel",
+                "type": "shape",
+                "fragment": {
+                  "shape": "roundedRectangle",
+                  "x": 50,
+                  "y": 51,
+                  "width": 64,
+                  "height": 64,
+                  "rotation": 0,
+                  "background_color": "#35251d",
+                  "border_color": "#a16207",
+                  "border_width_px": 3
+                }
+              },
+              {
+                "id": "door-window",
+                "type": "shape",
+                "fragment": {
+                  "shape": "roundedRectangle",
+                  "x": 50,
+                  "y": 32,
+                  "width": 34,
+                  "height": 14,
+                  "rotation": 0,
+                  "background_color": "#111827",
+                  "border_color": "#fbbf24",
+                  "border_width_px": 2
+                }
+              },
+              {
+                "id": "door-knob",
+                "type": "shape",
+                "fragment": {
+                  "shape": "circle",
+                  "x": 68,
+                  "y": 54,
+                  "width": 10,
+                  "height": 10,
+                  "rotation": 0,
+                  "background_color": "#34d399",
+                  "border_color": "#111827",
+                  "border_width_px": 2
+                }
+              },
+              {
+                "id": "door-status",
+                "type": "textarea",
+                "fragment": {
+                  "content": "A dark route has appeared behind the door.",
+                  "font_family": "system",
+                  "font_size_px": 15,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#f8fafc",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 88,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "inventory-label",
+      "name": "Inventory Label",
+      "kind": "clue",
+      "tags": ["decoy", "worldbuilding"],
+      "collectible": false,
+      "state": {
+        "useful": false
+      },
+      "initialDocument": "default",
+      "documents": {
+        "default": {
+          "card_id": "inventory-label",
+          "name": "Inventory Label",
+          "root": {
+            "id": "inventory-label-root",
+            "type": "card",
+            "fragment": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
+            "children": [
+              {
+                "id": "inventory-label-background",
+                "type": "background",
+                "fragment": {
+                  "background_color": "#18212f",
+                  "css": "background: #18212f;"
+                }
+              },
+              {
+                "id": "inventory-label-border",
+                "type": "border",
+                "fragment": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#f59e0b",
+                  "css": "border: 2px solid #f59e0b; border-radius: 22px;"
+                }
+              },
+              {
+                "id": "inventory-label-mark",
+                "type": "shape",
+                "fragment": {
+                  "shape": "diamond",
+                  "x": 50,
+                  "y": 28,
+                  "width": 22,
+                  "height": 22,
+                  "rotation": 0,
+                  "background_color": "#f59e0b",
+                  "border_color": "#111827",
+                  "border_width_px": 2
+                }
+              },
+              {
+                "id": "inventory-label-title",
+                "type": "textarea",
+                "fragment": {
+                  "content": "INVENTORY LABEL",
+                  "font_family": "system",
+                  "font_size_px": 22,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#f8fafc",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 51,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "inventory-label-body",
+                "type": "textarea",
+                "fragment": {
+                  "content": "A little brass plate reads: CARRY ONLY WHAT OPENS A WAY.",
+                  "font_family": "system",
+                  "font_size_px": 16,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#cbd5e1",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 73,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "bent-iron-key",
+      "name": "Bent Iron Key",
+      "kind": "item",
+      "tags": ["item", "key", "iron-key"],
+      "collectible": true,
+      "state": {
+        "opens": "rusted-cell-door"
+      },
+      "initialDocument": "default",
+      "documents": {
+        "default": {
+          "card_id": "bent-iron-key",
+          "name": "Bent Iron Key",
+          "root": {
+            "id": "bent-iron-key-root",
+            "type": "card",
+            "fragment": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
+            "children": [
+              {
+                "id": "bent-iron-key-background",
+                "type": "background",
+                "fragment": {
+                  "background_color": "#17211d",
+                  "css": "background: #17211d;"
+                }
+              },
+              {
+                "id": "bent-iron-key-border",
+                "type": "border",
+                "fragment": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#d6a84f",
+                  "css": "border: 2px solid #d6a84f; border-radius: 22px;"
+                }
+              },
+              {
+                "id": "key-title",
+                "type": "textarea",
+                "fragment": {
+                  "content": "BENT IRON KEY",
+                  "font_family": "system",
+                  "font_size_px": 24,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#fde68a",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 15,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "key-ring",
+                "type": "shape",
+                "fragment": {
+                  "shape": "circle",
+                  "x": 35,
+                  "y": 47,
+                  "width": 24,
+                  "height": 24,
+                  "rotation": 0,
+                  "background_color": "rgba(0,0,0,0)",
+                  "border_color": "#facc15",
+                  "border_width_px": 5
+                }
+              },
+              {
+                "id": "key-stem",
+                "type": "shape",
+                "fragment": {
+                  "shape": "rectangle",
+                  "x": 56,
+                  "y": 47,
+                  "width": 38,
+                  "height": 8,
+                  "rotation": 0,
+                  "background_color": "#facc15",
+                  "border_color": "#713f12",
+                  "border_width_px": 2
+                }
+              },
+              {
+                "id": "key-tooth-a",
+                "type": "shape",
+                "fragment": {
+                  "shape": "rectangle",
+                  "x": 74,
+                  "y": 53,
+                  "width": 8,
+                  "height": 13,
+                  "rotation": 0,
+                  "background_color": "#facc15",
+                  "border_color": "#713f12",
+                  "border_width_px": 2
+                }
+              },
+              {
+                "id": "key-tooth-b",
+                "type": "shape",
+                "fragment": {
+                  "shape": "rectangle",
+                  "x": 82,
+                  "y": 51,
+                  "width": 8,
+                  "height": 9,
+                  "rotation": 0,
+                  "background_color": "#facc15",
+                  "border_color": "#713f12",
+                  "border_width_px": 2
+                }
+              },
+              {
+                "id": "key-note",
+                "type": "textarea",
+                "fragment": {
+                  "content": "Its teeth match a rusted lock.",
+                  "font_family": "system",
+                  "font_size_px": 16,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#f8fafc",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 84,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "faded-photograph",
+      "name": "Faded Photograph",
+      "kind": "world",
+      "tags": ["decoy", "worldbuilding", "image"],
+      "collectible": false,
+      "state": {
+        "useful": false
+      },
+      "initialDocument": "default",
+      "documents": {
+        "default": {
+          "card_id": "faded-photograph",
+          "name": "Faded Photograph",
+          "root": {
+            "id": "faded-photograph-root",
+            "type": "card",
+            "fragment": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
+            "children": [
+              {
+                "id": "faded-photograph-background",
+                "type": "background",
+                "fragment": {
+                  "background_color": "#171717",
+                  "css": "background: #171717;"
+                }
+              },
+              {
+                "id": "faded-photograph-border",
+                "type": "border",
+                "fragment": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#94a3b8",
+                  "css": "border: 2px solid #94a3b8; border-radius: 22px;"
+                }
+              },
+              {
+                "id": "photo-title",
+                "type": "textarea",
+                "fragment": {
+                  "content": "FADED PHOTOGRAPH",
+                  "font_family": "system",
+                  "font_size_px": 20,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#e2e8f0",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 14,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "photo-image",
+                "type": "image",
+                "fragment": {
+                  "src": "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
+                  "alt": "A nearly blank old photograph",
+                  "x": 50,
+                  "y": 48,
+                  "width": 58,
+                  "height": 40,
+                  "border_color": "#e2e8f0",
+                  "border_width_px": 2,
+                  "border_radius_px": 6
+                }
+              },
+              {
+                "id": "photo-note",
+                "type": "textarea",
+                "fragment": {
+                  "content": "The picture has forgotten almost everything.",
+                  "font_family": "system",
+                  "font_size_px": 15,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#cbd5e1",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 84,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "sleeping-switch",
+      "name": "Sleeping Switch",
+      "kind": "world",
+      "tags": ["decoy", "machine"],
+      "collectible": false,
+      "state": {
+        "useful": false
+      },
+      "initialDocument": "default",
+      "documents": {
+        "default": {
+          "card_id": "sleeping-switch",
+          "name": "Sleeping Switch",
+          "root": {
+            "id": "sleeping-switch-root",
+            "type": "card",
+            "fragment": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
+            "children": [
+              {
+                "id": "sleeping-switch-background",
+                "type": "background",
+                "fragment": {
+                  "background_color": "#211827",
+                  "css": "background: #211827;"
+                }
+              },
+              {
+                "id": "sleeping-switch-border",
+                "type": "border",
+                "fragment": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#a78bfa",
+                  "css": "border: 2px solid #a78bfa; border-radius: 22px;"
+                }
+              },
+              {
+                "id": "sleeping-switch-mark",
+                "type": "shape",
+                "fragment": {
+                  "shape": "diamond",
+                  "x": 50,
+                  "y": 28,
+                  "width": 22,
+                  "height": 22,
+                  "rotation": 0,
+                  "background_color": "#a78bfa",
+                  "border_color": "#111827",
+                  "border_width_px": 2
+                }
+              },
+              {
+                "id": "sleeping-switch-title",
+                "type": "textarea",
+                "fragment": {
+                  "content": "SLEEPING SWITCH",
+                  "font_family": "system",
+                  "font_size_px": 22,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#f8fafc",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 51,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "sleeping-switch-body",
+                "type": "textarea",
+                "fragment": {
+                  "content": "A switch card dreams of being important. It is not connected to anything yet.",
+                  "font_family": "system",
+                  "font_size_px": 16,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#cbd5e1",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 73,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "useRules": [
+    {
+      "id": "iron-key-unlocks-rusted-cell-door",
+      "source": {
+        "tags": ["iron-key"]
+      },
+      "target": {
+        "id": "rusted-cell-door"
+      },
+      "flagConditions": {
+        "doorUnlocked": false
+      },
+      "effects": [
+        {
+          "type": "setFlag",
+          "flag": "doorUnlocked",
+          "value": true
+        },
+        {
+          "type": "setCardState",
+          "key": "locked",
+          "value": false
+        },
+        {
+          "type": "removeCardTags",
+          "tags": ["locked"]
+        },
+        {
+          "type": "setDocumentVariant",
+          "variant": "open"
+        },
+        {
+          "type": "setMessage",
+          "message": "The iron key catches. The door card unlocks."
+        }
+      ]
+    }
+  ]
+}

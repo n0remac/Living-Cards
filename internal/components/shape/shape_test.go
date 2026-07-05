@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/fragment"
 )
 
@@ -93,6 +94,20 @@ func TestRenderLayerIncludesShapeDataAttributesAndSVG(t *testing.T) {
 		`<svg`,
 		`points="50,6 61,36`,
 		`fill="#f43f5e"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("render missing %q:\n%s", marker, body)
+		}
+	}
+}
+
+func TestRenderLayerWithContextScopesShapeID(t *testing.T) {
+	t.Parallel()
+
+	body := RenderLayerWithContext("shape-1", DefaultFragment(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
+	for _, marker := range []string{
+		`id="game-world-card-shape-1-layer"`,
+		`data-component-id="shape-1"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("render missing %q:\n%s", marker, body)

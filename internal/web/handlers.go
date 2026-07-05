@@ -18,6 +18,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/components/shape"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
 	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/game"
 )
 
 type Dependencies struct {
@@ -27,11 +28,11 @@ type Dependencies struct {
 
 func Register(mux *http.ServeMux, deps Dependencies) {
 	state := newDesignerState()
-	game := newGameSession()
+	gameSession := game.NewSession()
 	mux.HandleFunc("/", pageHandler())
 	mux.HandleFunc("/api/", http.NotFound)
 	mux.HandleFunc("/assets/", frontendAssetHandler())
-	mux.HandleFunc("/api/game/", gameResourceHandler(game))
+	mux.HandleFunc("/api/game/", gameResourceHandler(gameSession))
 	mux.HandleFunc("/api/draft-card", draftCardResourceHandler(deps, state))
 	mux.HandleFunc("/api/draft-card/", draftCardResourceHandler(deps, state))
 }

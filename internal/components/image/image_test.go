@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/fragment"
 )
 
@@ -59,6 +60,20 @@ func TestRenderLayerIncludesImageAttributes(t *testing.T) {
 		`data-component-type="image"`,
 		`<img`,
 		`src="data:image/gif;base64`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("render missing %q:\n%s", marker, body)
+		}
+	}
+}
+
+func TestRenderLayerWithContextScopesImageID(t *testing.T) {
+	t.Parallel()
+
+	body := RenderLayerWithContext("image-1", DefaultFragment(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
+	for _, marker := range []string{
+		`id="game-world-card-image-1-layer"`,
+		`data-component-id="image-1"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("render missing %q:\n%s", marker, body)

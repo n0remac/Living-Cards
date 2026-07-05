@@ -61,9 +61,28 @@ type Contribution struct {
 	Layers     []*godom.Node
 }
 
+type RenderOptions struct {
+	ElementID   string
+	DOMIDPrefix string
+}
+
+type RenderContext struct {
+	DOMIDPrefix string
+}
+
+func (c RenderContext) LayerID(componentID string) string {
+	componentID = strings.TrimSpace(componentID)
+	layerID := componentID + "-layer"
+	prefix := strings.TrimSpace(c.DOMIDPrefix)
+	if prefix == "" {
+		return layerID
+	}
+	return prefix + "-" + layerID
+}
+
 type Definition struct {
 	Type       string
-	Contribute func(Node) (Contribution, error)
+	Contribute func(Node, RenderContext) (Contribution, error)
 }
 
 type Registry struct {
@@ -125,6 +144,10 @@ func RenderDocument(document Document, registry *Registry) (*godom.Node, error) 
 }
 
 func RenderDocumentWithID(document Document, registry *Registry, elementID string) (*godom.Node, error) {
+	return RenderDocumentWithOptions(document, registry, RenderOptions{ElementID: elementID})
+}
+
+func RenderDocumentWithOptions(document Document, registry *Registry, options RenderOptions) (*godom.Node, error) {
 	if registry == nil {
 		return nil, fmt.Errorf("card component registry is not initialized")
 	}
@@ -144,7 +167,7 @@ func RenderDocumentWithID(document Document, registry *Registry, elementID strin
 		if !ok {
 			return nil, fmt.Errorf("component type %q is not registered", child.Type)
 		}
-		contribution, err := definition.Contribute(child)
+		contribution, err := definition.Contribute(child, RenderContext{DOMIDPrefix: options.DOMIDPrefix})
 		if err != nil {
 			return nil, err
 		}
@@ -167,8 +190,8 @@ func RenderDocumentWithID(document Document, registry *Registry, elementID strin
 		godom.Attr("style", styleString(shellStyle)),
 		godom.Ch(layers),
 	}
-	if strings.TrimSpace(elementID) != "" {
-		attributes = append([]*godom.Node{godom.Id(strings.TrimSpace(elementID))}, attributes...)
+	if strings.TrimSpace(options.ElementID) != "" {
+		attributes = append([]*godom.Node{godom.Id(strings.TrimSpace(options.ElementID))}, attributes...)
 	}
 	return godom.Div(attributes...), nil
 }

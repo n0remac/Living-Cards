@@ -115,7 +115,7 @@ func Spec() fragment.Spec[Fragment] {
 func Definition() card.Definition {
 	return card.Definition{
 		Type: Type,
-		Contribute: func(node card.Node) (card.Contribution, error) {
+		Contribute: func(node card.Node, _ card.RenderContext) (card.Contribution, error) {
 			part, err := card.DecodeFragment[Fragment](node)
 			if err != nil {
 				return card.Contribution{}, err
