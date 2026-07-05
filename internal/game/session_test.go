@@ -51,6 +51,27 @@ func TestEmbeddedSeededWorldDeckLoadsAndValidates(t *testing.T) {
 	}
 }
 
+func TestEmbeddedDeckRegistryLoadsPuzzlePacks(t *testing.T) {
+	t.Parallel()
+
+	seeded := mustLoadEmbeddedDeck(t, SeededWorldDeckDefinition)
+	if err := ValidateDeckDefinition(seeded); err != nil {
+		t.Fatalf("ValidateDeckDefinition(seed) error = %v", err)
+	}
+	fuseRoom := mustLoadEmbeddedDeck(t, FuseRoomDeckDefinition)
+	if err := ValidateDeckPackDefinition(fuseRoom, definitionsByID(seeded.Cards)); err != nil {
+		t.Fatalf("ValidateDeckPackDefinition(fuse_room) error = %v", err)
+	}
+	generatorRoom := mustLoadEmbeddedDeck(t, GeneratorDeckDefinition)
+	combined := definitionsByID(seeded.Cards)
+	for cardID, card := range definitionsByID(fuseRoom.Cards) {
+		combined[cardID] = card
+	}
+	if err := ValidateDeckPackDefinition(generatorRoom, combined); err != nil {
+		t.Fatalf("ValidateDeckPackDefinition(generator_room) error = %v", err)
+	}
+}
+
 func TestSessionCycleWrapsPreviousAndNext(t *testing.T) {
 	t.Parallel()
 
@@ -113,6 +134,18 @@ func TestSessionWrongCardUseDoesNotUnlockDoor(t *testing.T) {
 	}
 }
 
+func TestSessionStartsWithoutPuzzlePackCards(t *testing.T) {
+	t.Parallel()
+
+	snapshot := mustResult(t, NewSession().Snapshot)
+	if findCard(snapshot.WorldDeck, "glass-fuse") != nil {
+		t.Fatalf("glass fuse should not be present at session start: %#v", snapshot.WorldDeck)
+	}
+	if findCard(snapshot.WorldDeck, "generator-panel") != nil {
+		t.Fatalf("generator panel should not be present at session start: %#v", snapshot.WorldDeck)
+	}
+}
+
 func TestSessionKeyUnlocksDoorWithEffect(t *testing.T) {
 	t.Parallel()
 
@@ -141,6 +174,92 @@ func TestSessionKeyUnlocksDoorWithEffect(t *testing.T) {
 	}
 	if !documentContains(door.Document, "OPEN") {
 		t.Fatalf("door document did not switch to open variant: %#v", door.Document)
+	}
+	if snapshot.ActiveWorldCard.ID != "fuse-box-note" {
+		t.Fatalf("active card = %q, want first fuse room card", snapshot.ActiveWorldCard.ID)
+	}
+	if findCard(snapshot.WorldDeck, "glass-fuse") == nil {
+		t.Fatal("door unlock should load fuse room cards")
+	}
+}
+
+func TestSessionFusePowersSwitchAndLoadsGeneratorRoom(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect("bent-iron-key")
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.UseCard("bent-iron-key", "rusted-cell-door")
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect("glass-fuse")
+	})
+	snapshot := mustResult(t, func() (Snapshot, error) {
+		return session.UseCard("glass-fuse", "sleeping-switch")
+	})
+	if !snapshot.SolvedFlags["switchPowered"] {
+		t.Fatalf("solved flags = %#v, want switchPowered", snapshot.SolvedFlags)
+	}
+	if snapshot.ActiveWorldCard.ID != "generator-panel" {
+		t.Fatalf("active card = %q, want generator-panel", snapshot.ActiveWorldCard.ID)
+	}
+	switchCard := findCard(snapshot.WorldDeck, "sleeping-switch")
+	if switchCard == nil {
+		t.Fatal("world deck missing switch")
+	}
+	if powered, _ := switchCard.State["powered"].(bool); !powered {
+		t.Fatalf("switch state = %#v, want powered", switchCard.State)
+	}
+	if hasTag(*switchCard, "decoy") {
+		t.Fatalf("switch tags = %#v, want decoy tag removed", switchCard.Tags)
+	}
+	if !documentContains(switchCard.Document, "SWITCH ONLINE") {
+		t.Fatalf("switch document did not switch to powered variant: %#v", switchCard.Document)
+	}
+	if findCard(snapshot.WorldDeck, "numbered-gauge") == nil {
+		t.Fatal("generator room cards were not loaded")
+	}
+}
+
+func TestSessionLoadedDecksAreIdempotentAndResetToSeed(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect("bent-iron-key")
+	})
+	doorLoaded := mustResult(t, func() (Snapshot, error) {
+		return session.UseCard("bent-iron-key", "rusted-cell-door")
+	})
+	if countCard(doorLoaded.WorldDeck, "glass-fuse") != 1 {
+		t.Fatalf("glass-fuse count = %d, want 1", countCard(doorLoaded.WorldDeck, "glass-fuse"))
+	}
+	doorReplay := mustResult(t, func() (Snapshot, error) {
+		return session.UseCard("bent-iron-key", "rusted-cell-door")
+	})
+	if len(doorReplay.WorldDeck) != len(doorLoaded.WorldDeck) || countCard(doorReplay.WorldDeck, "glass-fuse") != 1 {
+		t.Fatalf("door replay duplicated loaded cards: before=%d after=%d fuse=%d", len(doorLoaded.WorldDeck), len(doorReplay.WorldDeck), countCard(doorReplay.WorldDeck, "glass-fuse"))
+	}
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect("glass-fuse")
+	})
+	generatorLoaded := mustResult(t, func() (Snapshot, error) {
+		return session.UseCard("glass-fuse", "sleeping-switch")
+	})
+	generatorReplay := mustResult(t, func() (Snapshot, error) {
+		return session.UseCard("glass-fuse", "sleeping-switch")
+	})
+	if len(generatorReplay.WorldDeck) != len(generatorLoaded.WorldDeck) || countCard(generatorReplay.WorldDeck, "generator-panel") != 1 {
+		t.Fatalf("switch replay duplicated generator cards: before=%d after=%d generator=%d", len(generatorLoaded.WorldDeck), len(generatorReplay.WorldDeck), countCard(generatorReplay.WorldDeck, "generator-panel"))
+	}
+	reset := mustResult(t, session.Reset)
+	if reset.ActiveWorldCard.ID != "rusted-cell-door" {
+		t.Fatalf("reset active card = %q, want rusted-cell-door", reset.ActiveWorldCard.ID)
+	}
+	if findCard(reset.WorldDeck, "glass-fuse") != nil || findCard(reset.WorldDeck, "generator-panel") != nil {
+		t.Fatalf("reset should remove loaded pack cards: %#v", reset.WorldDeck)
 	}
 }
 
@@ -228,6 +347,48 @@ func TestValidateDeckDefinitionRejectsInvalidFixtures(t *testing.T) {
 	}
 }
 
+func TestDeckPackValidationRejectsBadPackReferences(t *testing.T) {
+	t.Parallel()
+
+	seeded := mustLoadEmbeddedDeck(t, SeededWorldDeckDefinition)
+	fuseRoom := mustLoadEmbeddedDeck(t, FuseRoomDeckDefinition)
+	if err := ValidateDeckPackDefinition(fuseRoom, nil); err == nil {
+		t.Fatal("ValidateDeckPackDefinition() error = nil, want missing sleeping-switch reference")
+	}
+	duplicate := cloneValue(fuseRoom)
+	duplicate.Cards[0].ID = "bent-iron-key"
+	for variant, document := range duplicate.Cards[0].Documents {
+		document.CardID = "bent-iron-key"
+		duplicate.Cards[0].Documents[variant] = document
+	}
+	if err := ValidateDeckPackDefinition(duplicate, definitionsByID(seeded.Cards)); err == nil {
+		t.Fatal("ValidateDeckPackDefinition() duplicate error = nil, want error")
+	}
+}
+
+func TestSessionLoadDeckEffectReturnsMissingDeckError(t *testing.T) {
+	t.Parallel()
+
+	definition := mustLoadEmbeddedDeck(t, SeededWorldDeckDefinition)
+	for ruleIndex := range definition.UseRules {
+		for effectIndex := range definition.UseRules[ruleIndex].Effects {
+			if definition.UseRules[ruleIndex].Effects[effectIndex].Type == EffectLoadDeck {
+				definition.UseRules[ruleIndex].Effects[effectIndex].DeckID = "missing_pack"
+			}
+		}
+	}
+	session, err := NewSessionFromDeck(definition)
+	if err != nil {
+		t.Fatalf("NewSessionFromDeck() error = %v", err)
+	}
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect("bent-iron-key")
+	})
+	if _, err := session.UseCard("bent-iron-key", "rusted-cell-door"); err == nil {
+		t.Fatal("UseCard() missing loadDeck error = nil, want error")
+	}
+}
+
 func mustResult(t *testing.T, result func() (Snapshot, error)) Snapshot {
 	t.Helper()
 	snapshot, err := result()
@@ -244,6 +405,33 @@ func findCard(cards []Card, id string) *Card {
 		}
 	}
 	return nil
+}
+
+func countCard(cards []Card, id string) int {
+	count := 0
+	for _, card := range cards {
+		if card.ID == id {
+			count++
+		}
+	}
+	return count
+}
+
+func mustLoadEmbeddedDeck(t *testing.T, deckID string) DeckDefinition {
+	t.Helper()
+	definition, err := LoadEmbeddedDeck(deckID)
+	if err != nil {
+		t.Fatalf("LoadEmbeddedDeck(%q) error = %v", deckID, err)
+	}
+	return definition
+}
+
+func definitionsByID(cards []CardDefinition) map[string]CardDefinition {
+	out := make(map[string]CardDefinition, len(cards))
+	for _, card := range cards {
+		out[card.ID] = card
+	}
+	return out
 }
 
 func documentContains(document any, marker string) bool {

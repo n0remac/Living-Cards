@@ -4,18 +4,19 @@ Living Card is a Go web app for experimenting with cards as structured data. The
 
 The app also retains a backend-owned draft-card designer API and hidden overlay for prompt-generated or manually edited component fragments. Both the world game and designer state are process-local, mutex-protected, and reset when the server process exits.
 
-Latest reviewed commit: `1f5aa3e Decks described in pure json.`
+Latest reviewed state: current working tree with chained fuse/switch puzzle packs.
 
 ## Current Scope
 
 - The visible UI is the world-deck game stage.
-- The seeded world deck is embedded pure JSON at `internal/game/decks/seeded_world.json`.
+- The seeded world deck and later puzzle packs are embedded pure JSON under `internal/game/decks/`.
 - Deck data includes card metadata, document variants, initial flags, initial active card, initial message, and declarative use rules.
 - The seeded deck has a locked door, inventory label, collectible bent iron key, faded photograph, and sleeping switch.
-- Playing the collected key onto the locked door is data-driven: a rule matches source/target/flags, sets `doorUnlocked`, updates door state/tags, swaps the door document variant, and sets the message.
+- Playing the collected key onto the locked door is data-driven: a rule matches source/target/flags, sets `doorUnlocked`, updates door state/tags, swaps the door document variant, loads the fuse-room pack, and sets the message.
+- The fuse room adds clue/red herring cards and a collectible glass fuse. Playing the fuse onto the sleeping switch powers/flips the switch, swaps its document variant, and loads the generator-room pack.
 - Game API responses include both card data and server-rendered preview HTML. Browser JavaScript does not own card state.
 - The draft-card designer remains available through `/api/draft-card/*`, but the current page does not expose a normal visible button to open the designer overlay.
-- No real database dependency has been added yet. The deck loader validates JSON data and materializes runtime session state so a database source can later replace the embedded JSON source.
+- No real database dependency has been added yet. The deck loader validates JSON data, materializes runtime session state, and merges embedded packs so a database source can later replace the embedded JSON source.
 
 ## Runtime Flow
 
@@ -40,10 +41,12 @@ Latest reviewed commit: `1f5aa3e Decks described in pure json.`
 ## World Deck Model
 
 - `internal/game/deck.go` defines `DeckDefinition`, `CardDefinition`, `UseRuleDefinition`, card matchers, and rule effects.
-- `LoadEmbeddedSeededWorldDeck` reads `seeded_world.json`; `DecodeDeckDefinition` decodes and validates arbitrary deck JSON.
+- `LoadEmbeddedSeededWorldDeck` reads the seed deck; `LoadEmbeddedDeck` reads any embedded deck pack by id.
 - `NewSessionFromDeck` materializes runtime `Card` values from deck definitions and keeps document variants available for rule effects.
-- Validation rejects empty decks, duplicate card ids, missing initial active cards, missing initial document variants, mismatched document `card_id` values, unknown rule card references, unsupported effect types, and invalid document-variant references.
-- Supported rule effects are `setFlag`, `setCardState`, `removeCardTags`, `setDocumentVariant`, and `setMessage`.
+- `loadDeck` effects append cards from another embedded JSON file, merge rules/document variants/initial flags, focus the loaded pack’s initial active card, and are idempotent per session.
+- Validation rejects empty decks, duplicate card ids, missing initial active cards, missing initial document variants, mismatched document `card_id` values, unknown rule card references, unsupported effect types, invalid deck ids, and invalid document-variant references.
+- Pack validation can resolve rule references against cards already loaded in the current session, which lets `fuse_room` target the original `sleeping-switch`.
+- Supported rule effects are `setFlag`, `setCardState`, `removeCardTags`, `setDocumentVariant`, `setMessage`, and `loadDeck`.
 - The runtime session API shape is intentionally stable: `Card`, `Snapshot`, `Collect`, `Cycle`, and rendered web responses still use the same public fields.
 
 ## Draft Card Model
@@ -100,6 +103,7 @@ Latest reviewed commit: `1f5aa3e Decks described in pure json.`
 
 ## Recent Changes Reviewed
 
+- Current working tree adds `loadDeck`, idempotent embedded pack loading, `fuse_room.json`, `generator_room.json`, and tests for the chained fuse/switch puzzle.
 - `1f5aa3e` moved the world deck out of Go constructors and into embedded pure JSON.
 - `1f5aa3e` added typed deck definitions, deck validation, `NewSessionFromDeck`, document variants, and declarative use-rule effects.
 - `1f5aa3e` simplified game-card rendering around the existing `card.Document` renderer and added tests for loaded deck data and invalid deck fixtures.
@@ -109,8 +113,8 @@ Latest reviewed commit: `1f5aa3e Decks described in pure json.`
 
 ## Known Gaps
 
-- There is still no persistent database. Deck definitions are database-ready data, but the active seed source is embedded JSON and session state is in memory.
-- The visible world-deck game has one seeded deck and one scripted key-door rule.
+- There is still no persistent database. Deck definitions are database-ready data, but the active content source is embedded JSON and session state is in memory.
+- The visible world-deck game is still a short linear puzzle path; the generator room is loaded as the next area but does not yet have its own deeper mechanics.
 - The designer overlay is still rendered and wired, but the current page does not render a visible `designer-toggle-btn`, so there is no normal UI path to open it.
 - Shape fragments can be applied manually and generated randomly, but there is still no `/api/draft-card/fragments/shape` AI generation route.
 - The seeded design library does not include shape or image presets.

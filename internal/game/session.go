@@ -41,7 +41,9 @@ type Snapshot struct {
 type Session struct {
 	mu               sync.Mutex
 	deckDefinition   DeckDefinition
+	cardDefinitions  map[string]CardDefinition
 	documentVariants map[string]map[string]cardcomponent.Document
+	loadedDecks      map[string]bool
 	useRules         []UseRuleDefinition
 	worldDeck        []Card
 	activeIndex      int
@@ -71,13 +73,15 @@ func NewSessionFromDeck(definition DeckDefinition) (*Session, error) {
 		return nil, err
 	}
 	definition = cloneValue(definition)
-	worldDeck, documentVariants, activeIndex, err := materializeDeck(definition)
+	worldDeck, documentVariants, cardDefinitions, activeIndex, err := materializeDeck(definition)
 	if err != nil {
 		return nil, err
 	}
 	return &Session{
 		deckDefinition:   definition,
+		cardDefinitions:  cardDefinitions,
 		documentVariants: documentVariants,
+		loadedDecks:      map[string]bool{definition.ID: true},
 		useRules:         cloneValue(definition.UseRules),
 		worldDeck:        worldDeck,
 		activeIndex:      activeIndex,
@@ -102,7 +106,9 @@ func (s *Session) Reset() (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	s.cardDefinitions = next.cardDefinitions
 	s.documentVariants = next.documentVariants
+	s.loadedDecks = next.loadedDecks
 	s.useRules = next.useRules
 	s.worldDeck = next.worldDeck
 	s.activeIndex = next.activeIndex
@@ -237,15 +243,17 @@ func (s *Session) libraryCard(cardID string) *Card {
 	return nil
 }
 
-func materializeDeck(definition DeckDefinition) ([]Card, map[string]map[string]cardcomponent.Document, int, error) {
+func materializeDeck(definition DeckDefinition) ([]Card, map[string]map[string]cardcomponent.Document, map[string]CardDefinition, int, error) {
 	worldDeck := make([]Card, 0, len(definition.Cards))
 	documentVariants := make(map[string]map[string]cardcomponent.Document, len(definition.Cards))
+	cardDefinitions := make(map[string]CardDefinition, len(definition.Cards))
 	activeIndex := -1
 	for index, card := range definition.Cards {
 		document, ok := card.Documents[card.InitialDocument]
 		if !ok {
-			return nil, nil, 0, fmt.Errorf("card %q initial document variant %q does not exist", card.ID, card.InitialDocument)
+			return nil, nil, nil, 0, fmt.Errorf("card %q initial document variant %q does not exist", card.ID, card.InitialDocument)
 		}
+		cardDefinitions[card.ID] = cloneValue(card)
 		documentVariants[card.ID] = cloneValue(card.Documents)
 		worldDeck = append(worldDeck, Card{
 			ID:          card.ID,
@@ -261,9 +269,9 @@ func materializeDeck(definition DeckDefinition) ([]Card, map[string]map[string]c
 		}
 	}
 	if activeIndex < 0 {
-		return nil, nil, 0, fmt.Errorf("initial active card %q does not exist", definition.InitialActiveCardID)
+		return nil, nil, nil, 0, fmt.Errorf("initial active card %q does not exist", definition.InitialActiveCardID)
 	}
-	return worldDeck, documentVariants, activeIndex, nil
+	return worldDeck, documentVariants, cardDefinitions, activeIndex, nil
 }
 
 func (s *Session) ruleMatches(rule UseRuleDefinition, source Card, target Card) bool {
@@ -335,10 +343,61 @@ func (s *Session) applyRuleEffects(rule UseRuleDefinition, target Card) error {
 			}
 		case EffectSetMessage:
 			s.lastMessage = effect.Message
+		case EffectLoadDeck:
+			if err := s.loadDeck(effect.DeckID); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unsupported effect type %q", effect.Type)
 		}
 	}
+	return nil
+}
+
+func (s *Session) loadDeck(deckID string) error {
+	deckID = strings.TrimSpace(deckID)
+	if s.loadedDecks[deckID] {
+		return nil
+	}
+	definition, err := LoadEmbeddedDeck(deckID)
+	if err != nil {
+		return err
+	}
+	if err := ValidateDeckPackDefinition(definition, s.cardDefinitions); err != nil {
+		return err
+	}
+	worldDeck, documentVariants, cardDefinitions, activeIndex, err := materializeDeck(definition)
+	if err != nil {
+		return err
+	}
+	if s.solvedFlags == nil {
+		s.solvedFlags = map[string]bool{}
+	}
+	for flag, value := range definition.InitialSolvedFlags {
+		if _, exists := s.solvedFlags[flag]; !exists {
+			s.solvedFlags[flag] = value
+		}
+	}
+	startIndex := len(s.worldDeck)
+	s.worldDeck = append(s.worldDeck, worldDeck...)
+	if s.documentVariants == nil {
+		s.documentVariants = map[string]map[string]cardcomponent.Document{}
+	}
+	for cardID, documents := range documentVariants {
+		s.documentVariants[cardID] = documents
+	}
+	if s.cardDefinitions == nil {
+		s.cardDefinitions = map[string]CardDefinition{}
+	}
+	for cardID, card := range cardDefinitions {
+		s.cardDefinitions[cardID] = card
+	}
+	s.useRules = append(s.useRules, cloneValue(definition.UseRules)...)
+	if s.loadedDecks == nil {
+		s.loadedDecks = map[string]bool{}
+	}
+	s.loadedDecks[definition.ID] = true
+	s.activeIndex = startIndex + activeIndex
 	return nil
 }
 

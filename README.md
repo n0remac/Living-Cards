@@ -2,13 +2,14 @@
 
 Living Card is a Go web app for experimenting with cards as structured, server-rendered data. The visible app is a small world-deck game: cycle through cards, collect useful cards into a library, and play library cards onto world cards.
 
-The current seeded deck is pure JSON at `internal/game/decks/seeded_world.json`. Runtime code validates that data and materializes a process-local session from it, which keeps the deck format ready for a future database source.
+The current game content is pure JSON under `internal/game/decks/`. Runtime code validates that data, materializes a process-local session from it, and can load additional deck packs from declarative rule effects. This keeps the deck format ready for a future database source.
 
 ## What Is In The App
 
 - A visible world-deck game served at `/`.
 - Server-rendered card previews built from `card.Document` JSON.
-- A data-driven seeded deck with document variants and declarative use rules.
+- Data-driven deck packs with document variants, declarative use rules, and chained `loadDeck` effects.
+- A seeded puzzle path where opening the door loads the fuse room, then using the fuse on the switch loads the generator room.
 - A retained draft-card designer API for generating and applying background, border, textarea, shape, and image fragments.
 - In-memory state only; restarting the server resets the game and draft card state.
 

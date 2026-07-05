@@ -672,6 +672,89 @@
               }
             ]
           }
+        },
+        "powered": {
+          "card_id": "sleeping-switch",
+          "name": "Sleeping Switch",
+          "root": {
+            "id": "sleeping-switch-root",
+            "type": "card",
+            "fragment": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
+            "children": [
+              {
+                "id": "sleeping-switch-background",
+                "type": "background",
+                "fragment": {
+                  "background_color": "#10231f",
+                  "css": "background: #10231f;"
+                }
+              },
+              {
+                "id": "sleeping-switch-border",
+                "type": "border",
+                "fragment": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#34d399",
+                  "css": "border: 2px solid #34d399; border-radius: 22px;"
+                }
+              },
+              {
+                "id": "sleeping-switch-mark",
+                "type": "shape",
+                "fragment": {
+                  "shape": "diamond",
+                  "x": 50,
+                  "y": 28,
+                  "width": 22,
+                  "height": 22,
+                  "rotation": 0,
+                  "background_color": "#34d399",
+                  "border_color": "#111827",
+                  "border_width_px": 2
+                }
+              },
+              {
+                "id": "sleeping-switch-title",
+                "type": "textarea",
+                "fragment": {
+                  "content": "SWITCH ONLINE",
+                  "font_family": "system",
+                  "font_size_px": 22,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#f8fafc",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 51,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "sleeping-switch-body",
+                "type": "textarea",
+                "fragment": {
+                  "content": "The fuse hums. Somewhere deeper in the room, a generator panel wakes.",
+                  "font_family": "system",
+                  "font_size_px": 16,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#cbd5e1",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 73,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              }
+            ]
+          }
         }
       }
     }
@@ -706,6 +789,10 @@
         {
           "type": "setDocumentVariant",
           "variant": "open"
+        },
+        {
+          "type": "loadDeck",
+          "deckId": "fuse_room"
         },
         {
           "type": "setMessage",

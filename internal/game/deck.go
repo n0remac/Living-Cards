@@ -9,7 +9,7 @@ import (
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 )
 
-//go:embed decks/seeded_world.json
+//go:embed decks/*.json
 var deckFiles embed.FS
 
 const (
@@ -18,7 +18,10 @@ const (
 	EffectRemoveCardTags      = "removeCardTags"
 	EffectSetDocumentVariant  = "setDocumentVariant"
 	EffectSetMessage          = "setMessage"
+	EffectLoadDeck            = "loadDeck"
 	SeededWorldDeckDefinition = "seeded_world"
+	FuseRoomDeckDefinition    = "fuse_room"
+	GeneratorDeckDefinition   = "generator_room"
 )
 
 type DeckDefinition struct {
@@ -64,20 +67,13 @@ type RuleEffectDefinition struct {
 	Tags    []string `json:"tags,omitempty"`
 	Variant string   `json:"variant,omitempty"`
 	Message string   `json:"message,omitempty"`
+	DeckID  string   `json:"deckId,omitempty"`
 }
 
 func LoadEmbeddedSeededWorldDeck() (DeckDefinition, error) {
-	raw, err := deckFiles.ReadFile("decks/seeded_world.json")
+	definition, err := LoadEmbeddedDeck(SeededWorldDeckDefinition)
 	if err != nil {
-		return DeckDefinition{}, fmt.Errorf("read embedded seeded world deck: %w", err)
-	}
-	return DecodeDeckDefinition(raw)
-}
-
-func DecodeDeckDefinition(raw []byte) (DeckDefinition, error) {
-	var definition DeckDefinition
-	if err := json.Unmarshal(raw, &definition); err != nil {
-		return DeckDefinition{}, fmt.Errorf("decode deck definition: %w", err)
+		return DeckDefinition{}, err
 	}
 	if err := ValidateDeckDefinition(definition); err != nil {
 		return DeckDefinition{}, err
@@ -85,52 +81,139 @@ func DecodeDeckDefinition(raw []byte) (DeckDefinition, error) {
 	return definition, nil
 }
 
+func LoadEmbeddedDeck(deckID string) (DeckDefinition, error) {
+	deckID = strings.TrimSpace(deckID)
+	if err := validateDeckID(deckID); err != nil {
+		return DeckDefinition{}, err
+	}
+	raw, err := deckFiles.ReadFile("decks/" + deckID + ".json")
+	if err != nil {
+		return DeckDefinition{}, fmt.Errorf("read embedded deck %q: %w", deckID, err)
+	}
+	definition, err := decodeDeckDefinition(raw)
+	if err != nil {
+		return DeckDefinition{}, err
+	}
+	if definition.ID != deckID {
+		return DeckDefinition{}, fmt.Errorf("embedded deck %q has id %q", deckID, definition.ID)
+	}
+	if _, err := validateDeckCards(definition); err != nil {
+		return DeckDefinition{}, err
+	}
+	return definition, nil
+}
+
+func DecodeDeckDefinition(raw []byte) (DeckDefinition, error) {
+	definition, err := decodeDeckDefinition(raw)
+	if err != nil {
+		return DeckDefinition{}, err
+	}
+	if err := ValidateDeckDefinition(definition); err != nil {
+		return DeckDefinition{}, err
+	}
+	return definition, nil
+}
+
+func decodeDeckDefinition(raw []byte) (DeckDefinition, error) {
+	var definition DeckDefinition
+	if err := json.Unmarshal(raw, &definition); err != nil {
+		return DeckDefinition{}, fmt.Errorf("decode deck definition: %w", err)
+	}
+	return definition, nil
+}
+
 func ValidateDeckDefinition(definition DeckDefinition) error {
+	cardsByID, err := validateDeckCards(definition)
+	if err != nil {
+		return err
+	}
+	return validateRules(definition.UseRules, cardsByID)
+}
+
+func ValidateDeckPackDefinition(definition DeckDefinition, existingCards map[string]CardDefinition) error {
+	cardsByID, err := validateDeckCards(definition)
+	if err != nil {
+		return err
+	}
+	for cardID, card := range existingCards {
+		if _, exists := cardsByID[cardID]; exists {
+			return fmt.Errorf("deck %q card %q already exists", definition.ID, cardID)
+		}
+		cardsByID[cardID] = card
+	}
+	return validateRules(definition.UseRules, cardsByID)
+}
+
+func validateDeckCards(definition DeckDefinition) (map[string]CardDefinition, error) {
 	if strings.TrimSpace(definition.ID) == "" {
-		return fmt.Errorf("deck id is required")
+		return nil, fmt.Errorf("deck id is required")
+	}
+	if err := validateDeckID(definition.ID); err != nil {
+		return nil, err
 	}
 	if len(definition.Cards) == 0 {
-		return fmt.Errorf("deck %q must contain at least one card", definition.ID)
+		return nil, fmt.Errorf("deck %q must contain at least one card", definition.ID)
 	}
 	cardsByID := make(map[string]CardDefinition, len(definition.Cards))
 	for index, card := range definition.Cards {
 		if strings.TrimSpace(card.ID) == "" {
-			return fmt.Errorf("card at index %d must have an id", index)
+			return nil, fmt.Errorf("card at index %d must have an id", index)
 		}
 		if _, exists := cardsByID[card.ID]; exists {
-			return fmt.Errorf("duplicate card id %q", card.ID)
+			return nil, fmt.Errorf("duplicate card id %q", card.ID)
 		}
 		if strings.TrimSpace(card.InitialDocument) == "" {
-			return fmt.Errorf("card %q initialDocument is required", card.ID)
+			return nil, fmt.Errorf("card %q initialDocument is required", card.ID)
 		}
 		if len(card.Documents) == 0 {
-			return fmt.Errorf("card %q must define at least one document variant", card.ID)
+			return nil, fmt.Errorf("card %q must define at least one document variant", card.ID)
 		}
 		if _, exists := card.Documents[card.InitialDocument]; !exists {
-			return fmt.Errorf("card %q initial document variant %q does not exist", card.ID, card.InitialDocument)
+			return nil, fmt.Errorf("card %q initial document variant %q does not exist", card.ID, card.InitialDocument)
 		}
 		for variant, document := range card.Documents {
 			if strings.TrimSpace(variant) == "" {
-				return fmt.Errorf("card %q has an empty document variant key", card.ID)
+				return nil, fmt.Errorf("card %q has an empty document variant key", card.ID)
 			}
 			if document.CardID != card.ID {
-				return fmt.Errorf("card %q document variant %q has card_id %q", card.ID, variant, document.CardID)
+				return nil, fmt.Errorf("card %q document variant %q has card_id %q", card.ID, variant, document.CardID)
 			}
 			if document.Root.Type != cardcomponent.Type {
-				return fmt.Errorf("card %q document variant %q root type must be %q", card.ID, variant, cardcomponent.Type)
+				return nil, fmt.Errorf("card %q document variant %q root type must be %q", card.ID, variant, cardcomponent.Type)
 			}
 		}
 		cardsByID[card.ID] = card
 	}
 	if _, exists := cardsByID[definition.InitialActiveCardID]; !exists {
-		return fmt.Errorf("initial active card %q does not exist", definition.InitialActiveCardID)
+		return nil, fmt.Errorf("initial active card %q does not exist", definition.InitialActiveCardID)
 	}
-	for _, rule := range definition.UseRules {
+	return cardsByID, nil
+}
+
+func validateRules(rules []UseRuleDefinition, cardsByID map[string]CardDefinition) error {
+	for _, rule := range rules {
 		if err := validateRuleDefinition(rule, cardsByID); err != nil {
 			if strings.TrimSpace(rule.ID) == "" {
 				return err
 			}
 			return fmt.Errorf("use rule %q: %w", rule.ID, err)
+		}
+	}
+	return nil
+}
+
+func validateDeckID(deckID string) error {
+	if strings.TrimSpace(deckID) == "" {
+		return fmt.Errorf("deck id is required")
+	}
+	for _, char := range deckID {
+		switch {
+		case char >= 'a' && char <= 'z':
+		case char >= 'A' && char <= 'Z':
+		case char >= '0' && char <= '9':
+		case char == '-', char == '_':
+		default:
+			return fmt.Errorf("deck id %q may only contain letters, numbers, hyphens, and underscores", deckID)
 		}
 	}
 	return nil
@@ -213,6 +296,10 @@ func validateRuleEffect(effect RuleEffectDefinition, target CardMatcherDefinitio
 	case EffectSetMessage:
 		if strings.TrimSpace(effect.Message) == "" {
 			return fmt.Errorf("%s effect requires message", EffectSetMessage)
+		}
+	case EffectLoadDeck:
+		if err := validateDeckID(effect.DeckID); err != nil {
+			return fmt.Errorf("%s effect requires valid deckId: %w", EffectLoadDeck, err)
 		}
 	default:
 		return fmt.Errorf("unsupported effect type %q", effect.Type)
