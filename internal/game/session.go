@@ -6,7 +6,12 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/n0remac/Living-Card/internal/components/background"
+	"github.com/n0remac/Living-Card/internal/components/border"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/components/slider"
+	"github.com/n0remac/Living-Card/internal/components/textarea"
+	"github.com/n0remac/Living-Card/internal/fragment"
 )
 
 const (
@@ -15,6 +20,11 @@ const (
 	KindClue  = "clue"
 
 	DoorUnlockedFlag = "doorUnlocked"
+
+	BlankControllerCardID     = "blank-controller"
+	SliderComponentCardID     = "slider-component"
+	RegulatorControllerCardID = "generator-regulator-controller"
+	GeneratorPoweredFlag      = "generatorPowered"
 )
 
 type Card struct {
@@ -193,7 +203,14 @@ func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
 	}
 	target := s.worldDeck[targetIndex]
 	for _, rule := range s.useRules {
-		if !s.ruleMatches(rule, *source, target) {
+		if !s.ruleBaseMatches(rule, *source, target) {
+			continue
+		}
+		if !sourceComponentConditionsMatch(rule.SourceComponentConditions, source.Document) {
+			if strings.TrimSpace(rule.FailureMessage) != "" {
+				s.lastMessage = rule.FailureMessage
+				return s.snapshotLocked()
+			}
 			continue
 		}
 		if err := s.applyRuleEffects(rule, target); err != nil {
@@ -202,6 +219,49 @@ func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
 		return s.snapshotLocked()
 	}
 	s.lastMessage = "Nothing on this card responds to " + source.Name + "."
+	return s.snapshotLocked()
+}
+
+func (s *Session) SaveController(templateCardID string, document cardcomponent.Document) (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	templateCardID = strings.TrimSpace(templateCardID)
+	if templateCardID != BlankControllerCardID {
+		return Snapshot{}, fmt.Errorf("templateCardId must be %q", BlankControllerCardID)
+	}
+	if s.libraryCard(BlankControllerCardID) == nil {
+		return Snapshot{}, fmt.Errorf("blank controller must be in your library")
+	}
+	if s.libraryCard(SliderComponentCardID) == nil {
+		return Snapshot{}, fmt.Errorf("slider component must be in your library")
+	}
+	sliderPart, err := validatedSliderFromDocument(document)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	controller := Card{
+		ID:          RegulatorControllerCardID,
+		Name:        "Regulator Controller",
+		Kind:        KindItem,
+		Tags:        []string{"item", "controller", "slider-controller"},
+		Collectible: false,
+		Collected:   true,
+		State: map[string]any{
+			"created":  true,
+			"template": BlankControllerCardID,
+		},
+		Document: regulatorControllerDocument(sliderPart),
+	}
+	for index := range s.library {
+		if s.library[index].ID == RegulatorControllerCardID {
+			s.library[index] = controller
+			s.lastMessage = "Regulator Controller updated in your library."
+			return s.snapshotLocked()
+		}
+	}
+	s.library = append(s.library, controller)
+	s.lastMessage = "Regulator Controller saved to your library."
 	return s.snapshotLocked()
 }
 
@@ -274,7 +334,7 @@ func materializeDeck(definition DeckDefinition) ([]Card, map[string]map[string]c
 	return worldDeck, documentVariants, cardDefinitions, activeIndex, nil
 }
 
-func (s *Session) ruleMatches(rule UseRuleDefinition, source Card, target Card) bool {
+func (s *Session) ruleBaseMatches(rule UseRuleDefinition, source Card, target Card) bool {
 	if !cardMatches(source, rule.Source) || !cardMatches(target, rule.Target) {
 		return false
 	}
@@ -284,6 +344,141 @@ func (s *Session) ruleMatches(rule UseRuleDefinition, source Card, target Card) 
 		}
 	}
 	return true
+}
+
+func sourceComponentConditionsMatch(conditions []ComponentConditionDefinition, document cardcomponent.Document) bool {
+	for _, condition := range conditions {
+		switch strings.TrimSpace(condition.Type) {
+		case slider.Type:
+			part, ok := firstSliderFragment(document)
+			if !ok || condition.ValueEquals == nil {
+				return false
+			}
+			if part.Value != *condition.ValueEquals {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func validatedSliderFromDocument(document cardcomponent.Document) (slider.Fragment, error) {
+	part, ok := firstSliderFragment(document)
+	if !ok {
+		return slider.Fragment{}, fmt.Errorf("controller document must include a slider component")
+	}
+	return part, nil
+}
+
+func firstSliderFragment(document cardcomponent.Document) (slider.Fragment, bool) {
+	var out slider.Fragment
+	found := false
+	var visit func(cardcomponent.Node)
+	visit = func(node cardcomponent.Node) {
+		if found {
+			return
+		}
+		if node.Type == slider.Type {
+			var part slider.Fragment
+			if err := json.Unmarshal(node.Fragment, &part); err != nil {
+				return
+			}
+			generated := fragment.Generated[slider.Fragment]{
+				Target:      slider.Type,
+				Description: "Controller slider",
+				Fragment:    part,
+			}
+			slider.NormalizeGenerated(&generated)
+			if issues := slider.ValidateGenerated(generated); len(issues) > 0 {
+				return
+			}
+			out = generated.Fragment
+			found = true
+			return
+		}
+		for _, child := range node.Children {
+			visit(child)
+		}
+	}
+	visit(document.Root)
+	return out, found
+}
+
+func regulatorControllerDocument(part slider.Fragment) cardcomponent.Document {
+	part = slider.NormalizeFragment(part)
+	part.Label = "Output"
+	return cardcomponent.Document{
+		CardID: RegulatorControllerCardID,
+		Name:   "Regulator Controller",
+		Root: cardcomponent.Node{
+			ID:       RegulatorControllerCardID + "-root",
+			Type:     cardcomponent.Type,
+			Fragment: cardcomponent.EncodeRootFragment(cardcomponent.RootFragment{PaddingPX: 18, Shadow: "0 24px 60px rgba(8,47,73,0.34)"}),
+			Children: []cardcomponent.Node{
+				{
+					ID:   RegulatorControllerCardID + "-background",
+					Type: background.Type,
+					Fragment: mustRaw(background.Fragment{
+						BackgroundColor: "#082f49",
+						CSS:             "background: linear-gradient(160deg, #082f49 0%, #0f172a 100%);",
+					}),
+				},
+				{
+					ID:   RegulatorControllerCardID + "-border",
+					Type: border.Type,
+					Fragment: mustRaw(border.Fragment{
+						BorderWidthPX:  2,
+						BorderRadiusPX: 22,
+						BorderColor:    "#7dd3fc",
+						CSS:            "border: 2px solid #7dd3fc; border-radius: 22px;",
+					}),
+				},
+				{
+					ID:   RegulatorControllerCardID + "-title",
+					Type: textarea.Type,
+					Fragment: mustRaw(textarea.Fragment{
+						Content:    "REGULATOR",
+						FontFamily: "system",
+						FontSizePX: 24,
+						FontWeight: 800,
+						FontStyle:  "normal",
+						Color:      "#e0f2fe",
+						Align:      "center",
+						Position:   "center",
+						X:          50,
+						Y:          20,
+						PaddingPX:  4,
+						CSS:        "text-align: center;",
+					}),
+				},
+				{
+					ID:   RegulatorControllerCardID + "-hint",
+					Type: textarea.Type,
+					Fragment: mustRaw(textarea.Fragment{
+						Content:    "Output setpoint",
+						FontFamily: "system",
+						FontSizePX: 14,
+						FontWeight: 700,
+						FontStyle:  "normal",
+						Color:      "#bae6fd",
+						Align:      "center",
+						Position:   "center",
+						X:          50,
+						Y:          40,
+						PaddingPX:  4,
+						CSS:        "text-align: center;",
+					}),
+				},
+				{
+					ID:       "regulator-output-slider",
+					Type:     slider.Type,
+					Fragment: mustRaw(part),
+				},
+			},
+		},
+	}
 }
 
 func cardMatches(card Card, matcher CardMatcherDefinition) bool {
@@ -446,6 +641,14 @@ func cloneCards(cards []Card) []Card {
 		out[index] = cloneValue(card)
 	}
 	return out
+}
+
+func mustRaw(value any) json.RawMessage {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return raw
 }
 
 func cloneValue[T any](value T) T {

@@ -10,6 +10,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/components/card"
 	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
 	"github.com/n0remac/Living-Card/internal/components/shape"
+	"github.com/n0remac/Living-Card/internal/components/slider"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
 )
 
@@ -133,6 +134,17 @@ func TestRenderDocumentSupportsMultipleLayerComponentsAndCustomID(t *testing.T) 
 			Type:     imagecomponent.Type,
 			Fragment: mustRaw(t, imagecomponent.DefaultFragment()),
 		},
+		card.Node{
+			ID:   "slider-extra",
+			Type: slider.Type,
+			Fragment: mustRaw(t, slider.Fragment{
+				Label: "Output",
+				Min:   0,
+				Max:   100,
+				Step:  1,
+				Value: 73,
+			}),
+		},
 	)
 
 	node, err := card.RenderDocumentWithID(document, testRegistry(), "game-card-fixture")
@@ -148,6 +160,8 @@ func TestRenderDocumentSupportsMultipleLayerComponentsAndCustomID(t *testing.T) 
 		`data-component-id="shape-extra"`,
 		`data-component-id="image-extra"`,
 		`data-component-type="image"`,
+		`data-component-id="slider-extra"`,
+		`data-component-type="slider"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("render missing %q:\n%s", marker, body)
@@ -228,6 +242,7 @@ func testRegistry() *card.Registry {
 		textarea.Definition(),
 		shape.Definition(),
 		imagecomponent.Definition(),
+		slider.Definition(),
 	)
 }
 

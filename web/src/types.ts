@@ -12,9 +12,9 @@ export interface ComponentNode {
 }
 
 export type FragmentTarget = "background" | "border" | "textarea" | "shape" | "image";
-export type ComponentType = "card" | "textarea" | "shape" | "image";
-export type ComponentTarget = FragmentTarget | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
-export type CardHitZone = "border" | "background" | "textarea" | "shape" | "image";
+export type ComponentType = "card" | "textarea" | "shape" | "image" | "slider";
+export type ComponentTarget = FragmentTarget | "slider" | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
+export type CardHitZone = "border" | "background" | "textarea" | "shape" | "image" | "slider";
 export type EditMode = "random" | "preset" | "simpleControls" | "advancedControls" | "aiPrompt" | "library";
 
 export type FragmentJSON = Record<string, unknown>;

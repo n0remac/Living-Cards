@@ -123,6 +123,17 @@ async function playGameCard(sourceCardId, targetCardId) {
   }
   return await response.json();
 }
+async function saveControllerCard(templateCardId, document2) {
+  const response = await fetch("/api/game/save-controller", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ templateCardId, document: document2 })
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to save controller."));
+  }
+  return await response.json();
+}
 async function addDraftComponent(componentType, fragment) {
   const response = await fetch("/api/draft-card/components", {
     method: "POST",
@@ -562,6 +573,7 @@ var latestSession = null;
 var busy = false;
 function initGameStage() {
   bindControls();
+  bindControllerBuilder();
   void loadSession();
 }
 function bindControls() {
@@ -592,6 +604,27 @@ function bindControls() {
       void play(sourceCardId, targetCardId);
     }
   });
+}
+function bindControllerBuilder() {
+  byID("controller-builder-close")?.addEventListener("click", closeControllerBuilder);
+  byID("controller-builder-cancel")?.addEventListener("click", closeControllerBuilder);
+  byID("controller-builder-save")?.addEventListener("click", () => {
+    void saveController();
+  });
+  byID("controller-builder-overlay")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) {
+      closeControllerBuilder();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.body.classList.contains("controller-builder-open")) {
+      closeControllerBuilder();
+    }
+  });
+  const range = byID("controller-slider-input");
+  const number = byID("controller-slider-number");
+  range?.addEventListener("input", () => syncControllerInputs(Number(range.value)));
+  number?.addEventListener("input", () => syncControllerInputs(Number(number.value)));
 }
 async function loadSession() {
   setStatus("Loading scene...");
@@ -683,12 +716,11 @@ function renderLibrary(cards) {
     return;
   }
   cards.forEach((card) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "game-library-card";
-    button.draggable = true;
-    button.dataset.cardId = card.id;
-    button.addEventListener("dragstart", (event) => {
+    const item = document.createElement("div");
+    item.className = "game-library-card";
+    item.draggable = true;
+    item.dataset.cardId = card.id;
+    item.addEventListener("dragstart", (event) => {
       event.dataTransfer?.setData("text/plain", card.id);
       event.dataTransfer.effectAllowed = "move";
     });
@@ -697,9 +729,113 @@ function renderLibrary(cards) {
     const label = document.createElement("div");
     label.className = "game-library-card-name";
     label.textContent = card.name;
-    button.append(preview, label);
-    root.appendChild(button);
+    item.append(preview, label);
+    if (card.id === "blank-controller") {
+      const build = document.createElement("button");
+      build.type = "button";
+      build.className = "game-library-build";
+      build.textContent = "Build";
+      build.disabled = !hasLibraryCard("slider-component");
+      build.title = build.disabled ? "Collect Slider Component first." : "Build Regulator Controller";
+      build.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+      });
+      build.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openControllerBuilder();
+      });
+      item.appendChild(build);
+    }
+    root.appendChild(item);
   });
+}
+function openControllerBuilder() {
+  if (!hasLibraryCard("blank-controller")) {
+    setStatus("Collect the Blank Controller first.", true);
+    return;
+  }
+  if (!hasLibraryCard("slider-component")) {
+    setStatus("Collect the Slider Component first.", true);
+    return;
+  }
+  syncControllerInputs(existingControllerValue() ?? 50);
+  document.body.classList.add("controller-builder-open");
+}
+function closeControllerBuilder() {
+  document.body.classList.remove("controller-builder-open");
+}
+async function saveController() {
+  if (busy) return;
+  busy = true;
+  setStatus("Saving controller...");
+  try {
+    const value = readControllerValue();
+    const snapshot = await saveControllerCard("blank-controller", createControllerDocument(value));
+    closeControllerBuilder();
+    renderSession(snapshot);
+  } catch (error) {
+    setStatus(errorMessage(error), true);
+  } finally {
+    busy = false;
+  }
+}
+function hasLibraryCard(cardId) {
+  return Boolean(latestSession?.library.some((card) => card.id === cardId));
+}
+function existingControllerValue() {
+  const controller = latestSession?.library.find((card) => card.id === "generator-regulator-controller");
+  return controller ? sliderValueFromNode(controller.document.root) : null;
+}
+function sliderValueFromNode(node) {
+  if (node.type === "slider" && node.fragment && typeof node.fragment.value === "number") {
+    return clampControllerValue(node.fragment.value);
+  }
+  for (const child of node.children || []) {
+    const value = sliderValueFromNode(child);
+    if (value !== null) return value;
+  }
+  return null;
+}
+function syncControllerInputs(value) {
+  const normalized = clampControllerValue(value);
+  const range = byID("controller-slider-input");
+  const number = byID("controller-slider-number");
+  if (range) range.value = String(normalized);
+  if (number) number.value = String(normalized);
+}
+function readControllerValue() {
+  const number = byID("controller-slider-number");
+  return clampControllerValue(Number(number?.value ?? 50));
+}
+function clampControllerValue(value) {
+  if (!Number.isFinite(value)) return 50;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+function createControllerDocument(value) {
+  return {
+    card_id: "generator-regulator-controller",
+    name: "Regulator Controller",
+    root: {
+      id: "generator-regulator-controller-root",
+      type: "card",
+      fragment: {
+        padding_px: 18,
+        shadow: "0 24px 60px rgba(8,47,73,0.34)"
+      },
+      children: [{
+        id: "regulator-output-slider",
+        type: "slider",
+        fragment: {
+          label: "Output",
+          min: 0,
+          max: 100,
+          step: 1,
+          value: clampControllerValue(value)
+        }
+      }]
+    }
+  };
 }
 function setStatus(message, isError = false) {
   const status = byID("game-status");

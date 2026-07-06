@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/components/slider"
+	"github.com/n0remac/Living-Card/internal/fragment"
 )
 
 func TestSessionStartsWithEmptyLibraryAndScriptedDeck(t *testing.T) {
@@ -223,6 +227,134 @@ func TestSessionFusePowersSwitchAndLoadsGeneratorRoom(t *testing.T) {
 	}
 }
 
+func TestSessionSliderControllerWrongValueDoesNotPowerGenerator(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	loadGeneratorRoom(t, session)
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(SliderComponentCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.SaveController(BlankControllerCardID, controllerDraftDocument(t, 72))
+	})
+	snapshot := mustResult(t, func() (Snapshot, error) {
+		return session.UseCard(RegulatorControllerCardID, "generator-panel")
+	})
+	if snapshot.SolvedFlags[GeneratorPoweredFlag] {
+		t.Fatalf("solved flags = %#v, want generator unpowered", snapshot.SolvedFlags)
+	}
+	if !strings.Contains(snapshot.Message, "regulator value is wrong") {
+		t.Fatalf("message = %q, want wrong value message", snapshot.Message)
+	}
+	generator := findCard(snapshot.WorldDeck, "generator-panel")
+	if generator == nil {
+		t.Fatal("world deck missing generator")
+	}
+	if powered, _ := generator.State["powered"].(bool); powered {
+		t.Fatalf("generator state = %#v, want unpowered", generator.State)
+	}
+	if !documentContains(generator.Document, "SLEEPING GENERATOR") {
+		t.Fatalf("generator document should remain inactive: %#v", generator.Document)
+	}
+}
+
+func TestSessionSliderControllerPowersGenerator(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	loadGeneratorRoom(t, session)
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(SliderComponentCardID)
+	})
+	saved := mustResult(t, func() (Snapshot, error) {
+		return session.SaveController(BlankControllerCardID, controllerDraftDocument(t, 73))
+	})
+	if findCard(saved.Library, RegulatorControllerCardID) == nil {
+		t.Fatalf("library = %#v, want saved regulator controller", saved.Library)
+	}
+	snapshot := mustResult(t, func() (Snapshot, error) {
+		return session.UseCard(RegulatorControllerCardID, "generator-panel")
+	})
+	if !snapshot.SolvedFlags[GeneratorPoweredFlag] {
+		t.Fatalf("solved flags = %#v, want generator powered", snapshot.SolvedFlags)
+	}
+	generator := findCard(snapshot.WorldDeck, "generator-panel")
+	if generator == nil {
+		t.Fatal("world deck missing generator")
+	}
+	if powered, _ := generator.State["powered"].(bool); !powered {
+		t.Fatalf("generator state = %#v, want powered", generator.State)
+	}
+	if hasTag(*generator, "inactive") {
+		t.Fatalf("generator tags = %#v, want inactive tag removed", generator.Tags)
+	}
+	if !documentContains(generator.Document, "GENERATOR ONLINE") {
+		t.Fatalf("generator document did not switch to active variant: %#v", generator.Document)
+	}
+}
+
+func TestSessionPoweredGeneratorDoesNotAcceptWrongRetune(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	loadGeneratorRoom(t, session)
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(SliderComponentCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.SaveController(BlankControllerCardID, controllerDraftDocument(t, 73))
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.UseCard(RegulatorControllerCardID, "generator-panel")
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.SaveController(BlankControllerCardID, controllerDraftDocument(t, 12))
+	})
+	snapshot := mustResult(t, func() (Snapshot, error) {
+		return session.UseCard(RegulatorControllerCardID, "generator-panel")
+	})
+	if !snapshot.SolvedFlags[GeneratorPoweredFlag] {
+		t.Fatalf("solved flags = %#v, want generator to stay powered", snapshot.SolvedFlags)
+	}
+	if strings.Contains(snapshot.Message, "regulator value is wrong") {
+		t.Fatalf("message = %q, powered generator should not run inactive puzzle failure", snapshot.Message)
+	}
+	generator := findCard(snapshot.WorldDeck, "generator-panel")
+	if generator == nil || !documentContains(generator.Document, "GENERATOR ONLINE") {
+		t.Fatalf("generator should stay online: %#v", generator)
+	}
+}
+
+func TestSessionResetClearsSavedController(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	loadGeneratorRoom(t, session)
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(SliderComponentCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.SaveController(BlankControllerCardID, controllerDraftDocument(t, 73))
+	})
+	reset := mustResult(t, session.Reset)
+	if findCard(reset.Library, RegulatorControllerCardID) != nil || findCard(reset.WorldDeck, "generator-panel") != nil {
+		t.Fatalf("reset snapshot = %#v, want seed-only world and no saved controller", reset)
+	}
+}
+
 func TestSessionLoadedDecksAreIdempotentAndResetToSeed(t *testing.T) {
 	t.Parallel()
 
@@ -366,6 +498,22 @@ func TestDeckPackValidationRejectsBadPackReferences(t *testing.T) {
 	}
 }
 
+func TestDeckPackValidationRejectsUnsupportedComponentCondition(t *testing.T) {
+	t.Parallel()
+
+	seeded := mustLoadEmbeddedDeck(t, SeededWorldDeckDefinition)
+	fuseRoom := mustLoadEmbeddedDeck(t, FuseRoomDeckDefinition)
+	generatorRoom := mustLoadEmbeddedDeck(t, GeneratorDeckDefinition)
+	combined := definitionsByID(seeded.Cards)
+	for cardID, card := range definitionsByID(fuseRoom.Cards) {
+		combined[cardID] = card
+	}
+	generatorRoom.UseRules[0].SourceComponentConditions[0].Type = "dial"
+	if err := ValidateDeckPackDefinition(generatorRoom, combined); err == nil {
+		t.Fatal("ValidateDeckPackDefinition() unsupported component condition error = nil, want error")
+	}
+}
+
 func TestSessionLoadDeckEffectReturnsMissingDeckError(t *testing.T) {
 	t.Parallel()
 
@@ -386,6 +534,57 @@ func TestSessionLoadDeckEffectReturnsMissingDeckError(t *testing.T) {
 	})
 	if _, err := session.UseCard("bent-iron-key", "rusted-cell-door"); err == nil {
 		t.Fatal("UseCard() missing loadDeck error = nil, want error")
+	}
+}
+
+func loadGeneratorRoom(t *testing.T, session *Session) {
+	t.Helper()
+
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect("bent-iron-key")
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.UseCard("bent-iron-key", "rusted-cell-door")
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect("glass-fuse")
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.UseCard("glass-fuse", "sleeping-switch")
+	})
+}
+
+func controllerDraftDocument(t *testing.T, value int) cardcomponent.Document {
+	t.Helper()
+
+	generated := fragment.Generated[slider.Fragment]{
+		Target:      slider.Type,
+		Description: "Draft slider",
+		Fragment: slider.Fragment{
+			Label: "Output",
+			Min:   0,
+			Max:   100,
+			Step:  1,
+			Value: value,
+		},
+	}
+	slider.NormalizeGenerated(&generated)
+	raw, err := json.Marshal(generated.Fragment)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	return cardcomponent.Document{
+		CardID: RegulatorControllerCardID,
+		Name:   "Regulator Controller",
+		Root: cardcomponent.Node{
+			ID:   RegulatorControllerCardID + "-root",
+			Type: cardcomponent.Type,
+			Children: []cardcomponent.Node{{
+				ID:       "regulator-output-slider",
+				Type:     slider.Type,
+				Fragment: raw,
+			}},
+		},
 	}
 }
 

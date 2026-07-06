@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/components/slider"
 	"github.com/n0remac/Living-Card/internal/fragment"
 	"github.com/n0remac/Living-Card/internal/ollama"
 )
@@ -36,6 +37,9 @@ func TestPageRendersInteractiveStageWorkflow(t *testing.T) {
 		`id="game-status"`,
 		`id="game-library-list"`,
 		`id="game-library-count"`,
+		`id="controller-builder-overlay"`,
+		`id="controller-slider-input"`,
+		`id="controller-builder-save"`,
 		`id="stage-overlay-root"`,
 		`id="stage-edge-controls"`,
 		`id="stage-edge-controls-top"`,
@@ -265,6 +269,72 @@ func TestGameCycleCollectAndUnlockDoor(t *testing.T) {
 	}
 	if !strings.Contains(gameCardHTML(unlocked.WorldDeck, "rusted-cell-door"), "OPEN") {
 		t.Fatalf("door preview did not update: %s", gameCardHTML(unlocked.WorldDeck, "rusted-cell-door"))
+	}
+}
+
+func TestGameSaveControllerRequiresCollectedParts(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	recorder := postJSON(t, mux, "/api/game/save-controller", map[string]any{
+		"templateCardId": "blank-controller",
+		"document":       webControllerDocument(t, 73),
+	})
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "blank controller") {
+		t.Fatalf("body = %q, want blank controller error", recorder.Body.String())
+	}
+}
+
+func TestGameSaveControllerRejectsMalformedDocument(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	advanceWebToGeneratorRoom(t, mux)
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "blank-controller"})
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "slider-component"})
+	recorder := postJSON(t, mux, "/api/game/save-controller", map[string]any{
+		"templateCardId": "blank-controller",
+		"document": cardcomponent.Document{
+			CardID: "bad-controller",
+			Name:   "Bad Controller",
+			Root:   cardcomponent.Node{ID: "bad-controller-root", Type: cardcomponent.Type},
+		},
+	})
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "slider component") {
+		t.Fatalf("body = %q, want slider document error", recorder.Body.String())
+	}
+}
+
+func TestGameSaveControllerAddsRenderedLibraryCard(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	advanceWebToGeneratorRoom(t, mux)
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "blank-controller"})
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "slider-component"})
+	recorder := postJSON(t, mux, "/api/game/save-controller", map[string]any{
+		"templateCardId": "blank-controller",
+		"document":       webControllerDocument(t, 73),
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+	var payload GameSessionSnapshot
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+	}
+	controller := gameCard(payload.Library, "generator-regulator-controller")
+	if controller == nil {
+		t.Fatalf("library = %#v, want regulator controller", payload.Library)
+	}
+	if !strings.Contains(controller.PreviewHTML, `data-component-type="slider"`) || !strings.Contains(controller.PreviewHTML, `value="73"`) {
+		t.Fatalf("controller preview missing slider: %s", controller.PreviewHTML)
 	}
 }
 
@@ -1649,6 +1719,76 @@ func hasControl(controls []ControlDescriptor, control string) bool {
 		}
 	}
 	return false
+}
+
+func postJSON(t *testing.T, mux *http.ServeMux, path string, value any) *httptest.ResponseRecorder {
+	t.Helper()
+
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(string(raw)))
+	request.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(recorder, request)
+	return recorder
+}
+
+func advanceWebToGeneratorRoom(t *testing.T, mux *http.ServeMux) {
+	t.Helper()
+
+	for _, request := range []struct {
+		path string
+		body map[string]any
+	}{
+		{path: "/api/game/collect", body: map[string]any{"cardId": "bent-iron-key"}},
+		{path: "/api/game/play-card", body: map[string]any{"sourceCardId": "bent-iron-key", "targetCardId": "rusted-cell-door"}},
+		{path: "/api/game/collect", body: map[string]any{"cardId": "glass-fuse"}},
+		{path: "/api/game/play-card", body: map[string]any{"sourceCardId": "glass-fuse", "targetCardId": "sleeping-switch"}},
+	} {
+		recorder := postJSON(t, mux, request.path, request.body)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200 body=%s", request.path, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
+func webControllerDocument(t *testing.T, value int) cardcomponent.Document {
+	t.Helper()
+
+	raw, err := json.Marshal(slider.Fragment{
+		Label: "Output",
+		Min:   0,
+		Max:   100,
+		Step:  1,
+		Value: value,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	return cardcomponent.Document{
+		CardID: "generator-regulator-controller",
+		Name:   "Regulator Controller",
+		Root: cardcomponent.Node{
+			ID:   "generator-regulator-controller-root",
+			Type: cardcomponent.Type,
+			Children: []cardcomponent.Node{{
+				ID:       "regulator-output-slider",
+				Type:     slider.Type,
+				Fragment: raw,
+			}},
+		},
+	}
+}
+
+func gameCard(cards []RenderedGameCard, cardID string) *RenderedGameCard {
+	for index := range cards {
+		if cards[index].ID == cardID {
+			return &cards[index]
+		}
+	}
+	return nil
 }
 
 func gameCardHTML(cards []RenderedGameCard, cardID string) string {

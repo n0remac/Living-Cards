@@ -26,6 +26,7 @@ func Page() *Node {
 					Attr("aria-live", "polite"),
 					stageEdgeControlsView(),
 				),
+				controllerBuilderView(),
 				designerOverlayView(),
 			),
 			Script(Type("module"), Src("/assets/app.js")),
@@ -140,6 +141,54 @@ func stageEdgeControlsView() *Node {
 			Id("stage-edge-controls-bottom"),
 			Class("stage-edge-controls-bottom"),
 			Div(Id("stage-edge-controls-status"), Class("stage-edge-controls-status"), T("")),
+		),
+	)
+}
+
+func controllerBuilderView() *Node {
+	return Div(
+		Id("controller-builder-overlay"),
+		Class("controller-builder-overlay"),
+		Attr("role", "dialog"),
+		Attr("aria-modal", "true"),
+		Attr("aria-labelledby", "controller-builder-title"),
+		Div(
+			Class("controller-builder-panel"),
+			Div(
+				Class("controller-builder-header"),
+				H2(Id("controller-builder-title"), Class("controller-builder-title"), T("Regulator Controller")),
+				Button(Id("controller-builder-close"), Type("button"), Class(uiSecondaryButtonClass("xs")), T("Close")),
+			),
+			Div(
+				Class("controller-builder-body"),
+				Label(Attr("for", "controller-slider-input"), Class("controller-builder-label"), T("Output")),
+				Div(
+					Class("controller-builder-value-row"),
+					Input(
+						Id("controller-slider-input"),
+						Type("range"),
+						Attr("min", "0"),
+						Attr("max", "100"),
+						Attr("step", "1"),
+						Value("50"),
+						Class("controller-builder-range"),
+					),
+					Input(
+						Id("controller-slider-number"),
+						Type("number"),
+						Attr("min", "0"),
+						Attr("max", "100"),
+						Attr("step", "1"),
+						Value("50"),
+						Class("controller-builder-number"),
+					),
+				),
+			),
+			Div(
+				Class("controller-builder-actions"),
+				Button(Id("controller-builder-cancel"), Type("button"), Class(uiSecondaryButtonClass("sm")), T("Cancel")),
+				Button(Id("controller-builder-save"), Type("button"), Class(uiPrimaryButtonClass("sm")), T("Save Controller")),
+			),
 		),
 	)
 }
@@ -474,6 +523,110 @@ func pageCSS() string {
   color: rgba(244,244,245,0.82);
   font-size: 0.76rem;
   font-weight: 700;
+}
+
+.game-library-build {
+  min-height: 2rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(125, 211, 252, 0.36);
+  background: rgba(14, 165, 233, 0.14);
+  color: rgba(224, 242, 254, 0.95);
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.game-library-build:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.controller-builder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: none;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0,0,0,0.58);
+  backdrop-filter: blur(10px);
+}
+
+.controller-builder-open .controller-builder-overlay {
+  display: grid;
+}
+
+.controller-builder-panel {
+  width: min(100%, 28rem);
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(212,212,216,0.28);
+  border-radius: 0.5rem;
+  background: rgba(24,24,27,0.98);
+  box-shadow: 0 1.5rem 4rem rgba(0,0,0,0.46);
+}
+
+.controller-builder-header,
+.controller-builder-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.controller-builder-header {
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+}
+
+.controller-builder-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.controller-builder-body {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+}
+
+.controller-builder-label {
+  color: rgba(244,244,245,0.72);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.controller-builder-value-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5rem;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.controller-builder-range {
+  width: 100%;
+  accent-color: #7dd3fc;
+}
+
+.controller-builder-number {
+  width: 100%;
+  height: 2.5rem;
+  border: 1px solid rgba(212,212,216,0.26);
+  border-radius: 0.45rem;
+  background: rgba(9,9,11,0.7);
+  color: rgba(244,244,245,0.95);
+  font-size: 1rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.controller-builder-actions {
+  justify-content: flex-end;
+  border-top: 1px solid rgba(255,255,255,0.12);
 }
 
 @media (max-width: 42rem) {

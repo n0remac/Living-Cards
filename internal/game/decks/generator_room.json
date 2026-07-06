@@ -2,24 +2,26 @@
   "id": "generator_room",
   "name": "Generator Room",
   "initialActiveCardId": "generator-panel",
-  "initialMessage": "The powered switch wakes another row of cards.",
+  "initialMessage": "The powered switch wakes a generator that still needs tuning.",
   "initialSolvedFlags": {
-    "generatorSeen": true
+    "generatorSeen": true,
+    "generatorPowered": false
   },
   "cards": [
     {
       "id": "generator-panel",
       "name": "Generator Panel",
       "kind": "world",
-      "tags": ["generator", "machine", "puzzle"],
+      "tags": ["generator", "machine", "puzzle", "inactive"],
       "collectible": false,
       "state": {
-        "powered": true,
-        "useful": true
+        "powered": false,
+        "useful": true,
+        "targetValue": 73
       },
-      "initialDocument": "default",
+      "initialDocument": "inactive",
       "documents": {
-        "default": {
+        "inactive": {
           "card_id": "generator-panel",
           "name": "Generator Panel",
           "root": {
@@ -52,16 +54,50 @@
                 "id": "generator-panel-title",
                 "type": "textarea",
                 "fragment": {
-                  "content": "GENERATOR PANEL",
+                  "content": "SLEEPING GENERATOR",
                   "font_family": "system",
-                  "font_size_px": 22,
+                  "font_size_px": 21,
                   "font_weight": 800,
                   "font_style": "normal",
                   "color": "#bae6fd",
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 28,
+                  "y": 24,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "generator-panel-meter",
+                "type": "shape",
+                "fragment": {
+                  "shape": "roundedRectangle",
+                  "x": 50,
+                  "y": 52,
+                  "width": 62,
+                  "height": 24,
+                  "rotation": 0,
+                  "background_color": "#0f172a",
+                  "border_color": "#7dd3fc",
+                  "border_width_px": 2,
+                  "shadow": "0 10px 24px rgba(14,165,233,0.22)"
+                }
+              },
+              {
+                "id": "generator-panel-value",
+                "type": "textarea",
+                "fragment": {
+                  "content": "OUTPUT MUST HOLD AT 73",
+                  "font_family": "mono",
+                  "font_size_px": 16,
+                  "font_weight": 700,
+                  "font_style": "normal",
+                  "color": "#e0f2fe",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 52,
                   "padding_px": 4,
                   "css": "text-align: center;"
                 }
@@ -70,16 +106,100 @@
                 "id": "generator-panel-body",
                 "type": "textarea",
                 "fragment": {
-                  "content": "Three cold sockets blink in sequence. This is the next lock.",
+                  "content": "The regulator is missing. A tuned controller could wake it.",
                   "font_family": "system",
-                  "font_size_px": 16,
+                  "font_size_px": 15,
                   "font_weight": 600,
                   "font_style": "normal",
                   "color": "#e0f2fe",
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 68,
+                  "y": 82,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              }
+            ]
+          }
+        },
+        "active": {
+          "card_id": "generator-panel",
+          "name": "Generator Panel",
+          "root": {
+            "id": "generator-panel-root",
+            "type": "card",
+            "fragment": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
+            "children": [
+              {
+                "id": "generator-panel-background",
+                "type": "background",
+                "fragment": {
+                  "background_color": "#052e2b",
+                  "css": "background: #052e2b;"
+                }
+              },
+              {
+                "id": "generator-panel-border",
+                "type": "border",
+                "fragment": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#34d399",
+                  "css": "border: 2px solid #34d399; border-radius: 22px; box-shadow: 0 0 24px rgba(52,211,153,0.24);"
+                }
+              },
+              {
+                "id": "generator-panel-title",
+                "type": "textarea",
+                "fragment": {
+                  "content": "GENERATOR ONLINE",
+                  "font_family": "system",
+                  "font_size_px": 23,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#bbf7d0",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 25,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "generator-panel-glow",
+                "type": "shape",
+                "fragment": {
+                  "shape": "circle",
+                  "x": 50,
+                  "y": 52,
+                  "width": 34,
+                  "height": 34,
+                  "rotation": 0,
+                  "background_color": "#34d399",
+                  "border_color": "#ecfdf5",
+                  "border_width_px": 2,
+                  "shadow": "0 10px 24px rgba(14,165,233,0.22)"
+                }
+              },
+              {
+                "id": "generator-panel-body",
+                "type": "textarea",
+                "fragment": {
+                  "content": "The tuned regulator holds at 73. Power moves deeper into the room.",
+                  "font_family": "system",
+                  "font_size_px": 16,
+                  "font_weight": 700,
+                  "font_style": "normal",
+                  "color": "#ecfdf5",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 82,
                   "padding_px": 4,
                   "css": "text-align: center;"
                 }
@@ -142,7 +262,25 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 30,
+                  "y": 28,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "numbered-gauge-value",
+                "type": "textarea",
+                "fragment": {
+                  "content": "73",
+                  "font_family": "mono",
+                  "font_size_px": 54,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#fef3c7",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 56,
                   "padding_px": 4,
                   "css": "text-align: center;"
                 }
@@ -151,12 +289,93 @@
                 "id": "numbered-gauge-body",
                 "type": "textarea",
                 "fragment": {
-                  "content": "The needle trembles between 3, 1, and 4.",
+                  "content": "The scratched needle stops at the generator's hold value.",
+                  "font_family": "system",
+                  "font_size_px": 15,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#eff6ff",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 86,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "blank-controller",
+      "name": "Blank Controller",
+      "kind": "item",
+      "tags": ["item", "controller-template", "generator"],
+      "collectible": true,
+      "state": {
+        "editable": true
+      },
+      "initialDocument": "default",
+      "documents": {
+        "default": {
+          "card_id": "blank-controller",
+          "name": "Blank Controller",
+          "root": {
+            "id": "blank-controller-root",
+            "type": "card",
+            "fragment": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
+            "children": [
+              {
+                "id": "blank-controller-background",
+                "type": "background",
+                "fragment": {
+                  "background_color": "#18181b",
+                  "css": "background: #18181b;"
+                }
+              },
+              {
+                "id": "blank-controller-border",
+                "type": "border",
+                "fragment": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#a1a1aa",
+                  "css": "border: 2px dashed #a1a1aa; border-radius: 22px;"
+                }
+              },
+              {
+                "id": "blank-controller-title",
+                "type": "textarea",
+                "fragment": {
+                  "content": "BLANK CONTROLLER",
+                  "font_family": "system",
+                  "font_size_px": 21,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#f4f4f5",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 30,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                }
+              },
+              {
+                "id": "blank-controller-body",
+                "type": "textarea",
+                "fragment": {
+                  "content": "A plain card with sockets for a component.",
                   "font_family": "system",
                   "font_size_px": 16,
                   "font_weight": 600,
                   "font_style": "normal",
-                  "color": "#eff6ff",
+                  "color": "#e4e4e7",
                   "align": "center",
                   "position": "center",
                   "x": 50,
@@ -171,21 +390,21 @@
       }
     },
     {
-      "id": "loose-rubber-glove",
-      "name": "Loose Rubber Glove",
+      "id": "slider-component",
+      "name": "Slider Component",
       "kind": "item",
-      "tags": ["decoy", "item", "generator"],
+      "tags": ["item", "component", "slider-component", "generator"],
       "collectible": true,
       "state": {
-        "useful": false
+        "componentType": "slider"
       },
       "initialDocument": "default",
       "documents": {
         "default": {
-          "card_id": "loose-rubber-glove",
-          "name": "Loose Rubber Glove",
+          "card_id": "slider-component",
+          "name": "Slider Component",
           "root": {
-            "id": "loose-rubber-glove-root",
+            "id": "slider-component-root",
             "type": "card",
             "fragment": {
               "padding_px": 18,
@@ -193,55 +412,71 @@
             },
             "children": [
               {
-                "id": "loose-rubber-glove-background",
+                "id": "slider-component-background",
                 "type": "background",
                 "fragment": {
-                  "background_color": "#201815",
-                  "css": "background: #201815;"
+                  "background_color": "#0f172a",
+                  "css": "background: #0f172a;"
                 }
               },
               {
-                "id": "loose-rubber-glove-border",
+                "id": "slider-component-border",
                 "type": "border",
                 "fragment": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
-                  "border_color": "#f59e0b",
-                  "css": "border: 2px solid #f59e0b; border-radius: 22px;"
+                  "border_color": "#facc15",
+                  "css": "border: 2px solid #facc15; border-radius: 22px;"
                 }
               },
               {
-                "id": "loose-rubber-glove-title",
+                "id": "slider-component-title",
                 "type": "textarea",
                 "fragment": {
-                  "content": "RUBBER GLOVE",
+                  "content": "SLIDER COMPONENT",
                   "font_family": "system",
-                  "font_size_px": 22,
+                  "font_size_px": 20,
                   "font_weight": 800,
                   "font_style": "normal",
                   "color": "#fef3c7",
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 30,
+                  "y": 26,
                   "padding_px": 4,
                   "css": "text-align: center;"
                 }
               },
               {
-                "id": "loose-rubber-glove-body",
+                "id": "slider-component-track",
+                "type": "shape",
+                "fragment": {
+                  "shape": "roundedRectangle",
+                  "x": 50,
+                  "y": 56,
+                  "width": 62,
+                  "height": 12,
+                  "rotation": 0,
+                  "background_color": "#facc15",
+                  "border_color": "#111827",
+                  "border_width_px": 2,
+                  "shadow": ""
+                }
+              },
+              {
+                "id": "slider-component-body",
                 "type": "textarea",
                 "fragment": {
-                  "content": "It looks protective, but it does not fit any switch here.",
+                  "content": "Adds an adjustable output value to a controller.",
                   "font_family": "system",
-                  "font_size_px": 16,
+                  "font_size_px": 15,
                   "font_weight": 600,
                   "font_style": "normal",
                   "color": "#fffbeb",
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 68,
+                  "y": 82,
                   "padding_px": 4,
                   "css": "text-align: center;"
                 }
@@ -252,5 +487,58 @@
       }
     }
   ],
-  "useRules": []
+  "useRules": [
+    {
+      "id": "regulator-controller-powers-generator",
+      "source": {
+        "tags": ["controller"]
+      },
+      "target": {
+        "id": "generator-panel"
+      },
+      "flagConditions": {
+        "generatorPowered": false
+      },
+      "sourceComponentConditions": [
+        {
+          "type": "slider",
+          "valueEquals": 73
+        }
+      ],
+      "failureMessage": "The generator coughs, but the regulator value is wrong.",
+      "effects": [
+        {
+          "type": "setFlag",
+          "flag": "generatorPowered",
+          "value": true
+        },
+        {
+          "type": "setCardState",
+          "cardId": "generator-panel",
+          "key": "powered",
+          "value": true
+        },
+        {
+          "type": "setCardState",
+          "cardId": "generator-panel",
+          "key": "useful",
+          "value": true
+        },
+        {
+          "type": "removeCardTags",
+          "cardId": "generator-panel",
+          "tags": ["inactive"]
+        },
+        {
+          "type": "setDocumentVariant",
+          "cardId": "generator-panel",
+          "variant": "active"
+        },
+        {
+          "type": "setMessage",
+          "message": "The regulator locks at 73. The generator comes fully online."
+        }
+      ]
+    }
+  ]
 }

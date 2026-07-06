@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/components/slider"
 )
 
 //go:embed decks/*.json
@@ -46,16 +47,23 @@ type CardDefinition struct {
 }
 
 type UseRuleDefinition struct {
-	ID             string                 `json:"id,omitempty"`
-	Source         CardMatcherDefinition  `json:"source"`
-	Target         CardMatcherDefinition  `json:"target"`
-	FlagConditions map[string]bool        `json:"flagConditions,omitempty"`
-	Effects        []RuleEffectDefinition `json:"effects"`
+	ID                        string                         `json:"id,omitempty"`
+	Source                    CardMatcherDefinition          `json:"source"`
+	Target                    CardMatcherDefinition          `json:"target"`
+	FlagConditions            map[string]bool                `json:"flagConditions,omitempty"`
+	SourceComponentConditions []ComponentConditionDefinition `json:"sourceComponentConditions,omitempty"`
+	FailureMessage            string                         `json:"failureMessage,omitempty"`
+	Effects                   []RuleEffectDefinition         `json:"effects"`
 }
 
 type CardMatcherDefinition struct {
 	ID   string   `json:"id,omitempty"`
 	Tags []string `json:"tags,omitempty"`
+}
+
+type ComponentConditionDefinition struct {
+	Type        string `json:"type"`
+	ValueEquals *int   `json:"valueEquals,omitempty"`
 }
 
 type RuleEffectDefinition struct {
@@ -229,9 +237,32 @@ func validateRuleDefinition(rule UseRuleDefinition, cardsByID map[string]CardDef
 	if len(rule.Effects) == 0 {
 		return fmt.Errorf("effects are required")
 	}
+	if err := validateComponentConditions(rule.SourceComponentConditions); err != nil {
+		return err
+	}
 	for _, effect := range rule.Effects {
 		if err := validateRuleEffect(effect, rule.Target, cardsByID); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateComponentConditions(conditions []ComponentConditionDefinition) error {
+	for _, condition := range conditions {
+		switch strings.TrimSpace(condition.Type) {
+		case slider.Type:
+			if condition.ValueEquals == nil {
+				return fmt.Errorf("slider source component condition requires valueEquals")
+			}
+			value := *condition.ValueEquals
+			if value < 0 || value > 100 {
+				return fmt.Errorf("slider source component condition valueEquals must be between 0 and 100")
+			}
+		case "":
+			return fmt.Errorf("source component condition requires type")
+		default:
+			return fmt.Errorf("unsupported source component condition type %q", condition.Type)
 		}
 	}
 	return nil

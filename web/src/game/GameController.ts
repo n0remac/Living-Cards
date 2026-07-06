@@ -1,12 +1,13 @@
-import { collectGameCard, cycleGameCard, fetchGameSession, playGameCard, resetGameSession } from "../api";
+import { collectGameCard, cycleGameCard, fetchGameSession, playGameCard, resetGameSession, saveControllerCard } from "../api";
 import { byID } from "../dom";
-import type { GameSessionSnapshot, RenderedGameCard } from "../types";
+import type { CardDocument, ComponentNode, GameSessionSnapshot, RenderedGameCard } from "../types";
 
 let latestSession: GameSessionSnapshot | null = null;
 let busy = false;
 
 export function initGameStage(): void {
   bindControls();
+  bindControllerBuilder();
   void loadSession();
 }
 
@@ -39,6 +40,29 @@ function bindControls(): void {
       void play(sourceCardId, targetCardId);
     }
   });
+}
+
+function bindControllerBuilder(): void {
+  byID<HTMLButtonElement>("controller-builder-close")?.addEventListener("click", closeControllerBuilder);
+  byID<HTMLButtonElement>("controller-builder-cancel")?.addEventListener("click", closeControllerBuilder);
+  byID<HTMLButtonElement>("controller-builder-save")?.addEventListener("click", () => {
+    void saveController();
+  });
+  byID<HTMLDivElement>("controller-builder-overlay")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) {
+      closeControllerBuilder();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.body.classList.contains("controller-builder-open")) {
+      closeControllerBuilder();
+    }
+  });
+
+  const range = byID<HTMLInputElement>("controller-slider-input");
+  const number = byID<HTMLInputElement>("controller-slider-number");
+  range?.addEventListener("input", () => syncControllerInputs(Number(range.value)));
+  number?.addEventListener("input", () => syncControllerInputs(Number(number.value)));
 }
 
 async function loadSession(): Promise<void> {
@@ -140,12 +164,11 @@ function renderLibrary(cards: RenderedGameCard[]): void {
     return;
   }
   cards.forEach((card) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "game-library-card";
-    button.draggable = true;
-    button.dataset.cardId = card.id;
-    button.addEventListener("dragstart", (event) => {
+    const item = document.createElement("div");
+    item.className = "game-library-card";
+    item.draggable = true;
+    item.dataset.cardId = card.id;
+    item.addEventListener("dragstart", (event) => {
       event.dataTransfer?.setData("text/plain", card.id);
       event.dataTransfer!.effectAllowed = "move";
     });
@@ -157,9 +180,123 @@ function renderLibrary(cards: RenderedGameCard[]): void {
     label.className = "game-library-card-name";
     label.textContent = card.name;
 
-    button.append(preview, label);
-    root.appendChild(button);
+    item.append(preview, label);
+    if (card.id === "blank-controller") {
+      const build = document.createElement("button");
+      build.type = "button";
+      build.className = "game-library-build";
+      build.textContent = "Build";
+      build.disabled = !hasLibraryCard("slider-component");
+      build.title = build.disabled ? "Collect Slider Component first." : "Build Regulator Controller";
+      build.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+      });
+      build.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openControllerBuilder();
+      });
+      item.appendChild(build);
+    }
+    root.appendChild(item);
   });
+}
+
+function openControllerBuilder(): void {
+  if (!hasLibraryCard("blank-controller")) {
+    setStatus("Collect the Blank Controller first.", true);
+    return;
+  }
+  if (!hasLibraryCard("slider-component")) {
+    setStatus("Collect the Slider Component first.", true);
+    return;
+  }
+  syncControllerInputs(existingControllerValue() ?? 50);
+  document.body.classList.add("controller-builder-open");
+}
+
+function closeControllerBuilder(): void {
+  document.body.classList.remove("controller-builder-open");
+}
+
+async function saveController(): Promise<void> {
+  if (busy) return;
+  busy = true;
+  setStatus("Saving controller...");
+  try {
+    const value = readControllerValue();
+    const snapshot = await saveControllerCard("blank-controller", createControllerDocument(value));
+    closeControllerBuilder();
+    renderSession(snapshot);
+  } catch (error) {
+    setStatus(errorMessage(error), true);
+  } finally {
+    busy = false;
+  }
+}
+
+function hasLibraryCard(cardId: string): boolean {
+  return Boolean(latestSession?.library.some((card) => card.id === cardId));
+}
+
+function existingControllerValue(): number | null {
+  const controller = latestSession?.library.find((card) => card.id === "generator-regulator-controller");
+  return controller ? sliderValueFromNode(controller.document.root) : null;
+}
+
+function sliderValueFromNode(node: ComponentNode): number | null {
+  if (node.type === "slider" && node.fragment && typeof node.fragment.value === "number") {
+    return clampControllerValue(node.fragment.value);
+  }
+  for (const child of node.children || []) {
+    const value = sliderValueFromNode(child);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function syncControllerInputs(value: number): void {
+  const normalized = clampControllerValue(value);
+  const range = byID<HTMLInputElement>("controller-slider-input");
+  const number = byID<HTMLInputElement>("controller-slider-number");
+  if (range) range.value = String(normalized);
+  if (number) number.value = String(normalized);
+}
+
+function readControllerValue(): number {
+  const number = byID<HTMLInputElement>("controller-slider-number");
+  return clampControllerValue(Number(number?.value ?? 50));
+}
+
+function clampControllerValue(value: number): number {
+  if (!Number.isFinite(value)) return 50;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function createControllerDocument(value: number): CardDocument {
+  return {
+    card_id: "generator-regulator-controller",
+    name: "Regulator Controller",
+    root: {
+      id: "generator-regulator-controller-root",
+      type: "card",
+      fragment: {
+        padding_px: 18,
+        shadow: "0 24px 60px rgba(8,47,73,0.34)",
+      },
+      children: [{
+        id: "regulator-output-slider",
+        type: "slider",
+        fragment: {
+          label: "Output",
+          min: 0,
+          max: 100,
+          step: 1,
+          value: clampControllerValue(value),
+        },
+      }],
+    },
+  };
 }
 
 function setStatus(message: string, isError = false): void {

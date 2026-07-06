@@ -23,6 +23,7 @@ const (
 	TypeTextarea         = "textarea"
 	TypeShape            = "shape"
 	TypeImage            = "image"
+	TypeSlider           = "slider"
 	defaultRootRaw       = `{"padding_px":24,"shadow":""}`
 	defaultBackgroundRaw = `{"background_color":"#111827","css":""}`
 	defaultBorderRaw     = `{"border_width_px":1,"border_radius_px":24,"border_color":"rgba(255,255,255,0.16)","css":""}`

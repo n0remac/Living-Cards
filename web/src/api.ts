@@ -1,5 +1,6 @@
 import type {
   ApplyFragmentResponse,
+  CardDocument,
   CardHitZone,
   ComponentTarget,
   DesignLibraryItem,
@@ -224,6 +225,18 @@ export async function playGameCard(sourceCardId: string, targetCardId: string): 
   });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to play card."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function saveControllerCard(templateCardId: string, document: CardDocument): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/save-controller", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ templateCardId, document }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to save controller."));
   }
   return await response.json() as GameSessionSnapshot;
 }

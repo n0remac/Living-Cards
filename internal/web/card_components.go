@@ -6,6 +6,7 @@ import (
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
 	"github.com/n0remac/Living-Card/internal/components/shape"
+	"github.com/n0remac/Living-Card/internal/components/slider"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
 )
 
@@ -16,5 +17,6 @@ func cardComponentRegistry() *cardcomponent.Registry {
 		textarea.Definition(),
 		shape.Definition(),
 		imagecomponent.Definition(),
+		slider.Definition(),
 	)
 }

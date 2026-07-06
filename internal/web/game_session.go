@@ -95,6 +95,23 @@ func gameResourceHandler(state *game.Session) http.HandlerFunc {
 			}
 			snapshot, err := state.UseCard(request.SourceCardID, request.TargetCardID)
 			writeGameSnapshot(w, snapshot, err)
+		case "save-controller":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var request struct {
+				TemplateCardID string                 `json:"templateCardId"`
+				Document       cardcomponent.Document `json:"document"`
+			}
+			decoder := json.NewDecoder(r.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			snapshot, err := state.SaveController(request.TemplateCardID, request.Document)
+			writeGameSnapshot(w, snapshot, err)
 		default:
 			http.NotFound(w, r)
 		}
