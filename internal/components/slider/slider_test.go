@@ -4,13 +4,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
-func TestNormalizeFragmentClampsSliderRange(t *testing.T) {
+func TestNormalizeConfigClampsSliderRange(t *testing.T) {
 	t.Parallel()
 
-	part := NormalizeFragment(Fragment{
+	part := NormalizeConfig(Config{
 		Label: "  ",
 		Min:   -10,
 		Max:   120,
@@ -25,10 +25,10 @@ func TestNormalizeFragmentClampsSliderRange(t *testing.T) {
 func TestValidateGeneratedRejectsInvalidSlider(t *testing.T) {
 	t.Parallel()
 
-	issues := ValidateGenerated(fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "Invalid slider",
-		Fragment: Fragment{
+	issues := ValidateGenerated(design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "Invalid slider",
+		Config: Config{
 			Label: "",
 			Min:   90,
 			Max:   20,
@@ -44,7 +44,7 @@ func TestValidateGeneratedRejectsInvalidSlider(t *testing.T) {
 func TestRenderLayerIncludesSliderValue(t *testing.T) {
 	t.Parallel()
 
-	body := RenderLayer("regulator-slider", Fragment{
+	body := RenderLayer("regulator-slider", Config{
 		Label: "Output",
 		Min:   0,
 		Max:   100,
@@ -53,7 +53,7 @@ func TestRenderLayerIncludesSliderValue(t *testing.T) {
 	}).Render()
 	for _, marker := range []string{
 		`data-component-id="regulator-slider"`,
-		`data-component-type="slider"`,
+		`data-component-kind="slider"`,
 		`type="range"`,
 		`value="73"`,
 		`Output`,

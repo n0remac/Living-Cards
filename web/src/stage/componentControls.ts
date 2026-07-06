@@ -93,7 +93,7 @@ function renderHeader(root: HTMLElement, overlay: ComponentOverlay, onClose: () 
 
   const subtitle = document.createElement("div");
   subtitle.className = "stage-edge-subtitle";
-  subtitle.textContent = overlay.componentType + " controls";
+  subtitle.textContent = overlay.componentKind + " controls";
 
   text.append(title, subtitle);
 

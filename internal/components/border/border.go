@@ -7,20 +7,20 @@ import (
 	"strings"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
-const Type = "border"
+const Kind = "border"
 
-type Fragment struct {
+type Config struct {
 	BorderWidthPX  int    `json:"border_width_px"`
 	BorderRadiusPX int    `json:"border_radius_px"`
 	BorderColor    string `json:"border_color"`
 	CSS            string `json:"css"`
 }
 
-func DefaultFragment() Fragment {
-	return Fragment{
+func DefaultConfig() Config {
+	return Config{
 		BorderWidthPX:  1,
 		BorderRadiusPX: 24,
 		BorderColor:    "rgba(255,255,255,0.16)",
@@ -30,19 +30,19 @@ func DefaultFragment() Fragment {
 
 func Presets() []card.LibraryItem {
 	return []card.LibraryItem{
-		preset("seed-border-cyan-glow", "Cyan Glow", "Glowing cyan sci-fi border", Fragment{
+		preset("seed-border-cyan-glow", "Cyan Glow", "Glowing cyan sci-fi border", Config{
 			BorderWidthPX:  1,
 			BorderRadiusPX: 24,
 			BorderColor:    "rgba(103, 232, 249, 0.7)",
 			CSS:            "border: 1px solid rgba(103, 232, 249, 0.7); box-shadow: 0 0 24px rgba(34, 211, 238, 0.25);",
 		}),
-		preset("seed-border-brass-frame", "Brass Frame", "Old brass picture-frame border", Fragment{
+		preset("seed-border-brass-frame", "Brass Frame", "Old brass picture-frame border", Config{
 			BorderWidthPX:  3,
 			BorderRadiusPX: 18,
 			BorderColor:    "#b08d57",
 			CSS:            "border: 3px double #b08d57; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);",
 		}),
-		preset("seed-border-ink-line", "Ink Line", "Fine black editorial border", Fragment{
+		preset("seed-border-ink-line", "Ink Line", "Fine black editorial border", Config{
 			BorderWidthPX:  1,
 			BorderRadiusPX: 8,
 			BorderColor:    "#111827",
@@ -51,14 +51,14 @@ func Presets() []card.LibraryItem {
 	}
 }
 
-func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
+func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
 	options := []struct {
 		description string
-		part        Fragment
+		part        Config
 	}{
 		{
 			description: "A fine luminous cyan border.",
-			part: Fragment{
+			part: Config{
 				BorderWidthPX:  1,
 				BorderRadiusPX: 24,
 				BorderColor:    "rgba(103, 232, 249, 0.72)",
@@ -67,7 +67,7 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		},
 		{
 			description: "A brass double-line frame.",
-			part: Fragment{
+			part: Config{
 				BorderWidthPX:  3,
 				BorderRadiusPX: 18,
 				BorderColor:    "#b08d57",
@@ -76,7 +76,7 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		},
 		{
 			description: "A crisp editorial ink border.",
-			part: Fragment{
+			part: Config{
 				BorderWidthPX:  1,
 				BorderRadiusPX: 8,
 				BorderColor:    "#111827",
@@ -85,7 +85,7 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		},
 		{
 			description: "A soft pearl border with deep shadow.",
-			part: Fragment{
+			part: Config{
 				BorderWidthPX:  2,
 				BorderRadiusPX: 32,
 				BorderColor:    "rgba(255,255,255,0.64)",
@@ -94,7 +94,7 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		},
 		{
 			description: "A compact slate border.",
-			part: Fragment{
+			part: Config{
 				BorderWidthPX:  2,
 				BorderRadiusPX: 14,
 				BorderColor:    "#64748b",
@@ -105,10 +105,10 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 	if level > 2 {
 		options = append(options, struct {
 			description string
-			part        Fragment
+			part        Config
 		}{
 			description: "A strong arcade magenta border.",
-			part: Fragment{
+			part: Config{
 				BorderWidthPX:  4,
 				BorderRadiusPX: 28,
 				BorderColor:    "rgba(244,114,182,0.84)",
@@ -117,39 +117,39 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		})
 	}
 	pick := options[rand.New(rand.NewSource(seed)).Intn(len(options))]
-	return fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: pick.description,
-		Fragment:    pick.part,
+	return design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   pick.description,
+		Config:        pick.part,
 	}
 }
 
-func Spec() fragment.Spec[Fragment] {
-	return fragment.Spec[Fragment]{
-		Target:       Type,
-		SystemPrompt: systemPrompt,
-		Example:      exampleJSON,
-		Normalize:    NormalizeGenerated,
-		Validate:     ValidateGenerated,
+func Spec() design.Spec[Config] {
+	return design.Spec[Config]{
+		ComponentKind: Kind,
+		SystemPrompt:  systemPrompt,
+		Example:       exampleJSON,
+		Normalize:     NormalizeGenerated,
+		Validate:      ValidateGenerated,
 	}
 }
 
 func Definition() card.Definition {
 	return card.Definition{
-		Type: Type,
+		ComponentKind: Kind,
 		Contribute: func(node card.Node, _ card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeFragment[Fragment](node)
+			part, err := card.DecodeConfig[Config](node)
 			if err != nil {
 				return card.Contribution{}, err
 			}
-			generated := fragment.Generated[Fragment]{
-				Target:      Type,
-				Description: "Rendered border",
-				Fragment:    part,
+			generated := design.GeneratedConfig[Config]{
+				ComponentKind: Kind,
+				Description:   "Rendered border",
+				Config:        part,
 			}
 			NormalizeGenerated(&generated)
 			if issues := ValidateGenerated(generated); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid border fragment at %s: %s", issues[0].Path, issues[0].Message)
+				return card.Contribution{}, fmt.Errorf("invalid border config at %s: %s", issues[0].Path, issues[0].Message)
 			}
 			styles := map[string]string{
 				"border":        fmt.Sprintf("%dpx solid %s", part.BorderWidthPX, part.BorderColor),
@@ -157,7 +157,7 @@ func Definition() card.Definition {
 				"border-radius": fmt.Sprintf("%dpx", part.BorderRadiusPX),
 				"border-width":  fmt.Sprintf("%dpx", part.BorderWidthPX),
 			}
-			for property, value := range fragment.CSSDeclarations(part.CSS, AllowedCSS()) {
+			for property, value := range design.CSSDeclarations(part.CSS, AllowedCSS()) {
 				styles[property] = value
 			}
 			return card.Contribution{ShellStyle: styles}, nil
@@ -165,52 +165,52 @@ func Definition() card.Definition {
 	}
 }
 
-func NormalizeGenerated(generated *fragment.Generated[Fragment]) {
+func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
-	generated.Target = strings.TrimSpace(generated.Target)
+	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Fragment.BorderColor = strings.TrimSpace(generated.Fragment.BorderColor)
-	generated.Fragment.CSS = strings.TrimSpace(generated.Fragment.CSS)
-	generated.Fragment.BorderWidthPX = clamp(generated.Fragment.BorderWidthPX, 0, 16)
-	generated.Fragment.BorderRadiusPX = clamp(generated.Fragment.BorderRadiusPX, 0, 64)
+	generated.Config.BorderColor = strings.TrimSpace(generated.Config.BorderColor)
+	generated.Config.CSS = strings.TrimSpace(generated.Config.CSS)
+	generated.Config.BorderWidthPX = clamp(generated.Config.BorderWidthPX, 0, 16)
+	generated.Config.BorderRadiusPX = clamp(generated.Config.BorderRadiusPX, 0, 64)
 }
 
-func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue {
-	var issues []fragment.Issue
-	if generated.Fragment.BorderWidthPX < 0 || generated.Fragment.BorderWidthPX > 16 {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.border_width_px",
+func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
+	var issues []design.Issue
+	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 16 {
+		issues = append(issues, design.Issue{
+			Path:    "config.border_width_px",
 			Code:    "out_of_range",
 			Message: "border_width_px must be between 0 and 16",
-			Actual:  generated.Fragment.BorderWidthPX,
+			Actual:  generated.Config.BorderWidthPX,
 		})
 	}
-	if generated.Fragment.BorderRadiusPX < 0 || generated.Fragment.BorderRadiusPX > 64 {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.border_radius_px",
+	if generated.Config.BorderRadiusPX < 0 || generated.Config.BorderRadiusPX > 64 {
+		issues = append(issues, design.Issue{
+			Path:    "config.border_radius_px",
 			Code:    "out_of_range",
 			Message: "border_radius_px must be between 0 and 64",
-			Actual:  generated.Fragment.BorderRadiusPX,
+			Actual:  generated.Config.BorderRadiusPX,
 		})
 	}
-	color := strings.TrimSpace(generated.Fragment.BorderColor)
+	color := strings.TrimSpace(generated.Config.BorderColor)
 	if color == "" {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.border_color",
+		issues = append(issues, design.Issue{
+			Path:    "config.border_color",
 			Code:    "required",
 			Message: "border_color is required",
 		})
-	} else if !fragment.IsAllowedColor(color) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.border_color",
+	} else if !design.IsAllowedColor(color) {
+		issues = append(issues, design.Issue{
+			Path:    "config.border_color",
 			Code:    "invalid_color",
 			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
 			Actual:  color,
 		})
 	}
-	issues = append(issues, fragment.ValidateInlineCSS("fragment.css", generated.Fragment.CSS, AllowedCSS())...)
+	issues = append(issues, design.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
 	return issues
 }
 
@@ -235,24 +235,24 @@ func clamp(value, min, max int) int {
 	return value
 }
 
-func preset(id, name, description string, part Fragment) card.LibraryItem {
+func preset(id, name, description string, part Config) card.LibraryItem {
 	raw, err := json.Marshal(part)
 	if err != nil {
 		panic(err)
 	}
 	return card.LibraryItem{
-		ID:          id,
-		Name:        name,
-		Target:      Type,
-		Description: description,
-		Fragment:    raw,
+		ID:            id,
+		Name:          name,
+		ComponentKind: Kind,
+		Description:   description,
+		Config:        raw,
 	}
 }
 
 const exampleJSON = `{
-  "target": "border",
+  "componentKind": "border",
   "description": "A soft translucent border with a large rounded radius.",
-  "fragment": {
+  "config": {
     "border_width_px": 1,
     "border_radius_px": 24,
     "border_color": "rgba(255,255,255,0.16)",
@@ -260,13 +260,13 @@ const exampleJSON = `{
   }
 }`
 
-const systemPrompt = `You generate safe declarative JSON fragments for the border component of a card.
+const systemPrompt = `You generate safe declarative JSON configs for the border component of a card.
 Return exactly one JSON object and no markdown, prose, HTML, selectors, braces, or JavaScript.
 The JSON object must match this shape:
 {
-  "target": "border",
+  "componentKind": "border",
   "description": "short human-readable summary",
-  "fragment": {
+  "config": {
     "border_width_px": 1,
     "border_radius_px": 24,
     "border_color": "rgba(255,255,255,0.16)",
@@ -274,7 +274,7 @@ The JSON object must match this shape:
   }
 }
 Rules:
-- target must be "border".
+- componentKind must be "border".
 - description is required.
 - border_width_px is clamped to 0..16.
 - border_radius_px is clamped to 0..64.

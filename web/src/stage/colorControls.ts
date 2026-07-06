@@ -13,7 +13,7 @@ const swatches = [
 
 interface ColorControlsOptions {
   root: HTMLElement | null;
-  target: ComponentTarget;
+  componentKind: ComponentTarget;
   anchorX: number;
   anchorY: number;
   currentColor: string;
@@ -44,7 +44,7 @@ export function openColorControls(options: ColorControlsOptions): void {
   const palette = document.createElement("button");
   palette.type = "button";
   palette.className = "flex h-9 items-center gap-2 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 text-sm font-semibold text-[var(--app-fg)]";
-  palette.title = labelForTarget(options.target) + " color";
+  palette.title = labelForTarget(options.componentKind) + " color";
   palette.innerHTML = '<span class="block h-5 w-5 rounded-sm border border-white/35" style="background:' + escapeAttribute(hexOrFallback(options.currentColor)) + '"></span><span>Palette</span>';
 
   const close = document.createElement("button");
@@ -204,8 +204,8 @@ function labeledControl(label: string, control: HTMLElement, aside?: HTMLElement
   return wrapper;
 }
 
-function labelForTarget(target: ComponentTarget): string {
-  switch (target) {
+function labelForTarget(componentKind: ComponentTarget): string {
+  switch (componentKind) {
     case "background":
       return "Background";
     case "border":

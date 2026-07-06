@@ -5,16 +5,16 @@ import (
 	"testing"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
-func TestValidateGeneratedAcceptsSafeShapeFragment(t *testing.T) {
+func TestValidateGeneratedAcceptsSafeShapeConfig(t *testing.T) {
 	t.Parallel()
 
-	generated := fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "Safe shape",
-		Fragment: Fragment{
+	generated := design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "Safe shape",
+		Config: Config{
 			Shape:           "diamond",
 			X:               24,
 			Y:               32,
@@ -32,13 +32,13 @@ func TestValidateGeneratedAcceptsSafeShapeFragment(t *testing.T) {
 	}
 }
 
-func TestValidateGeneratedRejectsInvalidShapeFragment(t *testing.T) {
+func TestValidateGeneratedRejectsInvalidShapeConfig(t *testing.T) {
 	t.Parallel()
 
-	generated := fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "Invalid shape",
-		Fragment: Fragment{
+	generated := design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "Invalid shape",
+		Config: Config{
 			Shape:           "hexagon",
 			X:               -1,
 			Y:               101,
@@ -56,15 +56,15 @@ func TestValidateGeneratedRejectsInvalidShapeFragment(t *testing.T) {
 		paths[issue.Path] = true
 	}
 	for _, path := range []string{
-		"fragment.shape",
-		"fragment.x",
-		"fragment.y",
-		"fragment.width",
-		"fragment.height",
-		"fragment.background_color",
-		"fragment.border_color",
-		"fragment.border_width_px",
-		"fragment.shadow",
+		"config.shape",
+		"config.x",
+		"config.y",
+		"config.width",
+		"config.height",
+		"config.background_color",
+		"config.border_color",
+		"config.border_width_px",
+		"config.shadow",
 	} {
 		if !paths[path] {
 			t.Fatalf("issues missing %s: %#v", path, issues)
@@ -75,7 +75,7 @@ func TestValidateGeneratedRejectsInvalidShapeFragment(t *testing.T) {
 func TestRenderLayerIncludesShapeDataAttributesAndSVG(t *testing.T) {
 	t.Parallel()
 
-	node := RenderLayer("shape-1", Fragment{
+	node := RenderLayer("shape-1", Config{
 		Shape:           "star",
 		X:               10,
 		Y:               20,
@@ -88,7 +88,7 @@ func TestRenderLayerIncludesShapeDataAttributesAndSVG(t *testing.T) {
 	body := node.Render()
 	for _, marker := range []string{
 		`data-component-id="shape-1"`,
-		`data-component-type="shape"`,
+		`data-component-kind="shape"`,
 		`left: 10%`,
 		`top: 20%`,
 		`<svg`,
@@ -104,7 +104,7 @@ func TestRenderLayerIncludesShapeDataAttributesAndSVG(t *testing.T) {
 func TestRenderLayerWithContextScopesShapeID(t *testing.T) {
 	t.Parallel()
 
-	body := RenderLayerWithContext("shape-1", DefaultFragment(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
+	body := RenderLayerWithContext("shape-1", DefaultConfig(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
 	for _, marker := range []string{
 		`id="game-world-card-shape-1-layer"`,
 		`data-component-id="shape-1"`,

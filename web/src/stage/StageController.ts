@@ -358,7 +358,7 @@ function renderSelection(gameState: GameState): void {
 }
 
 function canDragComponent(hit: CardHit): boolean {
-  return hit.componentType === "shape" || hit.componentType === "textarea";
+  return hit.componentKind === "shape" || hit.componentKind === "textarea";
 }
 
 function componentElement(preview: HTMLElement, componentId: string): HTMLElement | null {
@@ -418,14 +418,14 @@ function overlayFallbackGameState(): GameState {
     totalXp: 0,
     globalLevel: 1,
     totalInteractions: 0,
-    unlockedComponentTypes: ["card"],
+    unlockedComponentKinds: ["card"],
+    unlockedConfigKinds: ["background", "border"],
     componentProgress: {},
     tapCount: 0,
     level: 1,
     xp: 0,
-    unlockedTargets: [],
     unlockedModes: [],
-    targetProgress: {},
+    componentKindProgress: {},
   };
 }
 

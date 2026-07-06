@@ -5,16 +5,16 @@ import (
 	"testing"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
-func TestValidateGeneratedAcceptsSafeTextareaFragment(t *testing.T) {
+func TestValidateGeneratedAcceptsSafeTextareaConfig(t *testing.T) {
 	t.Parallel()
 
-	generated := fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "Safe",
-		Fragment: Fragment{
+	generated := design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "Safe",
+		Config: Config{
 			Content:    "A quiet note.",
 			FontFamily: "serif",
 			FontSizePX: 18,
@@ -36,25 +36,25 @@ func TestValidateGeneratedAcceptsSafeTextareaFragment(t *testing.T) {
 func TestNormalizeGeneratedClampsFontSize(t *testing.T) {
 	t.Parallel()
 
-	generated := fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "Clamp",
-		Fragment:    validFragment(),
+	generated := design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "Clamp",
+		Config:        validConfig(),
 	}
-	generated.Fragment.FontSizePX = 999
+	generated.Config.FontSizePX = 999
 	NormalizeGenerated(&generated)
-	if generated.Fragment.FontSizePX != 72 {
-		t.Fatalf("FontSizePX = %d, want 72", generated.Fragment.FontSizePX)
+	if generated.Config.FontSizePX != 72 {
+		t.Fatalf("FontSizePX = %d, want 72", generated.Config.FontSizePX)
 	}
 }
 
 func TestValidateGeneratedRejectsInvalidTextareaFields(t *testing.T) {
 	t.Parallel()
 
-	generated := fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "Bad",
-		Fragment: Fragment{
+	generated := design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "Bad",
+		Config: Config{
 			Content:    "",
 			FontFamily: "fantasy",
 			FontSizePX: 8,
@@ -71,17 +71,17 @@ func TestValidateGeneratedRejectsInvalidTextareaFields(t *testing.T) {
 	issues := ValidateGenerated(generated)
 	paths := textareaIssuePaths(issues)
 	for _, path := range []string{
-		"fragment.content",
-		"fragment.font_family",
-		"fragment.font_size_px",
-		"fragment.font_weight",
-		"fragment.font_style",
-		"fragment.color",
-		"fragment.align",
-		"fragment.position",
-		"fragment.x",
-		"fragment.y",
-		"fragment.css",
+		"config.content",
+		"config.font_family",
+		"config.font_size_px",
+		"config.font_weight",
+		"config.font_style",
+		"config.color",
+		"config.align",
+		"config.position",
+		"config.x",
+		"config.y",
+		"config.css",
 	} {
 		if !paths[path] {
 			t.Fatalf("issues missing %s: %#v", path, issues)
@@ -92,14 +92,14 @@ func TestValidateGeneratedRejectsInvalidTextareaFields(t *testing.T) {
 func TestValidateGeneratedRejectsUnsupportedTextCSSProperty(t *testing.T) {
 	t.Parallel()
 
-	part := validFragment()
+	part := validConfig()
 	part.CSS = "background: red;"
-	issues := ValidateGenerated(fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "Bad CSS",
-		Fragment:    part,
+	issues := ValidateGenerated(design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "Bad CSS",
+		Config:        part,
 	})
-	if len(issues) != 1 || issues[0].Path != "fragment.css" || issues[0].Code != "unsupported_css_property" {
+	if len(issues) != 1 || issues[0].Path != "config.css" || issues[0].Code != "unsupported_css_property" {
 		t.Fatalf("issues = %#v", issues)
 	}
 }
@@ -107,7 +107,7 @@ func TestValidateGeneratedRejectsUnsupportedTextCSSProperty(t *testing.T) {
 func TestRenderLayerIncludesExtendedTextareaStyles(t *testing.T) {
 	t.Parallel()
 
-	node := RenderLayer("textarea-main", Fragment{
+	node := RenderLayer("textarea-main", Config{
 		Content:         "Styled text",
 		FontFamily:      "system",
 		FontSizePX:      18,
@@ -128,7 +128,7 @@ func TestRenderLayerIncludesExtendedTextareaStyles(t *testing.T) {
 	body := node.Render()
 	for _, marker := range []string{
 		`data-component-id="textarea-main"`,
-		`data-component-type="textarea"`,
+		`data-component-kind="textarea"`,
 		`background-color: #f8fafc`,
 		`border: 2px solid #111827`,
 		`border-radius: 14px`,
@@ -146,7 +146,7 @@ func TestRenderLayerIncludesExtendedTextareaStyles(t *testing.T) {
 func TestRenderLayerWithContextScopesTextareaID(t *testing.T) {
 	t.Parallel()
 
-	body := RenderLayerWithContext("textarea-main", validFragment(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
+	body := RenderLayerWithContext("textarea-main", validConfig(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
 	for _, marker := range []string{
 		`id="game-world-card-textarea-main-layer"`,
 		`data-component-id="textarea-main"`,
@@ -157,8 +157,8 @@ func TestRenderLayerWithContextScopesTextareaID(t *testing.T) {
 	}
 }
 
-func validFragment() Fragment {
-	return Fragment{
+func validConfig() Config {
+	return Config{
 		Content:    "Start designing this card.",
 		FontFamily: "system",
 		FontSizePX: 16,
@@ -173,7 +173,7 @@ func validFragment() Fragment {
 	}
 }
 
-func textareaIssuePaths(issues []fragment.Issue) map[string]bool {
+func textareaIssuePaths(issues []design.Issue) map[string]bool {
 	paths := make(map[string]bool, len(issues))
 	for _, issue := range issues {
 		paths[issue.Path] = true

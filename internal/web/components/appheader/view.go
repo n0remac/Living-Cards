@@ -19,7 +19,7 @@ func View(resetButtonClass ...string) *Node {
 			Div(
 				Class("mr-auto flex min-w-[14rem] flex-col"),
 				H1(Class("text-2xl font-semibold tracking-tight text-[var(--app-fg)]"), T("Living Card")),
-				P(Class("text-sm text-[var(--app-fg-muted)]"), T("Design an editable AI-powered card from structured style fragments.")),
+				P(Class("text-sm text-[var(--app-fg-muted)]"), T("Design an editable AI-powered card from structured component configs.")),
 			),
 			Button(
 				Id("reset-draft-btn"),

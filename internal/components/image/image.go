@@ -10,11 +10,11 @@ import (
 	godom "github.com/n0remac/GoDom/html"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
 const (
-	Type            = "image"
+	Kind            = "image"
 	maxDataURLBytes = 512 * 1024
 	defaultImageSrc = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
 	defaultImageAlt = "Card image"
@@ -26,7 +26,7 @@ const (
 	defaultY        = 48
 )
 
-type Fragment struct {
+type Config struct {
 	Src            string `json:"src"`
 	Alt            string `json:"alt"`
 	X              int    `json:"x"`
@@ -39,8 +39,8 @@ type Fragment struct {
 	BorderRadiusPX int    `json:"border_radius_px"`
 }
 
-func DefaultFragment() Fragment {
-	return Fragment{
+func DefaultConfig() Config {
+	return Config{
 		Src:            defaultImageSrc,
 		Alt:            defaultImageAlt,
 		X:              defaultX,
@@ -54,58 +54,58 @@ func DefaultFragment() Fragment {
 	}
 }
 
-func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
-	part := DefaultFragment()
+func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
+	part := DefaultConfig()
 	part.X = pickInt(seed, []int{34, 50, 66})
 	part.Y = pickInt(seed+17, []int{32, 50, 68})
 	if level > 2 {
 		part.Rotation = pickInt(seed+29, []int{-8, 0, 8})
 	}
-	return fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "A safe uploaded image layer.",
-		Fragment:    part,
+	return design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "A safe uploaded image layer.",
+		Config:        part,
 	}
 }
 
-func Spec() fragment.Spec[Fragment] {
-	return fragment.Spec[Fragment]{
-		Target:       Type,
-		SystemPrompt: systemPrompt,
-		Example:      exampleJSON,
-		Normalize:    NormalizeGenerated,
-		Validate:     ValidateGenerated,
+func Spec() design.Spec[Config] {
+	return design.Spec[Config]{
+		ComponentKind: Kind,
+		SystemPrompt:  systemPrompt,
+		Example:       exampleJSON,
+		Normalize:     NormalizeGenerated,
+		Validate:      ValidateGenerated,
 	}
 }
 
 func Definition() card.Definition {
 	return card.Definition{
-		Type: Type,
+		ComponentKind: Kind,
 		Contribute: func(node card.Node, renderContext card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeFragment[Fragment](node)
+			part, err := card.DecodeConfig[Config](node)
 			if err != nil {
 				return card.Contribution{}, err
 			}
-			generated := fragment.Generated[Fragment]{
-				Target:      Type,
-				Description: "Rendered image",
-				Fragment:    part,
+			generated := design.GeneratedConfig[Config]{
+				ComponentKind: Kind,
+				Description:   "Rendered image",
+				Config:        part,
 			}
 			NormalizeGenerated(&generated)
 			if issues := ValidateGenerated(generated); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid image fragment at %s: %s", issues[0].Path, issues[0].Message)
+				return card.Contribution{}, fmt.Errorf("invalid image config at %s: %s", issues[0].Path, issues[0].Message)
 			}
 			return card.Contribution{
-				Layers: []*godom.Node{RenderLayerWithContext(node.ID, generated.Fragment, renderContext)},
+				Layers: []*godom.Node{RenderLayerWithContext(node.ID, generated.Config, renderContext)},
 			}, nil
 		},
 	}
 }
 
 const exampleJSON = `{
-  "target": "image",
+  "componentKind": "image",
   "description": "A safe uploaded image layer.",
-  "fragment": {
+  "config": {
     "src": "data:image/png;base64,iVBORw0KGgo=",
     "alt": "Uploaded key image",
     "x": 50,
@@ -119,80 +119,80 @@ const exampleJSON = `{
   }
 }`
 
-const systemPrompt = `You generate safe declarative JSON fragments for one image component of a card.
+const systemPrompt = `You generate safe declarative JSON configs for one image component of a card.
 Return exactly one JSON object and no markdown, prose, HTML, selectors, braces, or JavaScript.
 The JSON object must match the image component schema.
 Rules:
-- target must be "image".
+- componentKind must be "image".
 - src must be a data URL for PNG, JPEG, WebP, or GIF.
 - SVG, external URLs, HTML, and JavaScript are forbidden.
 - x, y, width, and height are percentage values within the allowed ranges.`
 
-func NormalizeGenerated(generated *fragment.Generated[Fragment]) {
+func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
-	defaults := DefaultFragment()
-	generated.Target = strings.TrimSpace(generated.Target)
+	defaults := DefaultConfig()
+	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Fragment.Src = strings.TrimSpace(generated.Fragment.Src)
-	if generated.Fragment.Src == "" {
-		generated.Fragment.Src = defaults.Src
+	generated.Config.Src = strings.TrimSpace(generated.Config.Src)
+	if generated.Config.Src == "" {
+		generated.Config.Src = defaults.Src
 	}
-	generated.Fragment.Alt = strings.TrimSpace(generated.Fragment.Alt)
-	if generated.Fragment.Alt == "" {
-		generated.Fragment.Alt = defaults.Alt
+	generated.Config.Alt = strings.TrimSpace(generated.Config.Alt)
+	if generated.Config.Alt == "" {
+		generated.Config.Alt = defaults.Alt
 	}
-	generated.Fragment.BorderColor = strings.TrimSpace(generated.Fragment.BorderColor)
-	if generated.Fragment.BorderColor == "" {
-		generated.Fragment.BorderColor = defaults.BorderColor
+	generated.Config.BorderColor = strings.TrimSpace(generated.Config.BorderColor)
+	if generated.Config.BorderColor == "" {
+		generated.Config.BorderColor = defaults.BorderColor
 	}
-	if generated.Fragment.Width == 0 {
-		generated.Fragment.Width = defaults.Width
+	if generated.Config.Width == 0 {
+		generated.Config.Width = defaults.Width
 	}
-	if generated.Fragment.Height == 0 {
-		generated.Fragment.Height = defaults.Height
+	if generated.Config.Height == 0 {
+		generated.Config.Height = defaults.Height
 	}
-	if generated.Fragment.BorderRadiusPX == 0 {
-		generated.Fragment.BorderRadiusPX = defaults.BorderRadiusPX
+	if generated.Config.BorderRadiusPX == 0 {
+		generated.Config.BorderRadiusPX = defaults.BorderRadiusPX
 	}
-	generated.Fragment.X = clamp(generated.Fragment.X, 0, 100)
-	generated.Fragment.Y = clamp(generated.Fragment.Y, 0, 100)
-	generated.Fragment.Width = clamp(generated.Fragment.Width, 8, 100)
-	generated.Fragment.Height = clamp(generated.Fragment.Height, 8, 100)
-	generated.Fragment.BorderWidthPX = clamp(generated.Fragment.BorderWidthPX, 0, 12)
-	generated.Fragment.BorderRadiusPX = clamp(generated.Fragment.BorderRadiusPX, 0, 48)
-	generated.Fragment.Rotation = normalizeRotation(generated.Fragment.Rotation)
+	generated.Config.X = clamp(generated.Config.X, 0, 100)
+	generated.Config.Y = clamp(generated.Config.Y, 0, 100)
+	generated.Config.Width = clamp(generated.Config.Width, 8, 100)
+	generated.Config.Height = clamp(generated.Config.Height, 8, 100)
+	generated.Config.BorderWidthPX = clamp(generated.Config.BorderWidthPX, 0, 12)
+	generated.Config.BorderRadiusPX = clamp(generated.Config.BorderRadiusPX, 0, 48)
+	generated.Config.Rotation = normalizeRotation(generated.Config.Rotation)
 }
 
-func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue {
-	var issues []fragment.Issue
-	if issue := validateDataURL("fragment.src", generated.Fragment.Src); issue != nil {
+func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
+	var issues []design.Issue
+	if issue := validateDataURL("config.src", generated.Config.Src); issue != nil {
 		issues = append(issues, *issue)
 	}
-	if generated.Fragment.X < 0 || generated.Fragment.X > 100 {
-		issues = append(issues, rangeIssue("fragment.x", "x", generated.Fragment.X, 0, 100))
+	if generated.Config.X < 0 || generated.Config.X > 100 {
+		issues = append(issues, rangeIssue("config.x", "x", generated.Config.X, 0, 100))
 	}
-	if generated.Fragment.Y < 0 || generated.Fragment.Y > 100 {
-		issues = append(issues, rangeIssue("fragment.y", "y", generated.Fragment.Y, 0, 100))
+	if generated.Config.Y < 0 || generated.Config.Y > 100 {
+		issues = append(issues, rangeIssue("config.y", "y", generated.Config.Y, 0, 100))
 	}
-	if generated.Fragment.Width < 8 || generated.Fragment.Width > 100 {
-		issues = append(issues, rangeIssue("fragment.width", "width", generated.Fragment.Width, 8, 100))
+	if generated.Config.Width < 8 || generated.Config.Width > 100 {
+		issues = append(issues, rangeIssue("config.width", "width", generated.Config.Width, 8, 100))
 	}
-	if generated.Fragment.Height < 8 || generated.Fragment.Height > 100 {
-		issues = append(issues, rangeIssue("fragment.height", "height", generated.Fragment.Height, 8, 100))
+	if generated.Config.Height < 8 || generated.Config.Height > 100 {
+		issues = append(issues, rangeIssue("config.height", "height", generated.Config.Height, 8, 100))
 	}
-	if generated.Fragment.BorderWidthPX < 0 || generated.Fragment.BorderWidthPX > 12 {
-		issues = append(issues, rangeIssue("fragment.border_width_px", "border_width_px", generated.Fragment.BorderWidthPX, 0, 12))
+	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 12 {
+		issues = append(issues, rangeIssue("config.border_width_px", "border_width_px", generated.Config.BorderWidthPX, 0, 12))
 	}
-	if generated.Fragment.BorderRadiusPX < 0 || generated.Fragment.BorderRadiusPX > 48 {
-		issues = append(issues, rangeIssue("fragment.border_radius_px", "border_radius_px", generated.Fragment.BorderRadiusPX, 0, 48))
+	if generated.Config.BorderRadiusPX < 0 || generated.Config.BorderRadiusPX > 48 {
+		issues = append(issues, rangeIssue("config.border_radius_px", "border_radius_px", generated.Config.BorderRadiusPX, 0, 48))
 	}
-	if color := strings.TrimSpace(generated.Fragment.BorderColor); color == "" {
-		issues = append(issues, fragment.Issue{Path: "fragment.border_color", Code: "required", Message: "border_color is required"})
-	} else if !fragment.IsAllowedColor(color) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.border_color",
+	if color := strings.TrimSpace(generated.Config.BorderColor); color == "" {
+		issues = append(issues, design.Issue{Path: "config.border_color", Code: "required", Message: "border_color is required"})
+	} else if !design.IsAllowedColor(color) {
+		issues = append(issues, design.Issue{
+			Path:    "config.border_color",
 			Code:    "invalid_color",
 			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
 			Actual:  color,
@@ -201,12 +201,12 @@ func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue 
 	return issues
 }
 
-func RenderLayer(componentID string, part Fragment) *godom.Node {
+func RenderLayer(componentID string, part Config) *godom.Node {
 	return RenderLayerWithContext(componentID, part, card.RenderContext{})
 }
 
-func RenderLayerWithContext(componentID string, part Fragment, renderContext card.RenderContext) *godom.Node {
-	part = normalizedFragment(part)
+func RenderLayerWithContext(componentID string, part Config, renderContext card.RenderContext) *godom.Node {
+	part = normalizedConfig(part)
 	style := map[string]string{
 		"border":           fmt.Sprintf("%dpx solid %s", part.BorderWidthPX, part.BorderColor),
 		"border-radius":    fmt.Sprintf("%dpx", part.BorderRadiusPX),
@@ -224,7 +224,7 @@ func RenderLayerWithContext(componentID string, part Fragment, renderContext car
 		godom.Id(renderContext.LayerID(componentID)),
 		godom.Class("absolute bg-black/10"),
 		godom.Attr("data-component-id", componentID),
-		godom.Attr("data-component-type", Type),
+		godom.Attr("data-component-kind", Kind),
 		godom.Attr("style", styleString(style)),
 		godom.Img(
 			godom.Src(part.Src),
@@ -243,28 +243,28 @@ func MaxDataURLBytes() int {
 	return maxDataURLBytes
 }
 
-func validateDataURL(path, value string) *fragment.Issue {
+func validateDataURL(path, value string) *design.Issue {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return &fragment.Issue{Path: path, Code: "required", Message: "src is required"}
+		return &design.Issue{Path: path, Code: "required", Message: "src is required"}
 	}
 	if len(trimmed) > maxDataURLBytes {
-		return &fragment.Issue{Path: path, Code: "too_large", Message: "src data URL is too large", Actual: len(trimmed)}
+		return &design.Issue{Path: path, Code: "too_large", Message: "src data URL is too large", Actual: len(trimmed)}
 	}
 	if strings.ContainsAny(trimmed, "<>") || strings.Contains(strings.ToLower(trimmed), "javascript:") {
-		return &fragment.Issue{Path: path, Code: "unsafe_value", Message: "src contains unsafe content"}
+		return &design.Issue{Path: path, Code: "unsafe_value", Message: "src contains unsafe content"}
 	}
 	if !strings.HasPrefix(trimmed, "data:") {
-		return &fragment.Issue{Path: path, Code: "invalid_data_url", Message: "src must be an embedded image data URL", Actual: trimmed}
+		return &design.Issue{Path: path, Code: "invalid_data_url", Message: "src must be an embedded image data URL", Actual: trimmed}
 	}
 	meta, payload, ok := strings.Cut(trimmed[len("data:"):], ",")
 	if !ok || payload == "" {
-		return &fragment.Issue{Path: path, Code: "invalid_data_url", Message: "src must include data URL metadata and payload"}
+		return &design.Issue{Path: path, Code: "invalid_data_url", Message: "src must include data URL metadata and payload"}
 	}
 	metaParts := strings.Split(meta, ";")
 	mimeType := strings.ToLower(strings.TrimSpace(metaParts[0]))
 	if !contains(AllowedMIMETypes(), mimeType) {
-		return &fragment.Issue{
+		return &design.Issue{
 			Path:    path,
 			Code:    "invalid_mime_type",
 			Message: "src must be a PNG, JPEG, WebP, or GIF data URL",
@@ -280,22 +280,22 @@ func validateDataURL(path, value string) *fragment.Issue {
 		}
 	}
 	if !base64Encoded {
-		return &fragment.Issue{Path: path, Code: "invalid_data_url", Message: "src image data URL must be base64 encoded"}
+		return &design.Issue{Path: path, Code: "invalid_data_url", Message: "src image data URL must be base64 encoded"}
 	}
 	if _, err := base64.StdEncoding.DecodeString(payload); err != nil {
-		return &fragment.Issue{Path: path, Code: "invalid_base64", Message: "src payload must be valid base64"}
+		return &design.Issue{Path: path, Code: "invalid_base64", Message: "src payload must be valid base64"}
 	}
 	return nil
 }
 
-func normalizedFragment(part Fragment) Fragment {
-	generated := fragment.Generated[Fragment]{Target: Type, Description: "Current image", Fragment: part}
+func normalizedConfig(part Config) Config {
+	generated := design.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Current image", Config: part}
 	NormalizeGenerated(&generated)
-	return generated.Fragment
+	return generated.Config
 }
 
-func rangeIssue(path, field string, actual, min, max int) fragment.Issue {
-	return fragment.Issue{
+func rangeIssue(path, field string, actual, min, max int) design.Issue {
+	return design.Issue{
 		Path:    path,
 		Code:    "out_of_range",
 		Message: fmt.Sprintf("%s must be between %d and %d", field, min, max),

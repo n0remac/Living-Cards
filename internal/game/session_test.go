@@ -7,7 +7,7 @@ import (
 
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/slider"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
 func TestSessionStartsWithEmptyLibraryAndScriptedDeck(t *testing.T) {
@@ -458,7 +458,7 @@ func TestValidateDeckDefinitionRejectsInvalidFixtures(t *testing.T) {
 			name: "bad rule document variant reference",
 			mutate: func(definition *DeckDefinition) {
 				for index := range definition.UseRules[0].Effects {
-					if definition.UseRules[0].Effects[index].Type == EffectSetDocumentVariant {
+					if definition.UseRules[0].Effects[index].EffectKind == EffectSetDocumentVariant {
 						definition.UseRules[0].Effects[index].Variant = "missing"
 					}
 				}
@@ -508,7 +508,7 @@ func TestDeckPackValidationRejectsUnsupportedComponentCondition(t *testing.T) {
 	for cardID, card := range definitionsByID(fuseRoom.Cards) {
 		combined[cardID] = card
 	}
-	generatorRoom.UseRules[0].SourceComponentConditions[0].Type = "dial"
+	generatorRoom.UseRules[0].SourceComponentConditions[0].ComponentKind = "dial"
 	if err := ValidateDeckPackDefinition(generatorRoom, combined); err == nil {
 		t.Fatal("ValidateDeckPackDefinition() unsupported component condition error = nil, want error")
 	}
@@ -520,7 +520,7 @@ func TestSessionLoadDeckEffectReturnsMissingDeckError(t *testing.T) {
 	definition := mustLoadEmbeddedDeck(t, SeededWorldDeckDefinition)
 	for ruleIndex := range definition.UseRules {
 		for effectIndex := range definition.UseRules[ruleIndex].Effects {
-			if definition.UseRules[ruleIndex].Effects[effectIndex].Type == EffectLoadDeck {
+			if definition.UseRules[ruleIndex].Effects[effectIndex].EffectKind == EffectLoadDeck {
 				definition.UseRules[ruleIndex].Effects[effectIndex].DeckID = "missing_pack"
 			}
 		}
@@ -557,10 +557,10 @@ func loadGeneratorRoom(t *testing.T, session *Session) {
 func controllerDraftDocument(t *testing.T, value int) cardcomponent.Document {
 	t.Helper()
 
-	generated := fragment.Generated[slider.Fragment]{
-		Target:      slider.Type,
-		Description: "Draft slider",
-		Fragment: slider.Fragment{
+	generated := design.GeneratedConfig[slider.Config]{
+		ComponentKind: slider.Kind,
+		Description:   "Draft slider",
+		Config: slider.Config{
 			Label: "Output",
 			Min:   0,
 			Max:   100,
@@ -569,7 +569,7 @@ func controllerDraftDocument(t *testing.T, value int) cardcomponent.Document {
 		},
 	}
 	slider.NormalizeGenerated(&generated)
-	raw, err := json.Marshal(generated.Fragment)
+	raw, err := json.Marshal(generated.Config)
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
@@ -577,12 +577,12 @@ func controllerDraftDocument(t *testing.T, value int) cardcomponent.Document {
 		CardID: RegulatorControllerCardID,
 		Name:   "Regulator Controller",
 		Root: cardcomponent.Node{
-			ID:   RegulatorControllerCardID + "-root",
-			Type: cardcomponent.Type,
+			ID:            RegulatorControllerCardID + "-root",
+			ComponentKind: cardcomponent.Kind,
 			Children: []cardcomponent.Node{{
-				ID:       "regulator-output-slider",
-				Type:     slider.Type,
-				Fragment: raw,
+				ID:            "regulator-output-slider",
+				ComponentKind: slider.Kind,
+				Config:        raw,
 			}},
 		},
 	}

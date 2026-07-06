@@ -62,20 +62,20 @@ type CardMatcherDefinition struct {
 }
 
 type ComponentConditionDefinition struct {
-	Type        string `json:"type"`
-	ValueEquals *int   `json:"valueEquals,omitempty"`
+	ComponentKind string `json:"componentKind"`
+	ValueEquals   *int   `json:"valueEquals,omitempty"`
 }
 
 type RuleEffectDefinition struct {
-	Type    string   `json:"type"`
-	CardID  string   `json:"cardId,omitempty"`
-	Key     string   `json:"key,omitempty"`
-	Flag    string   `json:"flag,omitempty"`
-	Value   any      `json:"value,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
-	Variant string   `json:"variant,omitempty"`
-	Message string   `json:"message,omitempty"`
-	DeckID  string   `json:"deckId,omitempty"`
+	EffectKind string   `json:"effectKind"`
+	CardID     string   `json:"cardId,omitempty"`
+	Key        string   `json:"key,omitempty"`
+	Flag       string   `json:"flag,omitempty"`
+	Value      any      `json:"value,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
+	Variant    string   `json:"variant,omitempty"`
+	Message    string   `json:"message,omitempty"`
+	DeckID     string   `json:"deckId,omitempty"`
 }
 
 func LoadEmbeddedSeededWorldDeck() (DeckDefinition, error) {
@@ -186,8 +186,8 @@ func validateDeckCards(definition DeckDefinition) (map[string]CardDefinition, er
 			if document.CardID != card.ID {
 				return nil, fmt.Errorf("card %q document variant %q has card_id %q", card.ID, variant, document.CardID)
 			}
-			if document.Root.Type != cardcomponent.Type {
-				return nil, fmt.Errorf("card %q document variant %q root type must be %q", card.ID, variant, cardcomponent.Type)
+			if document.Root.ComponentKind != cardcomponent.Kind {
+				return nil, fmt.Errorf("card %q document variant %q root type must be %q", card.ID, variant, cardcomponent.Kind)
 			}
 		}
 		cardsByID[card.ID] = card
@@ -250,8 +250,8 @@ func validateRuleDefinition(rule UseRuleDefinition, cardsByID map[string]CardDef
 
 func validateComponentConditions(conditions []ComponentConditionDefinition) error {
 	for _, condition := range conditions {
-		switch strings.TrimSpace(condition.Type) {
-		case slider.Type:
+		switch strings.TrimSpace(condition.ComponentKind) {
+		case slider.Kind:
 			if condition.ValueEquals == nil {
 				return fmt.Errorf("slider source component condition requires valueEquals")
 			}
@@ -260,9 +260,9 @@ func validateComponentConditions(conditions []ComponentConditionDefinition) erro
 				return fmt.Errorf("slider source component condition valueEquals must be between 0 and 100")
 			}
 		case "":
-			return fmt.Errorf("source component condition requires type")
+			return fmt.Errorf("source component condition requires componentKind")
 		default:
-			return fmt.Errorf("unsupported source component condition type %q", condition.Type)
+			return fmt.Errorf("unsupported source component condition componentKind %q", condition.ComponentKind)
 		}
 	}
 	return nil
@@ -286,7 +286,7 @@ func validateMatcher(name string, matcher CardMatcherDefinition, cardsByID map[s
 }
 
 func validateRuleEffect(effect RuleEffectDefinition, target CardMatcherDefinition, cardsByID map[string]CardDefinition) error {
-	switch effect.Type {
+	switch effect.EffectKind {
 	case EffectSetFlag:
 		if strings.TrimSpace(effect.Flag) == "" {
 			return fmt.Errorf("%s effect requires flag", EffectSetFlag)
@@ -333,7 +333,7 @@ func validateRuleEffect(effect RuleEffectDefinition, target CardMatcherDefinitio
 			return fmt.Errorf("%s effect requires valid deckId: %w", EffectLoadDeck, err)
 		}
 	default:
-		return fmt.Errorf("unsupported effect type %q", effect.Type)
+		return fmt.Errorf("unsupported effect kind %q", effect.EffectKind)
 	}
 	return nil
 }
@@ -341,11 +341,11 @@ func validateRuleEffect(effect RuleEffectDefinition, target CardMatcherDefinitio
 func effectCardDefinition(effect RuleEffectDefinition, target CardMatcherDefinition, cardsByID map[string]CardDefinition) (CardDefinition, error) {
 	cardID := resolvedEffectCardID(effect, target)
 	if strings.TrimSpace(cardID) == "" {
-		return CardDefinition{}, fmt.Errorf("effect %q requires cardId when target matcher has no id", effect.Type)
+		return CardDefinition{}, fmt.Errorf("effect %q requires cardId when target matcher has no id", effect.EffectKind)
 	}
 	card, exists := cardsByID[cardID]
 	if !exists {
-		return CardDefinition{}, fmt.Errorf("effect %q references unknown card %q", effect.Type, cardID)
+		return CardDefinition{}, fmt.Errorf("effect %q references unknown card %q", effect.EffectKind, cardID)
 	}
 	return card, nil
 }

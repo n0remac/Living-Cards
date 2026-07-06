@@ -11,7 +11,7 @@ import (
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/slider"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
 const (
@@ -348,9 +348,9 @@ func (s *Session) ruleBaseMatches(rule UseRuleDefinition, source Card, target Ca
 
 func sourceComponentConditionsMatch(conditions []ComponentConditionDefinition, document cardcomponent.Document) bool {
 	for _, condition := range conditions {
-		switch strings.TrimSpace(condition.Type) {
-		case slider.Type:
-			part, ok := firstSliderFragment(document)
+		switch strings.TrimSpace(condition.ComponentKind) {
+		case slider.Kind:
+			part, ok := firstSliderConfig(document)
 			if !ok || condition.ValueEquals == nil {
 				return false
 			}
@@ -364,37 +364,37 @@ func sourceComponentConditionsMatch(conditions []ComponentConditionDefinition, d
 	return true
 }
 
-func validatedSliderFromDocument(document cardcomponent.Document) (slider.Fragment, error) {
-	part, ok := firstSliderFragment(document)
+func validatedSliderFromDocument(document cardcomponent.Document) (slider.Config, error) {
+	part, ok := firstSliderConfig(document)
 	if !ok {
-		return slider.Fragment{}, fmt.Errorf("controller document must include a slider component")
+		return slider.Config{}, fmt.Errorf("controller document must include a slider component")
 	}
 	return part, nil
 }
 
-func firstSliderFragment(document cardcomponent.Document) (slider.Fragment, bool) {
-	var out slider.Fragment
+func firstSliderConfig(document cardcomponent.Document) (slider.Config, bool) {
+	var out slider.Config
 	found := false
 	var visit func(cardcomponent.Node)
 	visit = func(node cardcomponent.Node) {
 		if found {
 			return
 		}
-		if node.Type == slider.Type {
-			var part slider.Fragment
-			if err := json.Unmarshal(node.Fragment, &part); err != nil {
+		if node.ComponentKind == slider.Kind {
+			var part slider.Config
+			if err := json.Unmarshal(node.Config, &part); err != nil {
 				return
 			}
-			generated := fragment.Generated[slider.Fragment]{
-				Target:      slider.Type,
-				Description: "Controller slider",
-				Fragment:    part,
+			generated := design.GeneratedConfig[slider.Config]{
+				ComponentKind: slider.Kind,
+				Description:   "Controller slider",
+				Config:        part,
 			}
 			slider.NormalizeGenerated(&generated)
 			if issues := slider.ValidateGenerated(generated); len(issues) > 0 {
 				return
 			}
-			out = generated.Fragment
+			out = generated.Config
 			found = true
 			return
 		}
@@ -406,29 +406,29 @@ func firstSliderFragment(document cardcomponent.Document) (slider.Fragment, bool
 	return out, found
 }
 
-func regulatorControllerDocument(part slider.Fragment) cardcomponent.Document {
-	part = slider.NormalizeFragment(part)
+func regulatorControllerDocument(part slider.Config) cardcomponent.Document {
+	part = slider.NormalizeConfig(part)
 	part.Label = "Output"
 	return cardcomponent.Document{
 		CardID: RegulatorControllerCardID,
 		Name:   "Regulator Controller",
 		Root: cardcomponent.Node{
-			ID:       RegulatorControllerCardID + "-root",
-			Type:     cardcomponent.Type,
-			Fragment: cardcomponent.EncodeRootFragment(cardcomponent.RootFragment{PaddingPX: 18, Shadow: "0 24px 60px rgba(8,47,73,0.34)"}),
+			ID:            RegulatorControllerCardID + "-root",
+			ComponentKind: cardcomponent.Kind,
+			Config:        cardcomponent.EncodeRootConfig(cardcomponent.RootConfig{PaddingPX: 18, Shadow: "0 24px 60px rgba(8,47,73,0.34)"}),
 			Children: []cardcomponent.Node{
 				{
-					ID:   RegulatorControllerCardID + "-background",
-					Type: background.Type,
-					Fragment: mustRaw(background.Fragment{
+					ID:            RegulatorControllerCardID + "-background",
+					ComponentKind: background.Kind,
+					Config: mustRaw(background.Config{
 						BackgroundColor: "#082f49",
 						CSS:             "background: linear-gradient(160deg, #082f49 0%, #0f172a 100%);",
 					}),
 				},
 				{
-					ID:   RegulatorControllerCardID + "-border",
-					Type: border.Type,
-					Fragment: mustRaw(border.Fragment{
+					ID:            RegulatorControllerCardID + "-border",
+					ComponentKind: border.Kind,
+					Config: mustRaw(border.Config{
 						BorderWidthPX:  2,
 						BorderRadiusPX: 22,
 						BorderColor:    "#7dd3fc",
@@ -436,9 +436,9 @@ func regulatorControllerDocument(part slider.Fragment) cardcomponent.Document {
 					}),
 				},
 				{
-					ID:   RegulatorControllerCardID + "-title",
-					Type: textarea.Type,
-					Fragment: mustRaw(textarea.Fragment{
+					ID:            RegulatorControllerCardID + "-title",
+					ComponentKind: textarea.Kind,
+					Config: mustRaw(textarea.Config{
 						Content:    "REGULATOR",
 						FontFamily: "system",
 						FontSizePX: 24,
@@ -454,9 +454,9 @@ func regulatorControllerDocument(part slider.Fragment) cardcomponent.Document {
 					}),
 				},
 				{
-					ID:   RegulatorControllerCardID + "-hint",
-					Type: textarea.Type,
-					Fragment: mustRaw(textarea.Fragment{
+					ID:            RegulatorControllerCardID + "-hint",
+					ComponentKind: textarea.Kind,
+					Config: mustRaw(textarea.Config{
 						Content:    "Output setpoint",
 						FontFamily: "system",
 						FontSizePX: 14,
@@ -472,9 +472,9 @@ func regulatorControllerDocument(part slider.Fragment) cardcomponent.Document {
 					}),
 				},
 				{
-					ID:       "regulator-output-slider",
-					Type:     slider.Type,
-					Fragment: mustRaw(part),
+					ID:            "regulator-output-slider",
+					ComponentKind: slider.Kind,
+					Config:        mustRaw(part),
 				},
 			},
 		},
@@ -495,7 +495,7 @@ func cardMatches(card Card, matcher CardMatcherDefinition) bool {
 
 func (s *Session) applyRuleEffects(rule UseRuleDefinition, target Card) error {
 	for _, effect := range rule.Effects {
-		switch effect.Type {
+		switch effect.EffectKind {
 		case EffectSetFlag:
 			if s.solvedFlags == nil {
 				s.solvedFlags = map[string]bool{}
@@ -543,7 +543,7 @@ func (s *Session) applyRuleEffects(rule UseRuleDefinition, target Card) error {
 				return err
 			}
 		default:
-			return fmt.Errorf("unsupported effect type %q", effect.Type)
+			return fmt.Errorf("unsupported effect kind %q", effect.EffectKind)
 		}
 	}
 	return nil
@@ -603,7 +603,7 @@ func (s *Session) updateEffectCard(effect RuleEffectDefinition, target Card, upd
 	}
 	index := s.worldCardIndex(cardID)
 	if index < 0 {
-		return fmt.Errorf("effect %q references card %q outside world deck", effect.Type, cardID)
+		return fmt.Errorf("effect %q references card %q outside world deck", effect.EffectKind, cardID)
 	}
 	card := s.worldDeck[index]
 	if err := update(&card); err != nil {

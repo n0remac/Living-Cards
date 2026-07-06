@@ -21,15 +21,15 @@ func TestDefaultDocumentShape(t *testing.T) {
 	if document.CardID != card.DefaultCardID || document.Name != "Empty Card" {
 		t.Fatalf("document = %#v", document)
 	}
-	if document.Root.ID != card.DefaultRootID || document.Root.Type != card.Type {
+	if document.Root.ID != card.DefaultRootID || document.Root.ComponentKind != card.Kind {
 		t.Fatalf("root = %#v", document.Root)
 	}
 	if len(document.Root.Children) != 3 {
 		t.Fatalf("children = %#v", document.Root.Children)
 	}
-	for index, expected := range []string{background.Type, border.Type, textarea.Type} {
-		if document.Root.Children[index].Type != expected {
-			t.Fatalf("child %d type = %q, want %q", index, document.Root.Children[index].Type, expected)
+	for index, expected := range []string{background.Kind, border.Kind, textarea.Kind} {
+		if document.Root.Children[index].ComponentKind != expected {
+			t.Fatalf("child %d type = %q, want %q", index, document.Root.Children[index].ComponentKind, expected)
 		}
 	}
 }
@@ -46,11 +46,11 @@ func TestRenderDocumentComposesShellAndTextareaLayer(t *testing.T) {
 	for _, marker := range []string{
 		`id="draft-card-preview"`,
 		`data-component-id="card-root"`,
-		`data-component-type="card"`,
+		`data-component-kind="card"`,
 		`background-color: #111827`,
 		`border-radius: 24px`,
 		`padding: 24px`,
-		`data-component-type="textarea"`,
+		`data-component-kind="textarea"`,
 		`Start designing this card.`,
 	} {
 		if !strings.Contains(body, marker) {
@@ -64,9 +64,9 @@ func TestRenderDocumentRendersShapeLayer(t *testing.T) {
 
 	document := card.DefaultDocument()
 	document.Root.Children = append(document.Root.Children, card.Node{
-		ID:   card.DefaultShapeID,
-		Type: shape.Type,
-		Fragment: mustRaw(t, shape.Fragment{
+		ID:            card.DefaultShapeID,
+		ComponentKind: shape.Kind,
+		Config: mustRaw(t, shape.Config{
 			Shape:           "triangle",
 			X:               20,
 			Y:               24,
@@ -85,7 +85,7 @@ func TestRenderDocumentRendersShapeLayer(t *testing.T) {
 	body := node.Render()
 	for _, marker := range []string{
 		`data-component-id="shape-1"`,
-		`data-component-type="shape"`,
+		`data-component-kind="shape"`,
 		`<svg`,
 		`points="50,8 92,88 8,88"`,
 	} {
@@ -102,9 +102,9 @@ func TestRenderDocumentSupportsMultipleLayerComponentsAndCustomID(t *testing.T) 
 	document.CardID = "fixture-card"
 	document.Root.Children = append(document.Root.Children,
 		card.Node{
-			ID:   "textarea-extra",
-			Type: textarea.Type,
-			Fragment: mustRaw(t, textarea.Fragment{
+			ID:            "textarea-extra",
+			ComponentKind: textarea.Kind,
+			Config: mustRaw(t, textarea.Config{
 				Content:    "Second text layer",
 				FontFamily: "system",
 				FontSizePX: 16,
@@ -116,9 +116,9 @@ func TestRenderDocumentSupportsMultipleLayerComponentsAndCustomID(t *testing.T) 
 			}),
 		},
 		card.Node{
-			ID:   "shape-extra",
-			Type: shape.Type,
-			Fragment: mustRaw(t, shape.Fragment{
+			ID:            "shape-extra",
+			ComponentKind: shape.Kind,
+			Config: mustRaw(t, shape.Config{
 				Shape:           "diamond",
 				X:               64,
 				Y:               36,
@@ -130,14 +130,14 @@ func TestRenderDocumentSupportsMultipleLayerComponentsAndCustomID(t *testing.T) 
 			}),
 		},
 		card.Node{
-			ID:       "image-extra",
-			Type:     imagecomponent.Type,
-			Fragment: mustRaw(t, imagecomponent.DefaultFragment()),
+			ID:            "image-extra",
+			ComponentKind: imagecomponent.Kind,
+			Config:        mustRaw(t, imagecomponent.DefaultConfig()),
 		},
 		card.Node{
-			ID:   "slider-extra",
-			Type: slider.Type,
-			Fragment: mustRaw(t, slider.Fragment{
+			ID:            "slider-extra",
+			ComponentKind: slider.Kind,
+			Config: mustRaw(t, slider.Config{
 				Label: "Output",
 				Min:   0,
 				Max:   100,
@@ -159,9 +159,9 @@ func TestRenderDocumentSupportsMultipleLayerComponentsAndCustomID(t *testing.T) 
 		`Second text layer`,
 		`data-component-id="shape-extra"`,
 		`data-component-id="image-extra"`,
-		`data-component-type="image"`,
+		`data-component-kind="image"`,
 		`data-component-id="slider-extra"`,
-		`data-component-type="slider"`,
+		`data-component-kind="slider"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("render missing %q:\n%s", marker, body)
@@ -211,11 +211,11 @@ func TestRenderDocumentLaterShellContributionsWin(t *testing.T) {
 	t.Parallel()
 
 	document := card.DefaultDocument()
-	document.Root.Children[0].Fragment = mustRaw(t, background.Fragment{
+	document.Root.Children[0].Config = mustRaw(t, background.Config{
 		BackgroundColor: "#111827",
 		CSS:             "box-shadow: 0 0 10px red;",
 	})
-	document.Root.Children[1].Fragment = mustRaw(t, border.Fragment{
+	document.Root.Children[1].Config = mustRaw(t, border.Config{
 		BorderWidthPX:  1,
 		BorderRadiusPX: 24,
 		BorderColor:    "#ffffff",

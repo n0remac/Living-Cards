@@ -10,12 +10,12 @@ import (
 	godom "github.com/n0remac/GoDom/html"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
-const Type = "shape"
+const Kind = "shape"
 
-type Fragment struct {
+type Config struct {
 	Shape           string `json:"shape"`
 	X               int    `json:"x"`
 	Y               int    `json:"y"`
@@ -28,8 +28,8 @@ type Fragment struct {
 	Shadow          string `json:"shadow"`
 }
 
-func DefaultFragment() Fragment {
-	return Fragment{
+func DefaultConfig() Config {
+	return Config{
 		Shape:           "circle",
 		X:               34,
 		Y:               26,
@@ -43,14 +43,14 @@ func DefaultFragment() Fragment {
 	}
 }
 
-func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
+func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
 	options := []struct {
 		description string
-		part        Fragment
+		part        Config
 	}{
 		{
 			description: "A warm circular shape layer.",
-			part: Fragment{
+			part: Config{
 				Shape:           "circle",
 				X:               38,
 				Y:               24,
@@ -65,7 +65,7 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		},
 		{
 			description: "A crisp diamond shape layer.",
-			part: Fragment{
+			part: Config{
 				Shape:           "diamond",
 				X:               35,
 				Y:               34,
@@ -80,7 +80,7 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		},
 		{
 			description: "A quiet rounded rectangle shape layer.",
-			part: Fragment{
+			part: Config{
 				Shape:           "roundedRectangle",
 				X:               22,
 				Y:               58,
@@ -97,10 +97,10 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 	if level > 2 {
 		options = append(options, struct {
 			description string
-			part        Fragment
+			part        Config
 		}{
 			description: "A playful star shape layer.",
-			part: Fragment{
+			part: Config{
 				Shape:           "star",
 				X:               54,
 				Y:               16,
@@ -115,51 +115,51 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		})
 	}
 	pick := options[rand.New(rand.NewSource(seed)).Intn(len(options))]
-	return fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: pick.description,
-		Fragment:    pick.part,
+	return design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   pick.description,
+		Config:        pick.part,
 	}
 }
 
-func Spec() fragment.Spec[Fragment] {
-	return fragment.Spec[Fragment]{
-		Target:       Type,
-		SystemPrompt: systemPrompt,
-		Example:      exampleJSON,
-		Normalize:    NormalizeGenerated,
-		Validate:     ValidateGenerated,
+func Spec() design.Spec[Config] {
+	return design.Spec[Config]{
+		ComponentKind: Kind,
+		SystemPrompt:  systemPrompt,
+		Example:       exampleJSON,
+		Normalize:     NormalizeGenerated,
+		Validate:      ValidateGenerated,
 	}
 }
 
 func Definition() card.Definition {
 	return card.Definition{
-		Type: Type,
+		ComponentKind: Kind,
 		Contribute: func(node card.Node, renderContext card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeFragment[Fragment](node)
+			part, err := card.DecodeConfig[Config](node)
 			if err != nil {
 				return card.Contribution{}, err
 			}
-			generated := fragment.Generated[Fragment]{
-				Target:      Type,
-				Description: "Rendered shape",
-				Fragment:    part,
+			generated := design.GeneratedConfig[Config]{
+				ComponentKind: Kind,
+				Description:   "Rendered shape",
+				Config:        part,
 			}
 			NormalizeGenerated(&generated)
 			if issues := ValidateGenerated(generated); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid shape fragment at %s: %s", issues[0].Path, issues[0].Message)
+				return card.Contribution{}, fmt.Errorf("invalid shape config at %s: %s", issues[0].Path, issues[0].Message)
 			}
 			return card.Contribution{
-				Layers: []*godom.Node{RenderLayerWithContext(node.ID, generated.Fragment, renderContext)},
+				Layers: []*godom.Node{RenderLayerWithContext(node.ID, generated.Config, renderContext)},
 			}, nil
 		},
 	}
 }
 
 const exampleJSON = `{
-  "target": "shape",
+  "componentKind": "shape",
   "description": "A warm circle shape layer.",
-  "fragment": {
+  "config": {
     "shape": "circle",
     "x": 34,
     "y": 26,
@@ -173,106 +173,106 @@ const exampleJSON = `{
   }
 }`
 
-const systemPrompt = `You generate safe declarative JSON fragments for one shape component of a card.
+const systemPrompt = `You generate safe declarative JSON configs for one shape component of a card.
 Return exactly one JSON object and no markdown, prose, HTML, selectors, braces, or JavaScript.
 The JSON object must match the shape component schema.
 Rules:
-- target must be "shape".
+- componentKind must be "shape".
 - shape must be one of circle, oval, rectangle, roundedRectangle, triangle, diamond, star, blob.
 - colors must be safe colors: hex, rgb(...), rgba(...), hsl(...), or hsla(...).
 - x, y, width, and height are percentage values within the allowed ranges.`
 
-func NormalizeGenerated(generated *fragment.Generated[Fragment]) {
+func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
-	defaults := DefaultFragment()
-	generated.Target = strings.TrimSpace(generated.Target)
+	defaults := DefaultConfig()
+	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Fragment.Shape = strings.TrimSpace(generated.Fragment.Shape)
-	if generated.Fragment.Shape == "" {
-		generated.Fragment.Shape = defaults.Shape
+	generated.Config.Shape = strings.TrimSpace(generated.Config.Shape)
+	if generated.Config.Shape == "" {
+		generated.Config.Shape = defaults.Shape
 	}
-	generated.Fragment.BackgroundColor = strings.TrimSpace(generated.Fragment.BackgroundColor)
-	if generated.Fragment.BackgroundColor == "" {
-		generated.Fragment.BackgroundColor = defaults.BackgroundColor
+	generated.Config.BackgroundColor = strings.TrimSpace(generated.Config.BackgroundColor)
+	if generated.Config.BackgroundColor == "" {
+		generated.Config.BackgroundColor = defaults.BackgroundColor
 	}
-	generated.Fragment.BorderColor = strings.TrimSpace(generated.Fragment.BorderColor)
-	if generated.Fragment.BorderColor == "" {
-		generated.Fragment.BorderColor = defaults.BorderColor
+	generated.Config.BorderColor = strings.TrimSpace(generated.Config.BorderColor)
+	if generated.Config.BorderColor == "" {
+		generated.Config.BorderColor = defaults.BorderColor
 	}
-	generated.Fragment.Shadow = strings.TrimSpace(generated.Fragment.Shadow)
-	if generated.Fragment.Width == 0 {
-		generated.Fragment.Width = defaults.Width
+	generated.Config.Shadow = strings.TrimSpace(generated.Config.Shadow)
+	if generated.Config.Width == 0 {
+		generated.Config.Width = defaults.Width
 	}
-	if generated.Fragment.Height == 0 {
-		generated.Fragment.Height = defaults.Height
+	if generated.Config.Height == 0 {
+		generated.Config.Height = defaults.Height
 	}
-	generated.Fragment.X = clamp(generated.Fragment.X, 0, 100)
-	generated.Fragment.Y = clamp(generated.Fragment.Y, 0, 100)
-	generated.Fragment.Width = clamp(generated.Fragment.Width, 8, 100)
-	generated.Fragment.Height = clamp(generated.Fragment.Height, 8, 100)
-	generated.Fragment.BorderWidthPX = clamp(generated.Fragment.BorderWidthPX, 0, 10)
-	generated.Fragment.Rotation = normalizeRotation(generated.Fragment.Rotation)
+	generated.Config.X = clamp(generated.Config.X, 0, 100)
+	generated.Config.Y = clamp(generated.Config.Y, 0, 100)
+	generated.Config.Width = clamp(generated.Config.Width, 8, 100)
+	generated.Config.Height = clamp(generated.Config.Height, 8, 100)
+	generated.Config.BorderWidthPX = clamp(generated.Config.BorderWidthPX, 0, 10)
+	generated.Config.Rotation = normalizeRotation(generated.Config.Rotation)
 }
 
-func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue {
-	var issues []fragment.Issue
-	if !contains(AllowedShapes(), generated.Fragment.Shape) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.shape",
+func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
+	var issues []design.Issue
+	if !contains(AllowedShapes(), generated.Config.Shape) {
+		issues = append(issues, design.Issue{
+			Path:    "config.shape",
 			Code:    "invalid_value",
 			Message: "shape is not allowed",
-			Actual:  generated.Fragment.Shape,
+			Actual:  generated.Config.Shape,
 			Allowed: AllowedShapes(),
 		})
 	}
-	if generated.Fragment.X < 0 || generated.Fragment.X > 100 {
-		issues = append(issues, rangeIssue("fragment.x", "x", generated.Fragment.X, 0, 100))
+	if generated.Config.X < 0 || generated.Config.X > 100 {
+		issues = append(issues, rangeIssue("config.x", "x", generated.Config.X, 0, 100))
 	}
-	if generated.Fragment.Y < 0 || generated.Fragment.Y > 100 {
-		issues = append(issues, rangeIssue("fragment.y", "y", generated.Fragment.Y, 0, 100))
+	if generated.Config.Y < 0 || generated.Config.Y > 100 {
+		issues = append(issues, rangeIssue("config.y", "y", generated.Config.Y, 0, 100))
 	}
-	if generated.Fragment.Width < 8 || generated.Fragment.Width > 100 {
-		issues = append(issues, rangeIssue("fragment.width", "width", generated.Fragment.Width, 8, 100))
+	if generated.Config.Width < 8 || generated.Config.Width > 100 {
+		issues = append(issues, rangeIssue("config.width", "width", generated.Config.Width, 8, 100))
 	}
-	if generated.Fragment.Height < 8 || generated.Fragment.Height > 100 {
-		issues = append(issues, rangeIssue("fragment.height", "height", generated.Fragment.Height, 8, 100))
+	if generated.Config.Height < 8 || generated.Config.Height > 100 {
+		issues = append(issues, rangeIssue("config.height", "height", generated.Config.Height, 8, 100))
 	}
-	if generated.Fragment.BorderWidthPX < 0 || generated.Fragment.BorderWidthPX > 10 {
-		issues = append(issues, rangeIssue("fragment.border_width_px", "border_width_px", generated.Fragment.BorderWidthPX, 0, 10))
+	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 10 {
+		issues = append(issues, rangeIssue("config.border_width_px", "border_width_px", generated.Config.BorderWidthPX, 0, 10))
 	}
-	if color := strings.TrimSpace(generated.Fragment.BackgroundColor); color == "" {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.background_color",
+	if color := strings.TrimSpace(generated.Config.BackgroundColor); color == "" {
+		issues = append(issues, design.Issue{
+			Path:    "config.background_color",
 			Code:    "required",
 			Message: "background_color is required",
 		})
-	} else if !fragment.IsAllowedColor(color) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.background_color",
+	} else if !design.IsAllowedColor(color) {
+		issues = append(issues, design.Issue{
+			Path:    "config.background_color",
 			Code:    "invalid_color",
 			Message: "background_color must be a hex, rgb, rgba, hsl, or hsla color",
 			Actual:  color,
 		})
 	}
-	if color := strings.TrimSpace(generated.Fragment.BorderColor); color == "" {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.border_color",
+	if color := strings.TrimSpace(generated.Config.BorderColor); color == "" {
+		issues = append(issues, design.Issue{
+			Path:    "config.border_color",
 			Code:    "required",
 			Message: "border_color is required",
 		})
-	} else if !fragment.IsAllowedColor(color) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.border_color",
+	} else if !design.IsAllowedColor(color) {
+		issues = append(issues, design.Issue{
+			Path:    "config.border_color",
 			Code:    "invalid_color",
 			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
 			Actual:  color,
 		})
 	}
-	if shadow := strings.TrimSpace(generated.Fragment.Shadow); shadow != "" && !contains(AllowedShadows(), shadow) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.shadow",
+	if shadow := strings.TrimSpace(generated.Config.Shadow); shadow != "" && !contains(AllowedShadows(), shadow) {
+		issues = append(issues, design.Issue{
+			Path:    "config.shadow",
 			Code:    "invalid_value",
 			Message: "shadow is not an allowed preset value",
 			Actual:  shadow,
@@ -282,11 +282,11 @@ func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue 
 	return issues
 }
 
-func RenderLayer(componentID string, part Fragment) *godom.Node {
+func RenderLayer(componentID string, part Config) *godom.Node {
 	return RenderLayerWithContext(componentID, part, card.RenderContext{})
 }
 
-func RenderLayerWithContext(componentID string, part Fragment, renderContext card.RenderContext) *godom.Node {
+func RenderLayerWithContext(componentID string, part Config, renderContext card.RenderContext) *godom.Node {
 	style := map[string]string{
 		"height":           fmt.Sprintf("%d%%", part.Height),
 		"left":             fmt.Sprintf("%d%%", part.X),
@@ -304,13 +304,13 @@ func RenderLayerWithContext(componentID string, part Fragment, renderContext car
 		godom.Id(renderContext.LayerID(componentID)),
 		godom.Class("absolute"),
 		godom.Attr("data-component-id", componentID),
-		godom.Attr("data-component-type", Type),
+		godom.Attr("data-component-kind", Kind),
 		godom.Attr("style", styleString(style)),
 		renderSVG(part),
 	)
 }
 
-func renderSVG(part Fragment) *godom.Node {
+func renderSVG(part Config) *godom.Node {
 	shapeAttrs := []*godom.Node{
 		godom.Attr("fill", part.BackgroundColor),
 		godom.Attr("stroke", part.BorderColor),
@@ -381,10 +381,10 @@ func AllowedShadows() []string {
 	}
 }
 
-func MarshalGenerated(generated fragment.Generated[Fragment]) (json.RawMessage, error) {
+func MarshalGenerated(generated design.GeneratedConfig[Config]) (json.RawMessage, error) {
 	NormalizeGenerated(&generated)
 	if issues := ValidateGenerated(generated); len(issues) > 0 {
-		return nil, fmt.Errorf("invalid shape fragment at %s: %s", issues[0].Path, issues[0].Message)
+		return nil, fmt.Errorf("invalid shape config at %s: %s", issues[0].Path, issues[0].Message)
 	}
 	return json.Marshal(generated)
 }
@@ -409,8 +409,8 @@ func styleString(styles map[string]string) string {
 	return strings.TrimSpace(out.String())
 }
 
-func rangeIssue(path, name string, value, min, max int) fragment.Issue {
-	return fragment.Issue{
+func rangeIssue(path, name string, value, min, max int) design.Issue {
+	return design.Issue{
 		Path:    path,
 		Code:    "out_of_range",
 		Message: fmt.Sprintf("%s must be between %d and %d", name, min, max),

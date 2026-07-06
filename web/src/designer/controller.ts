@@ -1,29 +1,29 @@
-import { addDraftComponent, applyDraftFragment, applyLibraryDesign, fetchDesignLibrary, fetchRenderedDraftCard, resetDraftCard, saveAppliedDesign } from "../api";
+import { addDraftComponent, applyDraftConfig, applyLibraryDesign, fetchDesignLibrary, fetchRenderedDraftCard, resetDraftCard, saveAppliedDesign } from "../api";
 import { byID } from "../dom";
 import { replacePreviewHTML } from "./document";
-import { formatIssues, generateTargetFragment, isFragmentGenerationError, parseGeneratedFragment } from "./fragments";
-import type { DesignLibraryItem, FragmentIssue, GeneratedStyleFragment } from "../types";
+import { formatIssues, generateComponentConfig, isConfigGenerationError, parseGeneratedConfigEnvelope } from "./configs";
+import type { DesignLibraryItem, ConfigIssue, GeneratedConfig } from "../types";
 
 export function initDesigner(): void {
   const form = byID<HTMLFormElement>("card-designer-form");
   if (form) {
     form.addEventListener("submit", (event) => {
-      void generateFragment(event);
+      void generateConfig(event);
     });
   }
-  const apply = byID<HTMLButtonElement>("apply-fragment-btn");
+  const apply = byID<HTMLButtonElement>("apply-config-btn");
   if (apply) {
     apply.addEventListener("click", () => {
-      void applyFragment();
+      void applyConfig();
     });
   }
-  const editor = byID<HTMLTextAreaElement>("fragment-preview");
+  const editor = byID<HTMLTextAreaElement>("config-preview");
   if (editor) {
     editor.addEventListener("input", () => {
-      const hasCandidate = hasEditableFragmentCandidate();
-      const description = byID<HTMLParagraphElement>("fragment-description");
+      const hasCandidate = hasEditableConfigCandidate();
+      const description = byID<HTMLParagraphElement>("config-description");
       if (description && hasCandidate) {
-        description.textContent = "Edited fragment. Apply to validate it against the selected target.";
+        description.textContent = "Edited design. Apply to validate it against the selected config kind.";
       }
       if (apply) {
         apply.disabled = !hasCandidate;
@@ -37,9 +37,9 @@ export function initDesigner(): void {
       void saveAppliedDesignToLibrary();
     });
   }
-  const target = byID<HTMLSelectElement>("fragment-target");
-  if (target) {
-    target.addEventListener("change", () => {
+  const configKind = byID<HTMLSelectElement>("config-target");
+  if (configKind) {
+    configKind.addEventListener("change", () => {
       void loadDesignLibrary();
     });
   }
@@ -50,7 +50,7 @@ export function initDesigner(): void {
     });
   }
   bindAddComponentControls();
-  renderProposedFragment(null);
+  renderProposedConfig(null);
   setSaveEnabled(false);
   void loadDesigner();
 }
@@ -60,7 +60,7 @@ export async function resetDraft(): Promise<void> {
   try {
     const response = await resetDraftCard();
     replacePreviewHTML(response.preview_html);
-    renderProposedFragment(null);
+    renderProposedConfig(null);
     renderDesignLibraryItems(response.library);
     setSaveEnabled(false);
     setDesignerStatus("Ready.", false);
@@ -75,7 +75,7 @@ async function loadDesigner(): Promise<void> {
   try {
     const response = await fetchRenderedDraftCard();
     replacePreviewHTML(response.preview_html);
-    renderProposedFragment(null);
+    renderProposedConfig(null);
     renderDesignLibraryItems(response.library);
     setSaveEnabled(false);
     setDesignerStatus("Ready.", false);
@@ -84,25 +84,25 @@ async function loadDesigner(): Promise<void> {
   }
 }
 
-function renderProposedFragment(fragment: GeneratedStyleFragment | null): void {
-  const preview = byID<HTMLTextAreaElement>("fragment-preview");
-  const description = byID<HTMLParagraphElement>("fragment-description");
-  const apply = byID<HTMLButtonElement>("apply-fragment-btn");
+function renderProposedConfig(config: GeneratedConfig | null): void {
+  const preview = byID<HTMLTextAreaElement>("config-preview");
+  const description = byID<HTMLParagraphElement>("config-description");
+  const apply = byID<HTMLButtonElement>("apply-config-btn");
   if (preview) {
-    preview.value = fragment ? JSON.stringify(fragment, null, 2) : "{}";
+    preview.value = config ? JSON.stringify(config, null, 2) : "{}";
   }
   if (description) {
-    description.textContent = fragment ? fragment.description : "No generated fragment yet.";
+    description.textContent = config ? config.description : "No generated config yet.";
   }
   if (apply) {
-    apply.disabled = !fragment;
+    apply.disabled = !config;
   }
 }
 
-function renderFailedFragment(rawResponse: string, message: string, issues: FragmentIssue[] = []): void {
-  const preview = byID<HTMLTextAreaElement>("fragment-preview");
-  const description = byID<HTMLParagraphElement>("fragment-description");
-  const apply = byID<HTMLButtonElement>("apply-fragment-btn");
+function renderFailedConfig(rawResponse: string, message: string, issues: ConfigIssue[] = []): void {
+  const preview = byID<HTMLTextAreaElement>("config-preview");
+  const description = byID<HTMLParagraphElement>("config-description");
+  const apply = byID<HTMLButtonElement>("apply-config-btn");
   if (preview) {
     preview.value = rawResponse || "{}";
   }
@@ -113,7 +113,7 @@ function renderFailedFragment(rawResponse: string, message: string, issues: Frag
       : "Generation failed. Edit the response below, then apply it to validate.";
   }
   if (apply) {
-    apply.disabled = !hasEditableFragmentCandidate();
+    apply.disabled = !hasEditableConfigCandidate();
   }
   setSaveEnabled(false);
   setDesignerStatus(message, true);
@@ -121,7 +121,7 @@ function renderFailedFragment(rawResponse: string, message: string, issues: Frag
 
 async function loadDesignLibrary(): Promise<void> {
   try {
-    renderDesignLibraryItems(await fetchDesignLibrary(readTarget()));
+    renderDesignLibraryItems(await fetchDesignLibrary(readConfigKind()));
   } catch (error) {
     setDesignerStatus(error instanceof Error ? error.message : "Failed to load design library.", true);
   }
@@ -130,8 +130,8 @@ async function loadDesignLibrary(): Promise<void> {
 function renderDesignLibraryItems(items: DesignLibraryItem[]): void {
   const list = byID<HTMLDivElement>("design-library-list");
   if (!list) return;
-  const target = readTarget();
-  const visibleItems = items.filter((item) => item.target === target);
+  const configKind = readConfigKind();
+  const visibleItems = items.filter((item) => item.componentKind === configKind);
   if (!visibleItems.length) {
     list.innerHTML = '<div class="rounded-md border border-dashed border-[var(--app-border)] px-3 py-4 text-center text-sm text-[var(--app-fg-soft)]">No saved designs.</div>';
     return;
@@ -161,11 +161,11 @@ function setDesignerStatus(message: string, isError: boolean): void {
   status.className = isError ? "mt-4 text-sm text-red-300" : "mt-4 text-sm text-[var(--app-fg-soft)]";
 }
 
-async function generateFragment(event: SubmitEvent): Promise<void> {
+async function generateConfig(event: SubmitEvent): Promise<void> {
   event.preventDefault();
-  const target = readTarget();
-  const isUpdate = (event.submitter as HTMLElement | null)?.id === "update-fragment-btn";
-  const input = byID<HTMLTextAreaElement>("fragment-instruction");
+  const configKind = readConfigKind();
+  const isUpdate = (event.submitter as HTMLElement | null)?.id === "update-config-btn";
+  const input = byID<HTMLTextAreaElement>("config-instruction");
   const instruction = String(input?.value || "").trim();
   if (!instruction) {
     setDesignerStatus("Instruction cannot be empty.", true);
@@ -173,40 +173,40 @@ async function generateFragment(event: SubmitEvent): Promise<void> {
   }
   setBusy(true, isUpdate);
   setSaveEnabled(false);
-  setDesignerStatus(isUpdate ? "Updating fragment..." : "Generating fragment...", false);
+  setDesignerStatus(isUpdate ? "Updating design..." : "Generating design...", false);
   try {
-    const fragment = await generateTargetFragment(target, instruction, isUpdate);
-    renderProposedFragment(fragment);
-    setDesignerStatus(isUpdate ? "Fragment updated. Review it before applying." : "Fragment generated. Review it before applying.", false);
+    const config = await generateComponentConfig(configKind, instruction, isUpdate);
+    renderProposedConfig(config);
+    setDesignerStatus(isUpdate ? "Config updated. Review it before applying." : "Config generated. Review it before applying.", false);
   } catch (error) {
-    if (isFragmentGenerationError(error)) {
-      renderFailedFragment(error.rawResponse, error.message, error.issues);
+    if (isConfigGenerationError(error)) {
+      renderFailedConfig(error.rawResponse, error.message, error.issues);
       return;
     }
-    setDesignerStatus(error instanceof Error ? error.message : "Fragment generation failed.", true);
+    setDesignerStatus(error instanceof Error ? error.message : "Config generation failed.", true);
   } finally {
     setBusy(false, isUpdate);
   }
 }
 
-async function applyFragment(): Promise<void> {
+async function applyConfig(): Promise<void> {
   try {
-    const fragment = readFragmentFromEditor();
+    const config = readConfigFromEditor();
     setBusy(true);
-    setDesignerStatus("Applying fragment...", false);
-    const response = await applyDraftFragment(fragment);
+    setDesignerStatus("Applying design...", false);
+    const response = await applyDraftConfig(config);
     replacePreviewHTML(response.preview_html);
-    renderProposedFragment(response.normalized_fragment);
+    renderProposedConfig(response.normalized_config);
     renderDesignLibraryItems(response.library);
     setSaveEnabled(true);
-    setDesignerStatus("Fragment applied to the preview.", false);
+    setDesignerStatus("Config applied to the preview.", false);
   } catch (error) {
-    if (isFragmentGenerationError(error)) {
-      const editor = byID<HTMLTextAreaElement>("fragment-preview");
-      renderFailedFragment(error.rawResponse || String(editor?.value || ""), error.message, error.issues);
+    if (isConfigGenerationError(error)) {
+      const editor = byID<HTMLTextAreaElement>("config-preview");
+      renderFailedConfig(error.rawResponse || String(editor?.value || ""), error.message, error.issues);
       return;
     }
-    setDesignerStatus(error instanceof Error ? error.message : "Fragment could not be applied.", true);
+    setDesignerStatus(error instanceof Error ? error.message : "Config could not be applied.", true);
   } finally {
     setBusy(false);
   }
@@ -218,7 +218,7 @@ async function applyLibraryItem(itemID: string): Promise<void> {
     setDesignerStatus("Applying library design...", false);
     const response = await applyLibraryDesign(itemID);
     replacePreviewHTML(response.preview_html);
-    renderProposedFragment(response.normalized_fragment);
+    renderProposedConfig(response.normalized_config);
     renderDesignLibraryItems(response.library);
     setSaveEnabled(true);
     setDesignerStatus("Library design applied to the preview.", false);
@@ -246,8 +246,8 @@ function setSaveEnabled(enabled: boolean): void {
   save.disabled = !enabled;
 }
 
-function readTarget(): string {
-  const select = byID<HTMLSelectElement>("fragment-target");
+function readConfigKind(): string {
+  const select = byID<HTMLSelectElement>("config-target");
   switch (select?.value) {
     case "border":
     case "textarea":
@@ -274,10 +274,10 @@ function bindAddComponentControls(): void {
   });
 }
 
-async function addComponent(componentType: "textarea" | "shape"): Promise<void> {
+async function addComponent(componentKind: "textarea" | "shape"): Promise<void> {
   try {
     setDesignerStatus("Adding component...", false);
-    const response = await addDraftComponent(componentType);
+    const response = await addDraftComponent(componentKind);
     renderDesignLibraryItems(response.library);
     setDesignerStatus("Component added to the draft card.", false);
     document.dispatchEvent(new CustomEvent("living-card:interactive-refresh"));
@@ -323,9 +323,9 @@ function fileToDataURL(file: File): Promise<string> {
 }
 
 function setBusy(isBusy: boolean, isUpdate = false): void {
-  const generate = byID<HTMLButtonElement>("generate-fragment-btn");
-  const update = byID<HTMLButtonElement>("update-fragment-btn");
-  const apply = byID<HTMLButtonElement>("apply-fragment-btn");
+  const generate = byID<HTMLButtonElement>("generate-config-btn");
+  const update = byID<HTMLButtonElement>("update-config-btn");
+  const apply = byID<HTMLButtonElement>("apply-config-btn");
   if (generate) {
     generate.disabled = isBusy;
     generate.textContent = isBusy && !isUpdate ? "Generating..." : "Generate";
@@ -335,17 +335,17 @@ function setBusy(isBusy: boolean, isUpdate = false): void {
     update.textContent = isBusy && isUpdate ? "Updating..." : "Update";
   }
   if (apply) {
-    apply.disabled = isBusy || !hasEditableFragmentCandidate();
+    apply.disabled = isBusy || !hasEditableConfigCandidate();
   }
 }
 
-function readFragmentFromEditor(): GeneratedStyleFragment {
-  const editor = byID<HTMLTextAreaElement>("fragment-preview");
-  return parseGeneratedFragment(String(editor?.value || ""));
+function readConfigFromEditor(): GeneratedConfig {
+  const editor = byID<HTMLTextAreaElement>("config-preview");
+  return parseGeneratedConfigEnvelope(String(editor?.value || ""));
 }
 
-function hasEditableFragmentCandidate(): boolean {
-  const editor = byID<HTMLTextAreaElement>("fragment-preview");
+function hasEditableConfigCandidate(): boolean {
+  const editor = byID<HTMLTextAreaElement>("config-preview");
   const raw = String(editor?.value || "").trim();
   return Boolean(raw && raw !== "{}");
 }

@@ -5,16 +5,16 @@ import (
 	"testing"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
 func TestValidateGeneratedAcceptsSafeImageDataURL(t *testing.T) {
 	t.Parallel()
 
-	generated := fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "Safe image",
-		Fragment:    DefaultFragment(),
+	generated := design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "Safe image",
+		Config:        DefaultConfig(),
 	}
 	NormalizeGenerated(&generated)
 	if issues := ValidateGenerated(generated); len(issues) > 0 {
@@ -38,9 +38,9 @@ func TestValidateGeneratedRejectsUnsafeImageSources(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			part := DefaultFragment()
+			part := DefaultConfig()
 			part.Src = test.src
-			generated := fragment.Generated[Fragment]{Target: Type, Description: "Unsafe", Fragment: part}
+			generated := design.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Unsafe", Config: part}
 			NormalizeGenerated(&generated)
 			issues := ValidateGenerated(generated)
 			if len(issues) == 0 || issues[0].Code != test.code {
@@ -53,11 +53,11 @@ func TestValidateGeneratedRejectsUnsafeImageSources(t *testing.T) {
 func TestRenderLayerIncludesImageAttributes(t *testing.T) {
 	t.Parallel()
 
-	body := RenderLayer("image-1", DefaultFragment()).Render()
+	body := RenderLayer("image-1", DefaultConfig()).Render()
 	for _, marker := range []string{
 		`id="image-1-layer"`,
 		`data-component-id="image-1"`,
-		`data-component-type="image"`,
+		`data-component-kind="image"`,
 		`<img`,
 		`src="data:image/gif;base64`,
 	} {
@@ -70,7 +70,7 @@ func TestRenderLayerIncludesImageAttributes(t *testing.T) {
 func TestRenderLayerWithContextScopesImageID(t *testing.T) {
 	t.Parallel()
 
-	body := RenderLayerWithContext("image-1", DefaultFragment(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
+	body := RenderLayerWithContext("image-1", DefaultConfig(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
 	for _, marker := range []string{
 		`id="game-world-card-image-1-layer"`,
 		`data-component-id="image-1"`,

@@ -1,12 +1,12 @@
-import type { CardHitZone, ComponentTarget, ComponentType } from "../types";
+import type { CardHitZone, ComponentTarget, ComponentKind } from "../types";
 
 const borderBandPX = 24;
 
 export interface CardHit {
-  target: ComponentTarget;
+  configKind: ComponentTarget;
   zone: CardHitZone;
   componentId: string;
-  componentType: ComponentType;
+  componentKind: ComponentKind;
   trait: string;
   x: number;
   y: number;
@@ -31,25 +31,25 @@ export function hitTestCard(event: PointerEvent, preview: HTMLElement): CardHit 
   }
 
   const target = event.target instanceof Element ? event.target : null;
-  const component = target?.closest<HTMLElement>("[data-component-id][data-component-type]");
-  const componentType = component?.dataset.componentType as ComponentType | undefined;
-  if (component && componentType === "shape") {
+  const component = target?.closest<HTMLElement>("[data-component-id][data-component-kind]");
+  const componentKind = component?.dataset.componentKind as ComponentKind | undefined;
+  if (component && componentKind === "shape") {
     return componentHit(component, "shape", "shape", "geometry", x, y, event);
   }
-  if (component && componentType === "textarea") {
+  if (component && componentKind === "textarea") {
     return componentHit(component, "textarea", "textarea", "text", x, y, event);
   }
 
   return cardRootHit("background", "background", x, y, event);
 }
 
-function cardRootHit(target: ComponentTarget, zone: CardHitZone, x: number, y: number, event: PointerEvent): CardHit {
+function cardRootHit(configKind: ComponentTarget, zone: CardHitZone, x: number, y: number, event: PointerEvent): CardHit {
   return {
-    target,
+    configKind,
     zone,
     componentId: "card-root",
-    componentType: "card",
-    trait: target === "border" ? "border" : "background",
+    componentKind: "card",
+    trait: configKind === "border" ? "border" : "background",
     x,
     y,
     clientX: event.clientX,
@@ -59,7 +59,7 @@ function cardRootHit(target: ComponentTarget, zone: CardHitZone, x: number, y: n
 
 function componentHit(
   element: HTMLElement,
-  target: ComponentTarget,
+  configKind: ComponentTarget,
   zone: CardHitZone,
   trait: string,
   x: number,
@@ -67,10 +67,10 @@ function componentHit(
   event: PointerEvent,
 ): CardHit {
   return {
-    target,
+    configKind,
     zone,
     componentId: element.dataset.componentId || "",
-    componentType: (element.dataset.componentType || target) as ComponentType,
+    componentKind: (element.dataset.componentKind || configKind) as ComponentKind,
     trait,
     x,
     y,

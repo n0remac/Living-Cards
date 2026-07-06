@@ -245,8 +245,8 @@ function existingControllerValue(): number | null {
 }
 
 function sliderValueFromNode(node: ComponentNode): number | null {
-  if (node.type === "slider" && node.fragment && typeof node.fragment.value === "number") {
-    return clampControllerValue(node.fragment.value);
+  if (node.componentKind === "slider" && node.config && typeof node.config.value === "number") {
+    return clampControllerValue(node.config.value);
   }
   for (const child of node.children || []) {
     const value = sliderValueFromNode(child);
@@ -279,15 +279,15 @@ function createControllerDocument(value: number): CardDocument {
     name: "Regulator Controller",
     root: {
       id: "generator-regulator-controller-root",
-      type: "card",
-      fragment: {
+      componentKind: "card",
+      config: {
         padding_px: 18,
         shadow: "0 24px 60px rgba(8,47,73,0.34)",
       },
       children: [{
         id: "regulator-output-slider",
-        type: "slider",
-        fragment: {
+        componentKind: "slider",
+        config: {
           label: "Output",
           min: 0,
           max: 100,

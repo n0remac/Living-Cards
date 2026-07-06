@@ -8,12 +8,12 @@ import (
 	godom "github.com/n0remac/GoDom/html"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
-const Type = "slider"
+const Kind = "slider"
 
-type Fragment struct {
+type Config struct {
 	Label string `json:"label"`
 	Min   int    `json:"min"`
 	Max   int    `json:"max"`
@@ -21,8 +21,8 @@ type Fragment struct {
 	Value int    `json:"value"`
 }
 
-func DefaultFragment() Fragment {
-	return Fragment{
+func DefaultConfig() Config {
+	return Config{
 		Label: "Output",
 		Min:   0,
 		Max:   100,
@@ -33,15 +33,15 @@ func DefaultFragment() Fragment {
 
 func Definition() card.Definition {
 	return card.Definition{
-		Type: Type,
+		ComponentKind: Kind,
 		Contribute: func(node card.Node, renderContext card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeFragment[Fragment](node)
+			part, err := card.DecodeConfig[Config](node)
 			if err != nil {
 				return card.Contribution{}, err
 			}
-			part = NormalizeFragment(part)
-			if issues := ValidateFragment(part); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid slider fragment at %s: %s", issues[0].Path, issues[0].Message)
+			part = NormalizeConfig(part)
+			if issues := ValidateConfig(part); len(issues) > 0 {
+				return card.Contribution{}, fmt.Errorf("invalid slider config at %s: %s", issues[0].Path, issues[0].Message)
 			}
 			return card.Contribution{
 				Layers: []*godom.Node{RenderLayerWithContext(node.ID, part, renderContext)},
@@ -50,8 +50,8 @@ func Definition() card.Definition {
 	}
 }
 
-func NormalizeFragment(part Fragment) Fragment {
-	defaults := DefaultFragment()
+func NormalizeConfig(part Config) Config {
+	defaults := DefaultConfig()
 	part.Label = strings.TrimSpace(part.Label)
 	if part.Label == "" {
 		part.Label = defaults.Label
@@ -69,66 +69,66 @@ func NormalizeFragment(part Fragment) Fragment {
 	return part
 }
 
-func ValidateFragment(part Fragment) []fragment.Issue {
-	return ValidateGenerated(fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "Slider fragment",
-		Fragment:    part,
+func ValidateConfig(part Config) []design.Issue {
+	return ValidateGenerated(design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "Slider config",
+		Config:        part,
 	})
 }
 
-func NormalizeGenerated(generated *fragment.Generated[Fragment]) {
+func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
-	generated.Target = strings.TrimSpace(generated.Target)
+	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Fragment = NormalizeFragment(generated.Fragment)
+	generated.Config = NormalizeConfig(generated.Config)
 }
 
-func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue {
-	var issues []fragment.Issue
-	if strings.TrimSpace(generated.Fragment.Label) == "" {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.label",
+func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
+	var issues []design.Issue
+	if strings.TrimSpace(generated.Config.Label) == "" {
+		issues = append(issues, design.Issue{
+			Path:    "config.label",
 			Code:    "required",
 			Message: "label is required",
 		})
 	}
-	if generated.Fragment.Min < 0 || generated.Fragment.Min > 100 {
-		issues = append(issues, rangeIssue("fragment.min", "min", generated.Fragment.Min, 0, 100))
+	if generated.Config.Min < 0 || generated.Config.Min > 100 {
+		issues = append(issues, rangeIssue("config.min", "min", generated.Config.Min, 0, 100))
 	}
-	if generated.Fragment.Max < 0 || generated.Fragment.Max > 100 {
-		issues = append(issues, rangeIssue("fragment.max", "max", generated.Fragment.Max, 0, 100))
+	if generated.Config.Max < 0 || generated.Config.Max > 100 {
+		issues = append(issues, rangeIssue("config.max", "max", generated.Config.Max, 0, 100))
 	}
-	if generated.Fragment.Max < generated.Fragment.Min {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.max",
+	if generated.Config.Max < generated.Config.Min {
+		issues = append(issues, design.Issue{
+			Path:    "config.max",
 			Code:    "out_of_range",
 			Message: "max must be greater than or equal to min",
-			Actual:  generated.Fragment.Max,
+			Actual:  generated.Config.Max,
 		})
 	}
-	if generated.Fragment.Step < 1 || generated.Fragment.Step > 100 {
-		issues = append(issues, rangeIssue("fragment.step", "step", generated.Fragment.Step, 1, 100))
+	if generated.Config.Step < 1 || generated.Config.Step > 100 {
+		issues = append(issues, rangeIssue("config.step", "step", generated.Config.Step, 1, 100))
 	}
-	if generated.Fragment.Value < generated.Fragment.Min || generated.Fragment.Value > generated.Fragment.Max {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.value",
+	if generated.Config.Value < generated.Config.Min || generated.Config.Value > generated.Config.Max {
+		issues = append(issues, design.Issue{
+			Path:    "config.value",
 			Code:    "out_of_range",
 			Message: "value must be between min and max",
-			Actual:  generated.Fragment.Value,
+			Actual:  generated.Config.Value,
 		})
 	}
 	return issues
 }
 
-func RenderLayer(componentID string, part Fragment) *godom.Node {
+func RenderLayer(componentID string, part Config) *godom.Node {
 	return RenderLayerWithContext(componentID, part, card.RenderContext{})
 }
 
-func RenderLayerWithContext(componentID string, part Fragment, renderContext card.RenderContext) *godom.Node {
-	part = NormalizeFragment(part)
+func RenderLayerWithContext(componentID string, part Config, renderContext card.RenderContext) *godom.Node {
+	part = NormalizeConfig(part)
 	style := map[string]string{
 		"background":     "rgba(15,23,42,0.72)",
 		"border":         "1px solid rgba(125,211,252,0.42)",
@@ -149,7 +149,7 @@ func RenderLayerWithContext(componentID string, part Fragment, renderContext car
 		godom.Id(renderContext.LayerID(componentID)),
 		godom.Class("absolute"),
 		godom.Attr("data-component-id", componentID),
-		godom.Attr("data-component-type", Type),
+		godom.Attr("data-component-kind", Kind),
 		godom.Attr("style", styleString(style)),
 		godom.Div(
 			godom.Class("flex items-center justify-between gap-2 text-xs font-bold uppercase"),
@@ -169,8 +169,8 @@ func RenderLayerWithContext(componentID string, part Fragment, renderContext car
 	)
 }
 
-func rangeIssue(path, field string, actual, min, max int) fragment.Issue {
-	return fragment.Issue{
+func rangeIssue(path, field string, actual, min, max int) design.Issue {
+	return design.Issue{
 		Path:    path,
 		Code:    "out_of_range",
 		Message: fmt.Sprintf("%s must be between %d and %d", field, min, max),

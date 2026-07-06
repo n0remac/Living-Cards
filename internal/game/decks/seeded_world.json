@@ -23,24 +23,24 @@
           "name": "Rusted Cell Door",
           "root": {
             "id": "rusted-cell-door-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "rusted-cell-door-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#201815",
                   "css": "background: #201815;"
                 }
               },
               {
                 "id": "rusted-cell-door-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#5b4636",
@@ -49,8 +49,8 @@
               },
               {
                 "id": "door-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "LOCKED",
                   "font_family": "system",
                   "font_size_px": 34,
@@ -67,8 +67,8 @@
               },
               {
                 "id": "door-panel",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "roundedRectangle",
                   "x": 50,
                   "y": 51,
@@ -82,8 +82,8 @@
               },
               {
                 "id": "door-window",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "roundedRectangle",
                   "x": 50,
                   "y": 32,
@@ -97,8 +97,8 @@
               },
               {
                 "id": "door-knob",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "circle",
                   "x": 68,
                   "y": 54,
@@ -112,8 +112,8 @@
               },
               {
                 "id": "door-status",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "Requires a bent iron key.",
                   "font_family": "system",
                   "font_size_px": 15,
@@ -136,24 +136,24 @@
           "name": "Rusted Cell Door",
           "root": {
             "id": "rusted-cell-door-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "rusted-cell-door-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#10231f",
                   "css": "background: #10231f;"
                 }
               },
               {
                 "id": "rusted-cell-door-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#5b4636",
@@ -162,8 +162,8 @@
               },
               {
                 "id": "door-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "OPEN",
                   "font_family": "system",
                   "font_size_px": 34,
@@ -180,8 +180,8 @@
               },
               {
                 "id": "door-panel",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "roundedRectangle",
                   "x": 50,
                   "y": 51,
@@ -195,8 +195,8 @@
               },
               {
                 "id": "door-window",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "roundedRectangle",
                   "x": 50,
                   "y": 32,
@@ -210,8 +210,8 @@
               },
               {
                 "id": "door-knob",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "circle",
                   "x": 68,
                   "y": 54,
@@ -225,8 +225,8 @@
               },
               {
                 "id": "door-status",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "A dark route has appeared behind the door.",
                   "font_family": "system",
                   "font_size_px": 15,
@@ -262,24 +262,24 @@
           "name": "Inventory Label",
           "root": {
             "id": "inventory-label-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "inventory-label-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#18212f",
                   "css": "background: #18212f;"
                 }
               },
               {
                 "id": "inventory-label-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#f59e0b",
@@ -288,8 +288,8 @@
               },
               {
                 "id": "inventory-label-mark",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "diamond",
                   "x": 50,
                   "y": 28,
@@ -303,8 +303,8 @@
               },
               {
                 "id": "inventory-label-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "INVENTORY LABEL",
                   "font_family": "system",
                   "font_size_px": 22,
@@ -321,8 +321,8 @@
               },
               {
                 "id": "inventory-label-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "A little brass plate reads: CARRY ONLY WHAT OPENS A WAY.",
                   "font_family": "system",
                   "font_size_px": 16,
@@ -358,24 +358,24 @@
           "name": "Bent Iron Key",
           "root": {
             "id": "bent-iron-key-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "bent-iron-key-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#17211d",
                   "css": "background: #17211d;"
                 }
               },
               {
                 "id": "bent-iron-key-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#d6a84f",
@@ -384,8 +384,8 @@
               },
               {
                 "id": "key-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "BENT IRON KEY",
                   "font_family": "system",
                   "font_size_px": 24,
@@ -402,8 +402,8 @@
               },
               {
                 "id": "key-ring",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "circle",
                   "x": 35,
                   "y": 47,
@@ -417,8 +417,8 @@
               },
               {
                 "id": "key-stem",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "rectangle",
                   "x": 56,
                   "y": 47,
@@ -432,8 +432,8 @@
               },
               {
                 "id": "key-tooth-a",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "rectangle",
                   "x": 74,
                   "y": 53,
@@ -447,8 +447,8 @@
               },
               {
                 "id": "key-tooth-b",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "rectangle",
                   "x": 82,
                   "y": 51,
@@ -462,8 +462,8 @@
               },
               {
                 "id": "key-note",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "Its teeth match a rusted lock.",
                   "font_family": "system",
                   "font_size_px": 16,
@@ -499,24 +499,24 @@
           "name": "Faded Photograph",
           "root": {
             "id": "faded-photograph-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "faded-photograph-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#171717",
                   "css": "background: #171717;"
                 }
               },
               {
                 "id": "faded-photograph-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#94a3b8",
@@ -525,8 +525,8 @@
               },
               {
                 "id": "photo-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "FADED PHOTOGRAPH",
                   "font_family": "system",
                   "font_size_px": 20,
@@ -543,8 +543,8 @@
               },
               {
                 "id": "photo-image",
-                "type": "image",
-                "fragment": {
+                "componentKind": "image",
+                "config": {
                   "src": "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
                   "alt": "A nearly blank old photograph",
                   "x": 50,
@@ -558,8 +558,8 @@
               },
               {
                 "id": "photo-note",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "The picture has forgotten almost everything.",
                   "font_family": "system",
                   "font_size_px": 15,
@@ -595,24 +595,24 @@
           "name": "Sleeping Switch",
           "root": {
             "id": "sleeping-switch-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "sleeping-switch-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#211827",
                   "css": "background: #211827;"
                 }
               },
               {
                 "id": "sleeping-switch-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#a78bfa",
@@ -621,8 +621,8 @@
               },
               {
                 "id": "sleeping-switch-mark",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "diamond",
                   "x": 50,
                   "y": 28,
@@ -636,8 +636,8 @@
               },
               {
                 "id": "sleeping-switch-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "SLEEPING SWITCH",
                   "font_family": "system",
                   "font_size_px": 22,
@@ -654,8 +654,8 @@
               },
               {
                 "id": "sleeping-switch-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "A switch card dreams of being important. It is not connected to anything yet.",
                   "font_family": "system",
                   "font_size_px": 16,
@@ -678,24 +678,24 @@
           "name": "Sleeping Switch",
           "root": {
             "id": "sleeping-switch-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "sleeping-switch-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#10231f",
                   "css": "background: #10231f;"
                 }
               },
               {
                 "id": "sleeping-switch-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#34d399",
@@ -704,8 +704,8 @@
               },
               {
                 "id": "sleeping-switch-mark",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "diamond",
                   "x": 50,
                   "y": 28,
@@ -719,8 +719,8 @@
               },
               {
                 "id": "sleeping-switch-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "SWITCH ONLINE",
                   "font_family": "system",
                   "font_size_px": 22,
@@ -737,8 +737,8 @@
               },
               {
                 "id": "sleeping-switch-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "The fuse hums. Somewhere deeper in the room, a generator panel wakes.",
                   "font_family": "system",
                   "font_size_px": 16,
@@ -773,29 +773,29 @@
       },
       "effects": [
         {
-          "type": "setFlag",
+          "effectKind": "setFlag",
           "flag": "doorUnlocked",
           "value": true
         },
         {
-          "type": "setCardState",
+          "effectKind": "setCardState",
           "key": "locked",
           "value": false
         },
         {
-          "type": "removeCardTags",
+          "effectKind": "removeCardTags",
           "tags": ["locked"]
         },
         {
-          "type": "setDocumentVariant",
+          "effectKind": "setDocumentVariant",
           "variant": "open"
         },
         {
-          "type": "loadDeck",
+          "effectKind": "loadDeck",
           "deckId": "fuse_room"
         },
         {
-          "type": "setMessage",
+          "effectKind": "setMessage",
           "message": "The iron key catches. The door card unlocks."
         }
       ]

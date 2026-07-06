@@ -23,24 +23,24 @@
           "name": "Fuse Box Note",
           "root": {
             "id": "fuse-box-note-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "fuse-box-note-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#17211d",
                   "css": "background: #17211d;"
                 }
               },
               {
                 "id": "fuse-box-note-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#34d399",
@@ -49,8 +49,8 @@
               },
               {
                 "id": "fuse-box-note-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "FUSE BOX NOTE",
                   "font_family": "system",
                   "font_size_px": 22,
@@ -67,8 +67,8 @@
               },
               {
                 "id": "fuse-box-note-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "A label points under the machinery: SPARE GLASS FUSE.",
                   "font_family": "system",
                   "font_size_px": 16,
@@ -104,24 +104,24 @@
           "name": "Glass Fuse",
           "root": {
             "id": "glass-fuse-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "glass-fuse-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#10231f",
                   "css": "background: #10231f;"
                 }
               },
               {
                 "id": "glass-fuse-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#fde68a",
@@ -130,8 +130,8 @@
               },
               {
                 "id": "glass-fuse-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "GLASS FUSE",
                   "font_family": "system",
                   "font_size_px": 24,
@@ -148,8 +148,8 @@
               },
               {
                 "id": "glass-fuse-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "A thin fuse, still clear enough to carry current.",
                   "font_family": "system",
                   "font_size_px": 16,
@@ -185,24 +185,24 @@
           "name": "Copper Washer",
           "root": {
             "id": "copper-washer-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "copper-washer-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#24160f",
                   "css": "background: #24160f;"
                 }
               },
               {
                 "id": "copper-washer-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#b45309",
@@ -211,8 +211,8 @@
               },
               {
                 "id": "copper-washer-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "COPPER WASHER",
                   "font_family": "system",
                   "font_size_px": 22,
@@ -229,8 +229,8 @@
               },
               {
                 "id": "copper-washer-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "It shines like a useful part, but it has no bite.",
                   "font_family": "system",
                   "font_size_px": 16,
@@ -266,24 +266,24 @@
           "name": "Burnt Ribbon",
           "root": {
             "id": "burnt-ribbon-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "burnt-ribbon-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#1f1f1f",
                   "css": "background: #1f1f1f;"
                 }
               },
               {
                 "id": "burnt-ribbon-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#78716c",
@@ -292,8 +292,8 @@
               },
               {
                 "id": "burnt-ribbon-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "BURNT RIBBON",
                   "font_family": "system",
                   "font_size_px": 22,
@@ -310,8 +310,8 @@
               },
               {
                 "id": "burnt-ribbon-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "A strip of insulation curls into ash.",
                   "font_family": "system",
                   "font_size_px": 16,
@@ -347,38 +347,38 @@
       },
       "effects": [
         {
-          "type": "setFlag",
+          "effectKind": "setFlag",
           "flag": "switchPowered",
           "value": true
         },
         {
-          "type": "setCardState",
+          "effectKind": "setCardState",
           "cardId": "sleeping-switch",
           "key": "powered",
           "value": true
         },
         {
-          "type": "setCardState",
+          "effectKind": "setCardState",
           "cardId": "sleeping-switch",
           "key": "useful",
           "value": true
         },
         {
-          "type": "removeCardTags",
+          "effectKind": "removeCardTags",
           "cardId": "sleeping-switch",
           "tags": ["decoy"]
         },
         {
-          "type": "setDocumentVariant",
+          "effectKind": "setDocumentVariant",
           "cardId": "sleeping-switch",
           "variant": "powered"
         },
         {
-          "type": "loadDeck",
+          "effectKind": "loadDeck",
           "deckId": "generator_room"
         },
         {
-          "type": "setMessage",
+          "effectKind": "setMessage",
           "message": "The glass fuse seats with a green snap. The sleeping switch flips awake."
         }
       ]

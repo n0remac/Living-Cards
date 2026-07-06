@@ -10,7 +10,7 @@ import (
 
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/slider"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 	"github.com/n0remac/Living-Card/internal/ollama"
 )
 
@@ -49,18 +49,18 @@ func TestPageRendersInteractiveStageWorkflow(t *testing.T) {
 		`id="stage-edge-controls-status"`,
 		`id="reset-draft-btn"`,
 		`id="designer-overlay"`,
-		`id="fragment-target"`,
+		`id="config-target"`,
 		`value="background"`,
 		`value="border"`,
 		`value="textarea"`,
 		`value="image"`,
-		`id="generate-fragment-btn"`,
-		`id="update-fragment-btn"`,
+		`id="generate-config-btn"`,
+		`id="update-config-btn"`,
 		`id="design-library-list"`,
 		`id="add-textarea-component-btn"`,
 		`id="add-shape-component-btn"`,
 		`id="add-image-component-input"`,
-		`id="fragment-preview"`,
+		`id="config-preview"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("page missing %s:\n%s", marker, body)
@@ -108,7 +108,7 @@ func TestDraftCardResourceReturnsDefaultDocument(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &document); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if document.CardID != cardcomponent.DefaultCardID || document.Root.Type != cardcomponent.Type {
+	if document.CardID != cardcomponent.DefaultCardID || document.Root.ComponentKind != cardcomponent.Kind {
 		t.Fatalf("document = %#v", document)
 	}
 	if len(document.Root.Children) != 3 {
@@ -152,11 +152,11 @@ func TestInteractiveDraftCardResourceReturnsGameStateAndPreviewHTML(t *testing.T
 		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 	}
 	var payload struct {
-		Document         cardcomponent.Document      `json:"document"`
-		GameState        GameState                   `json:"gameState"`
-		PreviewHTML      string                      `json:"preview_html"`
-		AvailableTargets []string                    `json:"availableTargets"`
-		Library          []cardcomponent.LibraryItem `json:"library"`
+		Document             cardcomponent.Document      `json:"document"`
+		GameState            GameState                   `json:"gameState"`
+		PreviewHTML          string                      `json:"preview_html"`
+		AvailableConfigKinds []string                    `json:"availableConfigKinds"`
+		Library              []cardcomponent.LibraryItem `json:"library"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
@@ -167,8 +167,8 @@ func TestInteractiveDraftCardResourceReturnsGameStateAndPreviewHTML(t *testing.T
 	if payload.GameState.Level != 1 || payload.GameState.XP != 0 || payload.GameState.TapCount != 0 {
 		t.Fatalf("gameState = %#v", payload.GameState)
 	}
-	if !hasString(payload.AvailableTargets, "background") || !hasString(payload.AvailableTargets, "border") {
-		t.Fatalf("availableTargets = %#v", payload.AvailableTargets)
+	if !hasString(payload.AvailableConfigKinds, "background") || !hasString(payload.AvailableConfigKinds, "border") {
+		t.Fatalf("availableConfigKinds = %#v", payload.AvailableConfigKinds)
 	}
 	if len(payload.Library) == 0 {
 		t.Fatal("library should include seeded presets")
@@ -300,7 +300,7 @@ func TestGameSaveControllerRejectsMalformedDocument(t *testing.T) {
 		"document": cardcomponent.Document{
 			CardID: "bad-controller",
 			Name:   "Bad Controller",
-			Root:   cardcomponent.Node{ID: "bad-controller-root", Type: cardcomponent.Type},
+			Root:   cardcomponent.Node{ID: "bad-controller-root", ComponentKind: cardcomponent.Kind},
 		},
 	})
 	if recorder.Code != http.StatusBadRequest {
@@ -333,7 +333,7 @@ func TestGameSaveControllerAddsRenderedLibraryCard(t *testing.T) {
 	if controller == nil {
 		t.Fatalf("library = %#v, want regulator controller", payload.Library)
 	}
-	if !strings.Contains(controller.PreviewHTML, `data-component-type="slider"`) || !strings.Contains(controller.PreviewHTML, `value="73"`) {
+	if !strings.Contains(controller.PreviewHTML, `data-component-kind="slider"`) || !strings.Contains(controller.PreviewHTML, `value="73"`) {
 		t.Fatalf("controller preview missing slider: %s", controller.PreviewHTML)
 	}
 }
@@ -406,7 +406,7 @@ func TestGameCollectRejectsDecoyCards(t *testing.T) {
 	}
 }
 
-func TestTapDraftCardAppliesRandomFragmentsAndProgresses(t *testing.T) {
+func TestTapDraftCardAppliesRandomConfigsAndProgresses(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -423,7 +423,7 @@ func TestTapDraftCardAppliesRandomFragmentsAndProgresses(t *testing.T) {
 
 			mux := testMux(t, nil)
 			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"`+test.target+`","zone":"`+test.target+`","x":0.2,"y":0.4}`))
+			request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"`+test.target+`","zone":"`+test.target+`","x":0.2,"y":0.4}`))
 			request.Header.Set("Content-Type", "application/json")
 			mux.ServeHTTP(recorder, request)
 
@@ -431,11 +431,11 @@ func TestTapDraftCardAppliesRandomFragmentsAndProgresses(t *testing.T) {
 				t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 			}
 			var payload struct {
-				Document        cardcomponent.Document `json:"document"`
-				GameState       GameState              `json:"gameState"`
-				AppliedFragment json.RawMessage        `json:"appliedFragment"`
-				PreviewHTML     string                 `json:"preview_html"`
-				Events          []CardEvent            `json:"events"`
+				Document      cardcomponent.Document `json:"document"`
+				GameState     GameState              `json:"gameState"`
+				AppliedConfig json.RawMessage        `json:"appliedConfig"`
+				PreviewHTML   string                 `json:"preview_html"`
+				Events        []CardEvent            `json:"events"`
 			}
 			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 				t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
@@ -443,11 +443,11 @@ func TestTapDraftCardAppliesRandomFragmentsAndProgresses(t *testing.T) {
 			if payload.GameState.TapCount != 1 || payload.GameState.XP != 1 || payload.GameState.Level != 1 {
 				t.Fatalf("gameState = %#v", payload.GameState)
 			}
-			if !hasEvent(payload.Events, "fragmentApplied", test.target) || !hasEvent(payload.Events, "xpGained", "") {
+			if !hasEvent(payload.Events, "configApplied", test.target) || !hasEvent(payload.Events, "xpGained", "") {
 				t.Fatalf("events = %#v", payload.Events)
 			}
-			if !strings.Contains(string(payload.AppliedFragment), test.field) {
-				t.Fatalf("appliedFragment = %s, want field %s", string(payload.AppliedFragment), test.field)
+			if !strings.Contains(string(payload.AppliedConfig), test.field) {
+				t.Fatalf("appliedConfig = %s, want field %s", string(payload.AppliedConfig), test.field)
 			}
 			if !strings.Contains(payload.PreviewHTML, `id="draft-card-preview"`) {
 				t.Fatalf("preview_html did not include rendered card: %s", payload.PreviewHTML)
@@ -466,7 +466,7 @@ func TestTapDraftCardReturnsLevelUpEvent(t *testing.T) {
 	}
 	for index := 0; index < 5; index++ {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"border","zone":"border","x":0.05,"y":0.5}`))
 		request.Header.Set("Content-Type", "application/json")
 		mux.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {
@@ -504,7 +504,7 @@ func TestTapDraftCardUnlocksSimpleControlsAtLevelFive(t *testing.T) {
 			x = "0.5"
 		}
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"`+target+`","zone":"`+target+`","x":`+x+`,"y":0.5}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"`+target+`","zone":"`+target+`","x":`+x+`,"y":0.5}`))
 		request.Header.Set("Content-Type", "application/json")
 		mux.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {
@@ -527,11 +527,11 @@ func TestTapDraftCardUnlocksSimpleControlsAtLevelFive(t *testing.T) {
 	if !hasString(payload.GameState.UnlockedModes, "simpleControls") {
 		t.Fatalf("unlocked modes = %#v, want simpleControls", payload.GameState.UnlockedModes)
 	}
-	if !hasString(payload.GameState.TargetProgress["background"].UnlockedModes, "simpleControls") {
-		t.Fatalf("background progress = %#v, want simpleControls", payload.GameState.TargetProgress["background"])
+	if !hasString(payload.GameState.ComponentKindProgress["background"].UnlockedModes, "simpleControls") {
+		t.Fatalf("background progress = %#v, want simpleControls", payload.GameState.ComponentKindProgress["background"])
 	}
-	if !hasString(payload.GameState.TargetProgress["border"].UnlockedModes, "simpleControls") {
-		t.Fatalf("border progress = %#v, want simpleControls", payload.GameState.TargetProgress["border"])
+	if !hasString(payload.GameState.ComponentKindProgress["border"].UnlockedModes, "simpleControls") {
+		t.Fatalf("border progress = %#v, want simpleControls", payload.GameState.ComponentKindProgress["border"])
 	}
 }
 
@@ -540,7 +540,7 @@ func TestTapDraftCardHandlesLockedAndInvalidTargets(t *testing.T) {
 
 	mux := testMux(t, nil)
 	lockedRecorder := httptest.NewRecorder()
-	lockedRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"textarea","zone":"textarea","x":0.5,"y":0.5}`))
+	lockedRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"textarea","zone":"textarea","x":0.5,"y":0.5}`))
 	lockedRequest.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(lockedRecorder, lockedRequest)
 	if lockedRecorder.Code != http.StatusOK {
@@ -558,7 +558,7 @@ func TestTapDraftCardHandlesLockedAndInvalidTargets(t *testing.T) {
 	}
 
 	invalidRecorder := httptest.NewRecorder()
-	invalidRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"shadow","zone":"shadow","x":0.5,"y":0.5}`))
+	invalidRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"shadow","zone":"shadow","x":0.5,"y":0.5}`))
 	invalidRequest.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(invalidRecorder, invalidRequest)
 	if invalidRecorder.Code != http.StatusBadRequest {
@@ -586,17 +586,17 @@ func TestControlChangeDraftCardAppliesUnlockedColors(t *testing.T) {
 			levelDraftCardToFive(t, mux)
 
 			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"target":"`+test.target+`","color":"`+test.color+`"}`))
+			request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"componentKind":"`+test.target+`","color":"`+test.color+`"}`))
 			request.Header.Set("Content-Type", "application/json")
 			mux.ServeHTTP(recorder, request)
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 			}
 			var payload struct {
-				GameState       GameState       `json:"gameState"`
-				AppliedFragment json.RawMessage `json:"appliedFragment"`
-				PreviewHTML     string          `json:"preview_html"`
-				Events          []CardEvent     `json:"events"`
+				GameState     GameState       `json:"gameState"`
+				AppliedConfig json.RawMessage `json:"appliedConfig"`
+				PreviewHTML   string          `json:"preview_html"`
+				Events        []CardEvent     `json:"events"`
 			}
 			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 				t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
@@ -604,14 +604,14 @@ func TestControlChangeDraftCardAppliesUnlockedColors(t *testing.T) {
 			if payload.GameState.Level < 5 || payload.GameState.TapCount != 21 {
 				t.Fatalf("gameState = %#v", payload.GameState)
 			}
-			if !strings.Contains(string(payload.AppliedFragment), test.field) {
-				t.Fatalf("appliedFragment = %s, want %s", string(payload.AppliedFragment), test.field)
+			if !strings.Contains(string(payload.AppliedConfig), test.field) {
+				t.Fatalf("appliedConfig = %s, want %s", string(payload.AppliedConfig), test.field)
 			}
 			if !strings.Contains(payload.PreviewHTML, test.color) {
 				t.Fatalf("preview_html did not include %s: %s", test.color, payload.PreviewHTML)
 			}
-			if !hasEvent(payload.Events, "fragmentApplied", test.target) {
-				t.Fatalf("events = %#v, want fragmentApplied", payload.Events)
+			if !hasEvent(payload.Events, "configApplied", test.target) {
+				t.Fatalf("events = %#v, want configApplied", payload.Events)
 			}
 		})
 	}
@@ -630,14 +630,14 @@ func TestControlChangeDraftCardAppliesUnlockedGradients(t *testing.T) {
 		{
 			name:   "background",
 			target: "background",
-			body:   `{"target":"background","color":"#22c55e","secondaryColor":"#38bdf8","gradient":true,"angle":45}`,
+			body:   `{"componentKind":"background","color":"#22c55e","secondaryColor":"#38bdf8","gradient":true,"angle":45}`,
 			field:  `"background_color":"#22c55e"`,
 			css:    `linear-gradient(45deg, #22c55e 0%, #38bdf8 100%)`,
 		},
 		{
 			name:   "border",
 			target: "border",
-			body:   `{"target":"border","color":"#f59e0b","secondaryColor":"#a78bfa","gradient":true,"angle":210}`,
+			body:   `{"componentKind":"border","color":"#f59e0b","secondaryColor":"#a78bfa","gradient":true,"angle":210}`,
 			field:  `"border_color":"#f59e0b"`,
 			css:    `border-image: linear-gradient(210deg, #f59e0b 0%, #a78bfa 100%) 1`,
 		},
@@ -657,21 +657,21 @@ func TestControlChangeDraftCardAppliesUnlockedGradients(t *testing.T) {
 				t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 			}
 			var payload struct {
-				AppliedFragment json.RawMessage `json:"appliedFragment"`
-				PreviewHTML     string          `json:"preview_html"`
-				Events          []CardEvent     `json:"events"`
+				AppliedConfig json.RawMessage `json:"appliedConfig"`
+				PreviewHTML   string          `json:"preview_html"`
+				Events        []CardEvent     `json:"events"`
 			}
 			if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 				t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
 			}
-			if !strings.Contains(string(payload.AppliedFragment), test.field) || !strings.Contains(string(payload.AppliedFragment), test.css) {
-				t.Fatalf("appliedFragment = %s, want field %s and css %s", string(payload.AppliedFragment), test.field, test.css)
+			if !strings.Contains(string(payload.AppliedConfig), test.field) || !strings.Contains(string(payload.AppliedConfig), test.css) {
+				t.Fatalf("appliedConfig = %s, want field %s and css %s", string(payload.AppliedConfig), test.field, test.css)
 			}
 			if !strings.Contains(payload.PreviewHTML, test.css) {
 				t.Fatalf("preview_html did not include %s: %s", test.css, payload.PreviewHTML)
 			}
-			if !hasEvent(payload.Events, "fragmentApplied", test.target) {
-				t.Fatalf("events = %#v, want fragmentApplied", payload.Events)
+			if !hasEvent(payload.Events, "configApplied", test.target) {
+				t.Fatalf("events = %#v, want configApplied", payload.Events)
 			}
 		})
 	}
@@ -682,7 +682,7 @@ func TestControlChangeDraftCardRequiresUnlockedMode(t *testing.T) {
 
 	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"target":"background","color":"#22c55e"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"componentKind":"background","color":"#22c55e"}`))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
@@ -706,7 +706,7 @@ func TestControlChangeDraftCardRejectsInvalidColor(t *testing.T) {
 	mux := testMux(t, nil)
 	levelDraftCardToFive(t, mux)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"target":"background","color":"url(https://example.test)"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"componentKind":"background","color":"url(https://example.test)"}`))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
@@ -720,7 +720,7 @@ func TestControlChangeDraftCardRejectsInvalidGradient(t *testing.T) {
 	mux := testMux(t, nil)
 	levelDraftCardToFive(t, mux)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"target":"background","color":"#22c55e","gradient":true}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/control-change", strings.NewReader(`{"componentKind":"background","color":"#22c55e","gradient":true}`))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
@@ -734,7 +734,7 @@ func TestInteractLongPressAwardsXPAndOpensOverlayOnce(t *testing.T) {
 	mux := testMux(t, nil)
 	for index := 0; index < 6; index++ {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"border","zone":"border","x":0.05,"y":0.5}`))
 		request.Header.Set("Content-Type", "application/json")
 		mux.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {
@@ -774,7 +774,7 @@ func TestComponentKeepsRandomizingAfterLevelFive(t *testing.T) {
 	mux := testMux(t, nil)
 	for index := 0; index < 12; index++ {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"border","zone":"border","x":0.05,"y":0.5}`))
 		request.Header.Set("Content-Type", "application/json")
 		mux.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {
@@ -790,9 +790,9 @@ func TestComponentKeepsRandomizingAfterLevelFive(t *testing.T) {
 		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 	}
 	var payload struct {
-		GameState       GameState       `json:"gameState"`
-		AppliedFragment json.RawMessage `json:"appliedFragment"`
-		Events          []CardEvent     `json:"events"`
+		GameState     GameState       `json:"gameState"`
+		AppliedConfig json.RawMessage `json:"appliedConfig"`
+		Events        []CardEvent     `json:"events"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
@@ -800,8 +800,8 @@ func TestComponentKeepsRandomizingAfterLevelFive(t *testing.T) {
 	if payload.GameState.TotalXP != 13 || !payload.GameState.ComponentProgress["card-root"].RandomTapEnabled {
 		t.Fatalf("gameState = %#v", payload.GameState)
 	}
-	if len(payload.AppliedFragment) == 0 {
-		t.Fatal("appliedFragment should be present while randomizing is enabled")
+	if len(payload.AppliedConfig) == 0 {
+		t.Fatal("appliedConfig should be present while randomizing is enabled")
 	}
 	if !hasEvent(payload.Events, "xpGained", "") {
 		t.Fatalf("events = %#v, want xpGained", payload.Events)
@@ -814,7 +814,7 @@ func TestPreventRandomizingCheckboxDisablesTapRandomization(t *testing.T) {
 	mux := testMux(t, nil)
 	for index := 0; index < 6; index++ {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"border","zone":"border","x":0.05,"y":0.5}`))
 		request.Header.Set("Content-Type", "application/json")
 		mux.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {
@@ -858,15 +858,15 @@ func TestPreventRandomizingCheckboxDisablesTapRandomization(t *testing.T) {
 		t.Fatalf("events should encode as [] instead of null: %s", tapRecorder.Body.String())
 	}
 	var tapPayload struct {
-		GameState       GameState       `json:"gameState"`
-		AppliedFragment json.RawMessage `json:"appliedFragment"`
-		Events          []CardEvent     `json:"events"`
+		GameState     GameState       `json:"gameState"`
+		AppliedConfig json.RawMessage `json:"appliedConfig"`
+		Events        []CardEvent     `json:"events"`
 	}
 	if err := json.Unmarshal(tapRecorder.Body.Bytes(), &tapPayload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, tapRecorder.Body.String())
 	}
-	if tapPayload.GameState.TotalXP != 7 || len(tapPayload.AppliedFragment) != 0 || len(tapPayload.Events) != 0 {
-		t.Fatalf("tap payload = %#v applied=%s events=%#v", tapPayload.GameState, string(tapPayload.AppliedFragment), tapPayload.Events)
+	if tapPayload.GameState.TotalXP != 7 || len(tapPayload.AppliedConfig) != 0 || len(tapPayload.Events) != 0 {
+		t.Fatalf("tap payload = %#v applied=%s events=%#v", tapPayload.GameState, string(tapPayload.AppliedConfig), tapPayload.Events)
 	}
 }
 
@@ -884,10 +884,10 @@ func TestGenericControlChangeAppliesRootPaddingAndGrantsXP(t *testing.T) {
 		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 	}
 	var payload struct {
-		GameState       GameState       `json:"gameState"`
-		AppliedFragment json.RawMessage `json:"appliedFragment"`
-		PreviewHTML     string          `json:"preview_html"`
-		Events          []CardEvent     `json:"events"`
+		GameState     GameState       `json:"gameState"`
+		AppliedConfig json.RawMessage `json:"appliedConfig"`
+		PreviewHTML   string          `json:"preview_html"`
+		Events        []CardEvent     `json:"events"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
@@ -895,8 +895,8 @@ func TestGenericControlChangeAppliesRootPaddingAndGrantsXP(t *testing.T) {
 	if payload.GameState.TotalXP != 21 || !strings.Contains(payload.PreviewHTML, `padding: 32px`) {
 		t.Fatalf("payload = %#v preview=%s", payload.GameState, payload.PreviewHTML)
 	}
-	if !strings.Contains(string(payload.AppliedFragment), `"target":"card"`) {
-		t.Fatalf("appliedFragment = %s", string(payload.AppliedFragment))
+	if !strings.Contains(string(payload.AppliedConfig), `"componentKind":"card"`) {
+		t.Fatalf("appliedConfig = %s", string(payload.AppliedConfig))
 	}
 	if !hasEvent(payload.Events, "xpGained", "") {
 		t.Fatalf("events = %#v, want xpGained", payload.Events)
@@ -973,7 +973,7 @@ func TestAddDraftComponentsSupportsMultipleImagesAndControlByID(t *testing.T) {
 	mux := testMux(t, nil)
 	for index := 0; index < 2; index++ {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/components", strings.NewReader(`{"componentType":"image"}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/components", strings.NewReader(`{"componentKind":"image"}`))
 		request.Header.Set("Content-Type", "application/json")
 		mux.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {
@@ -1000,11 +1000,11 @@ func TestAddDraftComponentsSupportsMultipleImagesAndControlByID(t *testing.T) {
 	if imageOne == nil || imageTwo == nil {
 		t.Fatalf("document should contain image-1 and image-2: %#v", payload.Document.Root.Children)
 	}
-	if strings.Contains(string(imageOne.Fragment), `"x":72`) {
-		t.Fatalf("image-1 was mutated instead of image-2: %s", string(imageOne.Fragment))
+	if strings.Contains(string(imageOne.Config), `"x":72`) {
+		t.Fatalf("image-1 was mutated instead of image-2: %s", string(imageOne.Config))
 	}
-	if !strings.Contains(string(imageTwo.Fragment), `"x":72`) || !strings.Contains(string(imageTwo.Fragment), `"y":22`) {
-		t.Fatalf("image-2 fragment was not moved: %s", string(imageTwo.Fragment))
+	if !strings.Contains(string(imageTwo.Config), `"x":72`) || !strings.Contains(string(imageTwo.Config), `"y":22`) {
+		t.Fatalf("image-2 config was not moved: %s", string(imageTwo.Config))
 	}
 	for _, marker := range []string{`data-component-id="image-1"`, `data-component-id="image-2"`, `left: 72%`, `top: 22%`} {
 		if !strings.Contains(payload.PreviewHTML, marker) {
@@ -1018,7 +1018,7 @@ func TestAddDraftImageRejectsUnsafeSource(t *testing.T) {
 
 	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
-	body := `{"componentType":"image","fragment":{"src":"data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=","alt":"svg","x":50,"y":50,"width":20,"height":20,"border_color":"#ffffff"}}`
+	body := `{"componentKind":"image","config":{"src":"data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=","alt":"svg","x":50,"y":50,"width":20,"height":20,"border_color":"#ffffff"}}`
 	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/components", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
@@ -1061,15 +1061,15 @@ func TestShapeUnlockCreatesInitialShapeAndCanRandomize(t *testing.T) {
 		t.Fatalf("randomize status = %d, want 200 body=%s", randomizeRecorder.Code, randomizeRecorder.Body.String())
 	}
 	var randomizePayload struct {
-		GameState       GameState       `json:"gameState"`
-		AppliedFragment json.RawMessage `json:"appliedFragment"`
-		Events          []CardEvent     `json:"events"`
+		GameState     GameState       `json:"gameState"`
+		AppliedConfig json.RawMessage `json:"appliedConfig"`
+		Events        []CardEvent     `json:"events"`
 	}
 	if err := json.Unmarshal(randomizeRecorder.Body.Bytes(), &randomizePayload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, randomizeRecorder.Body.String())
 	}
-	if !strings.Contains(string(randomizePayload.AppliedFragment), `"target":"shape"`) {
-		t.Fatalf("appliedFragment = %s", string(randomizePayload.AppliedFragment))
+	if !strings.Contains(string(randomizePayload.AppliedConfig), `"componentKind":"shape"`) {
+		t.Fatalf("appliedConfig = %s", string(randomizePayload.AppliedConfig))
 	}
 	if randomizePayload.GameState.ComponentProgress["shape-1"].XP != 1 || !hasEvent(randomizePayload.Events, "xpGained", "") {
 		t.Fatalf("randomize payload = %#v events=%#v", randomizePayload.GameState.ComponentProgress["shape-1"], randomizePayload.Events)
@@ -1081,7 +1081,7 @@ func TestResetDraftCardRestoresGameProgress(t *testing.T) {
 
 	mux := testMux(t, nil)
 	tapRecorder := httptest.NewRecorder()
-	tapRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"background","zone":"background","x":0.5,"y":0.5}`))
+	tapRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"background","zone":"background","x":0.5,"y":0.5}`))
 	tapRequest.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(tapRecorder, tapRequest)
 	if tapRecorder.Code != http.StatusOK {
@@ -1110,7 +1110,7 @@ func TestResetDraftCardRestoresGameProgress(t *testing.T) {
 	}
 }
 
-func TestDraftFragmentRoutesGenerateFragments(t *testing.T) {
+func TestDraftConfigRoutesGenerateConfigs(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1120,17 +1120,17 @@ func TestDraftFragmentRoutesGenerateFragments(t *testing.T) {
 	}{
 		{
 			target: "background",
-			raw:    `{"target":"background","description":"Moody teal background","fragment":{"background_color":"#0f766e","css":"background: linear-gradient(135deg, #0f766e, #111827);"}}`,
+			raw:    `{"componentKind":"background","description":"Moody teal background","config":{"background_color":"#0f766e","css":"background: linear-gradient(135deg, #0f766e, #111827);"}}`,
 			field:  `"background_color":"#0f766e"`,
 		},
 		{
 			target: "border",
-			raw:    `{"target":"border","description":"Fine white border","fragment":{"border_width_px":2,"border_radius_px":18,"border_color":"#ffffff","css":"box-shadow: 0 0 20px rgba(255,255,255,0.2);"}}`,
+			raw:    `{"componentKind":"border","description":"Fine white border","config":{"border_width_px":2,"border_radius_px":18,"border_color":"#ffffff","css":"box-shadow: 0 0 20px rgba(255,255,255,0.2);"}}`,
 			field:  `"border_width_px":2`,
 		},
 		{
 			target: "textarea",
-			raw:    `{"target":"textarea","description":"Centered text","fragment":{"content":"Hello card","font_family":"system","font_size_px":28,"font_weight":700,"font_style":"normal","color":"#f8fafc","align":"center","position":"center","css":"text-align: center;"}}`,
+			raw:    `{"componentKind":"textarea","description":"Centered text","config":{"content":"Hello card","font_family":"system","font_size_px":28,"font_weight":700,"font_style":"normal","color":"#f8fafc","align":"center","position":"center","css":"text-align: center;"}}`,
 			field:  `"content":"Hello card"`,
 		},
 	}
@@ -1140,7 +1140,7 @@ func TestDraftFragmentRoutesGenerateFragments(t *testing.T) {
 
 			mux := testMux(t, &fakePatchClient{responses: []string{test.raw}})
 			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/"+test.target, strings.NewReader(`{"instruction":"make it polished"}`))
+			request := httptest.NewRequest(http.MethodPost, "/api/draft-card/configs/"+test.target, strings.NewReader(`{"instruction":"make it polished"}`))
 			request.Header.Set("Content-Type", "application/json")
 			mux.ServeHTTP(recorder, request)
 
@@ -1154,16 +1154,16 @@ func TestDraftFragmentRoutesGenerateFragments(t *testing.T) {
 	}
 }
 
-func TestDraftFragmentRoutesRepairInvalidOutput(t *testing.T) {
+func TestDraftConfigRoutesRepairInvalidOutput(t *testing.T) {
 	t.Parallel()
 
 	client := &fakePatchClient{responses: []string{
-		`{"target":"textarea","fragment":{"content":"","font_family":"system","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"left","position":"center","css":""}}`,
-		`{"target":"textarea","description":"Repaired centered text","fragment":{"content":"Repaired text","font_family":"system","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"center","position":"center","css":"text-align: center;"}}`,
+		`{"componentKind":"textarea","config":{"content":"","font_family":"system","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"left","position":"center","css":""}}`,
+		`{"componentKind":"textarea","description":"Repaired centered text","config":{"content":"Repaired text","font_family":"system","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"center","position":"center","css":"text-align: center;"}}`,
 	}}
 	mux := testMux(t, client)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/textarea", strings.NewReader(`{"instruction":"write a centered note"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/configs/textarea", strings.NewReader(`{"instruction":"write a centered note"}`))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 
@@ -1174,7 +1174,7 @@ func TestDraftFragmentRoutesRepairInvalidOutput(t *testing.T) {
 		t.Fatalf("calls = %d, want 2", client.calls)
 	}
 	if !strings.Contains(recorder.Body.String(), `"content":"Repaired text"`) {
-		t.Fatalf("response did not include repaired fragment: %s", recorder.Body.String())
+		t.Fatalf("response did not include repaired config: %s", recorder.Body.String())
 	}
 	repairPrompt := joinedMessages(client.messages[1])
 	for _, marker := range []string{
@@ -1189,16 +1189,16 @@ func TestDraftFragmentRoutesRepairInvalidOutput(t *testing.T) {
 	}
 }
 
-func TestDraftFragmentRouteReturnsRawRepairFailure(t *testing.T) {
+func TestDraftConfigRouteReturnsRawRepairFailure(t *testing.T) {
 	t.Parallel()
 
 	client := &fakePatchClient{responses: []string{
-		`{"target":"textarea","description":"","fragment":{"content":"","font_family":"bad","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"left","position":"center","css":""}}`,
-		`{"target":"textarea","description":"","fragment":{"content":"","font_family":"bad","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"left","position":"center","css":"position: absolute;"}}`,
+		`{"componentKind":"textarea","description":"","config":{"content":"","font_family":"bad","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"left","position":"center","css":""}}`,
+		`{"componentKind":"textarea","description":"","config":{"content":"","font_family":"bad","font_size_px":18,"font_weight":400,"font_style":"normal","color":"#cbd5e1","align":"left","position":"center","css":"position: absolute;"}}`,
 	}}
 	mux := testMux(t, client)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/textarea", strings.NewReader(`{"instruction":"make broken text"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/configs/textarea", strings.NewReader(`{"instruction":"make broken text"}`))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 
@@ -1209,9 +1209,9 @@ func TestDraftFragmentRouteReturnsRawRepairFailure(t *testing.T) {
 		t.Fatalf("calls = %d, want 2", client.calls)
 	}
 	var payload struct {
-		Message     string           `json:"message"`
-		RawResponse string           `json:"raw_response"`
-		Issues      []fragment.Issue `json:"issues"`
+		Message     string         `json:"message"`
+		RawResponse string         `json:"raw_response"`
+		Issues      []design.Issue `json:"issues"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
@@ -1224,15 +1224,15 @@ func TestDraftFragmentRouteReturnsRawRepairFailure(t *testing.T) {
 	}
 }
 
-func TestDraftFragmentRouteIncludesUpdateContext(t *testing.T) {
+func TestDraftConfigRouteIncludesUpdateContext(t *testing.T) {
 	t.Parallel()
 
 	client := &fakePatchClient{responses: []string{
-		`{"target":"background","description":"Updated background","fragment":{"background_color":"#111827","css":"background: #111827;"}}`,
+		`{"componentKind":"background","description":"Updated background","config":{"background_color":"#111827","css":"background: #111827;"}}`,
 	}}
 	mux := testMux(t, client)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/background", strings.NewReader(`{"instruction":"make it darker","old_code":"{\"background_color\":\"#ffffff\",\"css\":\"\"}","component_id":"background-primary"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/configs/background", strings.NewReader(`{"instruction":"make it darker","old_code":"{\"background_color\":\"#ffffff\",\"css\":\"\"}","component_id":"background-primary"}`))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 
@@ -1242,7 +1242,7 @@ func TestDraftFragmentRouteIncludesUpdateContext(t *testing.T) {
 	prompt := joinedMessages(client.messages[0])
 	for _, marker := range []string{
 		"make it darker",
-		"Existing fragment JSON to update",
+		"Existing config JSON to update",
 		`"background_color":"#ffffff"`,
 		"background-primary",
 	} {
@@ -1252,20 +1252,20 @@ func TestDraftFragmentRouteIncludesUpdateContext(t *testing.T) {
 	}
 }
 
-func TestDraftFragmentRouteUsesServerCurrentFragmentForUpdate(t *testing.T) {
+func TestDraftConfigRouteUsesServerCurrentConfigForUpdate(t *testing.T) {
 	t.Parallel()
 
 	client := &fakePatchClient{responses: []string{
-		`{"target":"background","description":"Updated background","fragment":{"background_color":"#111827","css":"background: #111827;"}}`,
+		`{"componentKind":"background","description":"Updated background","config":{"background_color":"#111827","css":"background: #111827;"}}`,
 	}}
 	mux := testMux(t, client)
 	applyRecorder := httptest.NewRecorder()
 	applyBody := applyRequestBody(t, json.RawMessage(`{
-		"target":"background",
+		"componentKind":"background",
 		"description":"Applied white background",
-		"fragment":{"background_color":"#ffffff","css":"background: #ffffff;"}
+		"config":{"background_color":"#ffffff","css":"background: #ffffff;"}
 	}`))
-	applyRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-fragment", strings.NewReader(applyBody))
+	applyRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-config", strings.NewReader(applyBody))
 	applyRequest.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(applyRecorder, applyRequest)
 	if applyRecorder.Code != http.StatusOK {
@@ -1273,7 +1273,7 @@ func TestDraftFragmentRouteUsesServerCurrentFragmentForUpdate(t *testing.T) {
 	}
 
 	generateRecorder := httptest.NewRecorder()
-	generateRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/background", strings.NewReader(`{"instruction":"make it darker","update":true}`))
+	generateRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/configs/background", strings.NewReader(`{"instruction":"make it darker","update":true}`))
 	generateRequest.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(generateRecorder, generateRequest)
 	if generateRecorder.Code != http.StatusOK {
@@ -1281,7 +1281,7 @@ func TestDraftFragmentRouteUsesServerCurrentFragmentForUpdate(t *testing.T) {
 	}
 	prompt := joinedMessages(client.messages[0])
 	for _, marker := range []string{
-		"Existing fragment JSON to update",
+		"Existing config JSON to update",
 		`"background_color": "#ffffff"`,
 		"background-primary",
 	} {
@@ -1291,35 +1291,35 @@ func TestDraftFragmentRouteUsesServerCurrentFragmentForUpdate(t *testing.T) {
 	}
 }
 
-func TestDraftFragmentRouteDoesNotUseServerCurrentFragmentForGenerate(t *testing.T) {
+func TestDraftConfigRouteDoesNotUseServerCurrentConfigForGenerate(t *testing.T) {
 	t.Parallel()
 
 	client := &fakePatchClient{responses: []string{
-		`{"target":"background","description":"Updated background","fragment":{"background_color":"#111827","css":"background: #111827;"}}`,
+		`{"componentKind":"background","description":"Updated background","config":{"background_color":"#111827","css":"background: #111827;"}}`,
 	}}
 	mux := testMux(t, client)
 	recorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/fragments/background", strings.NewReader(`{"instruction":"make it darker"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/configs/background", strings.NewReader(`{"instruction":"make it darker"}`))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 	}
 	prompt := joinedMessages(client.messages[0])
-	if strings.Contains(prompt, "Existing fragment JSON to update") {
+	if strings.Contains(prompt, "Existing config JSON to update") {
 		t.Fatalf("generate prompt should not include update context:\n%s", prompt)
 	}
 }
 
-func TestApplyDraftFragmentValidatesAndRendersPreview(t *testing.T) {
+func TestApplyDraftConfigValidatesAndRendersPreview(t *testing.T) {
 	t.Parallel()
 
 	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
 	body := applyRequestBody(t, json.RawMessage(`{
-		"target":"textarea",
+		"componentKind":"textarea",
 		"description":"Large centered note",
-		"fragment":{
+		"config":{
 			"content":"Server rendered text",
 			"font_family":"system",
 			"font_size_px":90,
@@ -1331,7 +1331,7 @@ func TestApplyDraftFragmentValidatesAndRendersPreview(t *testing.T) {
 			"css":"text-align: center;"
 		}
 	}`))
-	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-fragment", strings.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-config", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 
@@ -1339,9 +1339,9 @@ func TestApplyDraftFragmentValidatesAndRendersPreview(t *testing.T) {
 		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 	}
 	var payload struct {
-		Document           cardcomponent.Document `json:"document"`
-		NormalizedFragment json.RawMessage        `json:"normalized_fragment"`
-		PreviewHTML        string                 `json:"preview_html"`
+		Document         cardcomponent.Document `json:"document"`
+		NormalizedConfig json.RawMessage        `json:"normalized_config"`
+		PreviewHTML      string                 `json:"preview_html"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
@@ -1349,11 +1349,11 @@ func TestApplyDraftFragmentValidatesAndRendersPreview(t *testing.T) {
 	if !strings.Contains(payload.PreviewHTML, `id="draft-card-preview"`) || !strings.Contains(payload.PreviewHTML, `Server rendered text`) {
 		t.Fatalf("preview_html did not include rendered card: %s", payload.PreviewHTML)
 	}
-	if !strings.Contains(string(payload.NormalizedFragment), `"font_size_px":72`) {
-		t.Fatalf("normalized fragment did not clamp font size: %s", string(payload.NormalizedFragment))
+	if !strings.Contains(string(payload.NormalizedConfig), `"font_size_px":72`) {
+		t.Fatalf("normalized config did not clamp font size: %s", string(payload.NormalizedConfig))
 	}
-	if !strings.Contains(string(payload.Document.Root.Children[2].Fragment), `"Server rendered text"`) {
-		t.Fatalf("document textarea fragment was not replaced: %s", string(payload.Document.Root.Children[2].Fragment))
+	if !strings.Contains(string(payload.Document.Root.Children[2].Config), `"Server rendered text"`) {
+		t.Fatalf("document textarea config was not replaced: %s", string(payload.Document.Root.Children[2].Config))
 	}
 
 	recorder = httptest.NewRecorder()
@@ -1365,8 +1365,8 @@ func TestApplyDraftFragmentValidatesAndRendersPreview(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &document); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if !strings.Contains(string(document.Root.Children[2].Fragment), `"Server rendered text"`) {
-		t.Fatalf("server state did not retain applied fragment: %s", string(document.Root.Children[2].Fragment))
+	if !strings.Contains(string(document.Root.Children[2].Config), `"Server rendered text"`) {
+		t.Fatalf("server state did not retain applied config: %s", string(document.Root.Children[2].Config))
 	}
 }
 
@@ -1375,7 +1375,7 @@ func TestDesignLibraryRoutesUseServerState(t *testing.T) {
 
 	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
-	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/draft-card/library?target=background", nil))
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/draft-card/library?componentKind=background", nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("library status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
 	}
@@ -1385,7 +1385,7 @@ func TestDesignLibraryRoutesUseServerState(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &libraryPayload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
 	}
-	if len(libraryPayload.Library) == 0 || libraryPayload.Library[0].Target != "background" {
+	if len(libraryPayload.Library) == 0 || libraryPayload.Library[0].ComponentKind != "background" {
 		t.Fatalf("library = %#v, want background presets", libraryPayload.Library)
 	}
 
@@ -1397,11 +1397,11 @@ func TestDesignLibraryRoutesUseServerState(t *testing.T) {
 
 	applyRecorder := httptest.NewRecorder()
 	applyBody := applyRequestBody(t, json.RawMessage(`{
-		"target":"border",
+		"componentKind":"border",
 		"description":"Saved border",
-		"fragment":{"border_width_px":2,"border_radius_px":16,"border_color":"#ffffff","css":"border: 2px solid #ffffff;"}
+		"config":{"border_width_px":2,"border_radius_px":16,"border_color":"#ffffff","css":"border: 2px solid #ffffff;"}
 	}`))
-	applyRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-fragment", strings.NewReader(applyBody))
+	applyRequest := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-config", strings.NewReader(applyBody))
 	applyRequest.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(applyRecorder, applyRequest)
 	if applyRecorder.Code != http.StatusOK {
@@ -1420,7 +1420,7 @@ func TestDesignLibraryRoutesUseServerState(t *testing.T) {
 	if err := json.Unmarshal(saveRecorder.Body.Bytes(), &savePayload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, saveRecorder.Body.String())
 	}
-	if !savePayload.Item.Saved || savePayload.Item.Target != "border" {
+	if !savePayload.Item.Saved || savePayload.Item.ComponentKind != "border" {
 		t.Fatalf("saved item = %#v", savePayload.Item)
 	}
 
@@ -1432,24 +1432,24 @@ func TestDesignLibraryRoutesUseServerState(t *testing.T) {
 		t.Fatalf("apply library status = %d, want 200 body=%s", applyLibraryRecorder.Code, applyLibraryRecorder.Body.String())
 	}
 	if !strings.Contains(applyLibraryRecorder.Body.String(), `"background_color":"#0f172a"`) {
-		t.Fatalf("apply library response did not include preset fragment: %s", applyLibraryRecorder.Body.String())
+		t.Fatalf("apply library response did not include preset config: %s", applyLibraryRecorder.Body.String())
 	}
 }
 
-func TestApplyDraftFragmentReturnsStructuredValidationIssues(t *testing.T) {
+func TestApplyDraftConfigReturnsStructuredValidationIssues(t *testing.T) {
 	t.Parallel()
 
 	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
 	body := applyRequestBody(t, json.RawMessage(`{
-		"target":"background",
+		"componentKind":"background",
 		"description":"Unsafe background",
-		"fragment":{
+		"config":{
 			"background_color":"#111827",
 			"css":"background-image: url(https://example.test/image.png);"
 		}
 	}`))
-	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-fragment", strings.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-config", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 
@@ -1457,9 +1457,9 @@ func TestApplyDraftFragmentReturnsStructuredValidationIssues(t *testing.T) {
 		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
 	}
 	var payload struct {
-		Message     string           `json:"message"`
-		RawResponse string           `json:"raw_response"`
-		Issues      []fragment.Issue `json:"issues"`
+		Message     string         `json:"message"`
+		RawResponse string         `json:"raw_response"`
+		Issues      []design.Issue `json:"issues"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
@@ -1467,8 +1467,8 @@ func TestApplyDraftFragmentReturnsStructuredValidationIssues(t *testing.T) {
 	if payload.RawResponse == "" || len(payload.Issues) == 0 {
 		t.Fatalf("payload = %#v, want raw response and issues", payload)
 	}
-	if payload.Issues[0].Path != "fragment.css" {
-		t.Fatalf("issue path = %q, want fragment.css", payload.Issues[0].Path)
+	if payload.Issues[0].Path != "config.css" {
+		t.Fatalf("issue path = %q, want config.css", payload.Issues[0].Path)
 	}
 }
 
@@ -1478,9 +1478,9 @@ func TestResetDraftCardRestoresServerState(t *testing.T) {
 	mux := testMux(t, nil)
 	recorder := httptest.NewRecorder()
 	body := applyRequestBody(t, json.RawMessage(`{
-		"target":"textarea",
+		"componentKind":"textarea",
 		"description":"Text",
-		"fragment":{
+		"config":{
 			"content":"Missing node",
 			"font_family":"system",
 			"font_size_px":16,
@@ -1492,7 +1492,7 @@ func TestResetDraftCardRestoresServerState(t *testing.T) {
 			"css":""
 		}
 	}`))
-	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-fragment", strings.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/api/draft-card/apply-config", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
 	mux.ServeHTTP(recorder, request)
 
@@ -1512,15 +1512,15 @@ func TestResetDraftCardRestoresServerState(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
 	}
-	if !strings.Contains(string(payload.Document.Root.Children[2].Fragment), `Start designing this card.`) {
-		t.Fatalf("reset did not restore default textarea: %s", string(payload.Document.Root.Children[2].Fragment))
+	if !strings.Contains(string(payload.Document.Root.Children[2].Config), `Start designing this card.`) {
+		t.Fatalf("reset did not restore default textarea: %s", string(payload.Document.Root.Children[2].Config))
 	}
 	if !strings.Contains(payload.PreviewHTML, `Start designing this card.`) {
 		t.Fatalf("reset preview did not render default text: %s", payload.PreviewHTML)
 	}
 }
 
-func TestApplyDraftFragmentRejectsBadRequests(t *testing.T) {
+func TestApplyDraftConfigRejectsBadRequests(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1531,8 +1531,8 @@ func TestApplyDraftFragmentRejectsBadRequests(t *testing.T) {
 	}{
 		{name: "wrong method", method: http.MethodGet, body: ``, status: http.StatusMethodNotAllowed},
 		{name: "malformed body", method: http.MethodPost, body: `{`, status: http.StatusBadRequest},
-		{name: "unknown request field", method: http.MethodPost, body: `{"generated_fragment":{},"extra":true}`, status: http.StatusBadRequest},
-		{name: "unknown target", method: http.MethodPost, body: applyRequestBody(t, json.RawMessage(`{"target":"shadow","description":"Shadow","fragment":{}}`)), status: http.StatusBadRequest},
+		{name: "unknown request field", method: http.MethodPost, body: `{"generated_config":{},"extra":true}`, status: http.StatusBadRequest},
+		{name: "unknown target", method: http.MethodPost, body: applyRequestBody(t, json.RawMessage(`{"componentKind":"shadow","description":"Shadow","config":{}}`)), status: http.StatusBadRequest},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1540,7 +1540,7 @@ func TestApplyDraftFragmentRejectsBadRequests(t *testing.T) {
 
 			mux := testMux(t, nil)
 			recorder := httptest.NewRecorder()
-			request := httptest.NewRequest(test.method, "/api/draft-card/apply-fragment", strings.NewReader(test.body))
+			request := httptest.NewRequest(test.method, "/api/draft-card/apply-config", strings.NewReader(test.body))
 			request.Header.Set("Content-Type", "application/json")
 			mux.ServeHTTP(recorder, request)
 
@@ -1551,7 +1551,7 @@ func TestApplyDraftFragmentRejectsBadRequests(t *testing.T) {
 	}
 }
 
-func TestDraftFragmentRouteRejectsBadRequests(t *testing.T) {
+func TestDraftConfigRouteRejectsBadRequests(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1561,12 +1561,12 @@ func TestDraftFragmentRouteRejectsBadRequests(t *testing.T) {
 		body   string
 		status int
 	}{
-		{name: "empty instruction", method: http.MethodPost, path: "/api/draft-card/fragments/background", body: `{"instruction":" "}`, status: http.StatusBadRequest},
-		{name: "malformed body", method: http.MethodPost, path: "/api/draft-card/fragments/background", body: `{`, status: http.StatusBadRequest},
-		{name: "unknown target", method: http.MethodPost, path: "/api/draft-card/fragments/shadow", body: `{"instruction":"make it"}`, status: http.StatusNotFound},
-		{name: "removed title target", method: http.MethodPost, path: "/api/draft-card/fragments/title", body: `{"instruction":"make it"}`, status: http.StatusNotFound},
-		{name: "removed body target", method: http.MethodPost, path: "/api/draft-card/fragments/body", body: `{"instruction":"make it"}`, status: http.StatusNotFound},
-		{name: "wrong method", method: http.MethodGet, path: "/api/draft-card/fragments/background", body: ``, status: http.StatusMethodNotAllowed},
+		{name: "empty instruction", method: http.MethodPost, path: "/api/draft-card/configs/background", body: `{"instruction":" "}`, status: http.StatusBadRequest},
+		{name: "malformed body", method: http.MethodPost, path: "/api/draft-card/configs/background", body: `{`, status: http.StatusBadRequest},
+		{name: "unknown target", method: http.MethodPost, path: "/api/draft-card/configs/shadow", body: `{"instruction":"make it"}`, status: http.StatusNotFound},
+		{name: "removed title target", method: http.MethodPost, path: "/api/draft-card/configs/title", body: `{"instruction":"make it"}`, status: http.StatusNotFound},
+		{name: "removed body target", method: http.MethodPost, path: "/api/draft-card/configs/body", body: `{"instruction":"make it"}`, status: http.StatusNotFound},
+		{name: "wrong method", method: http.MethodGet, path: "/api/draft-card/configs/background", body: ``, status: http.StatusMethodNotAllowed},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1672,9 +1672,9 @@ func applyRequestBody(t *testing.T, generated json.RawMessage) string {
 	t.Helper()
 
 	raw, err := json.Marshal(struct {
-		GeneratedFragment json.RawMessage `json:"generated_fragment"`
+		GeneratedConfig json.RawMessage `json:"generated_config"`
 	}{
-		GeneratedFragment: generated,
+		GeneratedConfig: generated,
 	})
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
@@ -1696,7 +1696,7 @@ func hasEvent(events []CardEvent, eventType, target string) bool {
 		if event.Type != eventType {
 			continue
 		}
-		if target == "" || event.Target == target {
+		if target == "" || event.ComponentKind == target {
 			return true
 		}
 	}
@@ -1757,7 +1757,7 @@ func advanceWebToGeneratorRoom(t *testing.T, mux *http.ServeMux) {
 func webControllerDocument(t *testing.T, value int) cardcomponent.Document {
 	t.Helper()
 
-	raw, err := json.Marshal(slider.Fragment{
+	raw, err := json.Marshal(slider.Config{
 		Label: "Output",
 		Min:   0,
 		Max:   100,
@@ -1771,12 +1771,12 @@ func webControllerDocument(t *testing.T, value int) cardcomponent.Document {
 		CardID: "generator-regulator-controller",
 		Name:   "Regulator Controller",
 		Root: cardcomponent.Node{
-			ID:   "generator-regulator-controller-root",
-			Type: cardcomponent.Type,
+			ID:            "generator-regulator-controller-root",
+			ComponentKind: cardcomponent.Kind,
 			Children: []cardcomponent.Node{{
-				ID:       "regulator-output-slider",
-				Type:     slider.Type,
-				Fragment: raw,
+				ID:            "regulator-output-slider",
+				ComponentKind: slider.Kind,
+				Config:        raw,
 			}},
 		},
 	}
@@ -1817,7 +1817,7 @@ func levelDraftCardToFive(t *testing.T, mux *http.ServeMux) {
 
 	for index := 0; index < 12; index++ {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"border","zone":"border","x":0.05,"y":0.5}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"border","zone":"border","x":0.05,"y":0.5}`))
 		request.Header.Set("Content-Type", "application/json")
 		mux.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {
@@ -1826,7 +1826,7 @@ func levelDraftCardToFive(t *testing.T, mux *http.ServeMux) {
 	}
 	for index := 0; index < 8; index++ {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"target":"textarea","zone":"textarea","x":0.5,"y":0.5}`))
+		request := httptest.NewRequest(http.MethodPost, "/api/draft-card/tap", strings.NewReader(`{"componentKind":"textarea","zone":"textarea","x":0.5,"y":0.5}`))
 		request.Header.Set("Content-Type", "application/json")
 		mux.ServeHTTP(recorder, request)
 		if recorder.Code != http.StatusOK {

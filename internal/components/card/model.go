@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	Type                 = "card"
+	Kind                 = "card"
 	DefaultCardID        = "draft-card"
 	DefaultRootID        = "card-root"
 	DefaultBackgroundID  = "background-primary"
@@ -18,12 +18,12 @@ const (
 	DefaultTextareaID    = "textarea-main"
 	DefaultShapeID       = "shape-1"
 	DefaultImageID       = "image-1"
-	TypeBackground       = "background"
-	TypeBorder           = "border"
-	TypeTextarea         = "textarea"
-	TypeShape            = "shape"
-	TypeImage            = "image"
-	TypeSlider           = "slider"
+	KindBackground       = "background"
+	KindBorder           = "border"
+	KindTextarea         = "textarea"
+	KindShape            = "shape"
+	KindImage            = "image"
+	KindSlider           = "slider"
 	defaultRootRaw       = `{"padding_px":24,"shadow":""}`
 	defaultBackgroundRaw = `{"background_color":"#111827","css":""}`
 	defaultBorderRaw     = `{"border_width_px":1,"border_radius_px":24,"border_color":"rgba(255,255,255,0.16)","css":""}`
@@ -37,22 +37,22 @@ type Document struct {
 }
 
 type LibraryItem struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Target      string          `json:"target"`
-	Description string          `json:"description"`
-	Fragment    json.RawMessage `json:"fragment"`
-	Saved       bool            `json:"saved,omitempty"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	ComponentKind string          `json:"componentKind"`
+	Description   string          `json:"description"`
+	Config        json.RawMessage `json:"config"`
+	Saved         bool            `json:"saved,omitempty"`
 }
 
 type Node struct {
-	ID       string          `json:"id"`
-	Type     string          `json:"type"`
-	Fragment json.RawMessage `json:"fragment,omitempty"`
-	Children []Node          `json:"children,omitempty"`
+	ID            string          `json:"id"`
+	ComponentKind string          `json:"componentKind"`
+	Config        json.RawMessage `json:"config,omitempty"`
+	Children      []Node          `json:"children,omitempty"`
 }
 
-type RootFragment struct {
+type RootConfig struct {
 	PaddingPX int    `json:"padding_px"`
 	Shadow    string `json:"shadow"`
 }
@@ -82,8 +82,8 @@ func (c RenderContext) LayerID(componentID string) string {
 }
 
 type Definition struct {
-	Type       string
-	Contribute func(Node, RenderContext) (Contribution, error)
+	ComponentKind string
+	Contribute    func(Node, RenderContext) (Contribution, error)
 }
 
 type Registry struct {
@@ -109,17 +109,17 @@ func MustNewRegistry(definitions ...Definition) *Registry {
 }
 
 func (r *Registry) Register(definition Definition) error {
-	definition.Type = strings.TrimSpace(definition.Type)
-	if definition.Type == "" {
-		return fmt.Errorf("component type is required")
+	definition.ComponentKind = strings.TrimSpace(definition.ComponentKind)
+	if definition.ComponentKind == "" {
+		return fmt.Errorf("component kind is required")
 	}
 	if definition.Contribute == nil {
-		return fmt.Errorf("component %q contribution is required", definition.Type)
+		return fmt.Errorf("component %q contribution is required", definition.ComponentKind)
 	}
-	if _, exists := r.definitions[definition.Type]; exists {
-		return fmt.Errorf("duplicate component type %q", definition.Type)
+	if _, exists := r.definitions[definition.ComponentKind]; exists {
+		return fmt.Errorf("duplicate component kind %q", definition.ComponentKind)
 	}
-	r.definitions[definition.Type] = definition
+	r.definitions[definition.ComponentKind] = definition
 	return nil
 }
 
@@ -128,13 +128,13 @@ func DefaultDocument() Document {
 		CardID: DefaultCardID,
 		Name:   "Empty Card",
 		Root: Node{
-			ID:       DefaultRootID,
-			Type:     Type,
-			Fragment: json.RawMessage(defaultRootRaw),
+			ID:            DefaultRootID,
+			ComponentKind: Kind,
+			Config:        json.RawMessage(defaultRootRaw),
 			Children: []Node{
-				{ID: DefaultBackgroundID, Type: TypeBackground, Fragment: json.RawMessage(defaultBackgroundRaw)},
-				{ID: DefaultBorderID, Type: TypeBorder, Fragment: json.RawMessage(defaultBorderRaw)},
-				{ID: DefaultTextareaID, Type: TypeTextarea, Fragment: json.RawMessage(defaultTextareaRaw)},
+				{ID: DefaultBackgroundID, ComponentKind: KindBackground, Config: json.RawMessage(defaultBackgroundRaw)},
+				{ID: DefaultBorderID, ComponentKind: KindBorder, Config: json.RawMessage(defaultBorderRaw)},
+				{ID: DefaultTextareaID, ComponentKind: KindTextarea, Config: json.RawMessage(defaultTextareaRaw)},
 			},
 		},
 	}
@@ -152,10 +152,10 @@ func RenderDocumentWithOptions(document Document, registry *Registry, options Re
 	if registry == nil {
 		return nil, fmt.Errorf("card component registry is not initialized")
 	}
-	if document.Root.Type != Type {
-		return nil, fmt.Errorf("root component type must be %q", Type)
+	if document.Root.ComponentKind != Kind {
+		return nil, fmt.Errorf("root component kind must be %q", Kind)
 	}
-	rootStyle := DecodeRootFragment(document.Root.Fragment)
+	rootStyle := DecodeRootConfig(document.Root.Config)
 	shellStyle := map[string]string{
 		"background-color": "#111827",
 		"border":           "1px solid rgba(255,255,255,0.16)",
@@ -164,9 +164,9 @@ func RenderDocumentWithOptions(document Document, registry *Registry, options Re
 	}
 	var layers []*godom.Node
 	for _, child := range document.Root.Children {
-		definition, ok := registry.definitions[child.Type]
+		definition, ok := registry.definitions[child.ComponentKind]
 		if !ok {
-			return nil, fmt.Errorf("component type %q is not registered", child.Type)
+			return nil, fmt.Errorf("component kind %q is not registered", child.ComponentKind)
 		}
 		contribution, err := definition.Contribute(child, RenderContext{DOMIDPrefix: options.DOMIDPrefix})
 		if err != nil {
@@ -187,7 +187,7 @@ func RenderDocumentWithOptions(document Document, registry *Registry, options Re
 		godom.Class("relative aspect-[5/7] w-full max-w-md overflow-hidden p-6 shadow-2xl transition-[background,border,border-radius,box-shadow] duration-200"),
 		godom.Attr("data-card-id", document.CardID),
 		godom.Attr("data-component-id", document.Root.ID),
-		godom.Attr("data-component-type", Type),
+		godom.Attr("data-component-kind", Kind),
 		godom.Attr("style", styleString(shellStyle)),
 		godom.Ch(layers),
 	}
@@ -197,15 +197,15 @@ func RenderDocumentWithOptions(document Document, registry *Registry, options Re
 	return godom.Div(attributes...), nil
 }
 
-func DefaultRootFragment() RootFragment {
-	return RootFragment{
+func DefaultRootConfig() RootConfig {
+	return RootConfig{
 		PaddingPX: 24,
 		Shadow:    "",
 	}
 }
 
-func DecodeRootFragment(raw json.RawMessage) RootFragment {
-	part := DefaultRootFragment()
+func DecodeRootConfig(raw json.RawMessage) RootConfig {
+	part := DefaultRootConfig()
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &part)
 	}
@@ -214,7 +214,7 @@ func DecodeRootFragment(raw json.RawMessage) RootFragment {
 	return part
 }
 
-func EncodeRootFragment(part RootFragment) json.RawMessage {
+func EncodeRootConfig(part RootConfig) json.RawMessage {
 	part.PaddingPX = clamp(part.PaddingPX, 0, 48)
 	part.Shadow = strings.TrimSpace(part.Shadow)
 	raw, err := json.Marshal(part)
@@ -224,15 +224,15 @@ func EncodeRootFragment(part RootFragment) json.RawMessage {
 	return raw
 }
 
-func DecodeFragment[T any](node Node) (T, error) {
-	var fragment T
-	if len(node.Fragment) == 0 {
-		return fragment, fmt.Errorf("component %q has no fragment", node.ID)
+func DecodeConfig[T any](node Node) (T, error) {
+	var config T
+	if len(node.Config) == 0 {
+		return config, fmt.Errorf("component %q has no config", node.ID)
 	}
-	if err := json.Unmarshal(node.Fragment, &fragment); err != nil {
-		return fragment, fmt.Errorf("decode %s fragment: %w", node.Type, err)
+	if err := json.Unmarshal(node.Config, &config); err != nil {
+		return config, fmt.Errorf("decode %s config: %w", node.ComponentKind, err)
 	}
-	return fragment, nil
+	return config, nil
 }
 
 func styleString(styles map[string]string) string {

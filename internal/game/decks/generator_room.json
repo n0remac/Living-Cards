@@ -26,24 +26,24 @@
           "name": "Generator Panel",
           "root": {
             "id": "generator-panel-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "generator-panel-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#111827",
                   "css": "background: #111827;"
                 }
               },
               {
                 "id": "generator-panel-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#38bdf8",
@@ -52,8 +52,8 @@
               },
               {
                 "id": "generator-panel-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "SLEEPING GENERATOR",
                   "font_family": "system",
                   "font_size_px": 21,
@@ -70,8 +70,8 @@
               },
               {
                 "id": "generator-panel-meter",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "roundedRectangle",
                   "x": 50,
                   "y": 52,
@@ -86,9 +86,9 @@
               },
               {
                 "id": "generator-panel-value",
-                "type": "textarea",
-                "fragment": {
-                  "content": "OUTPUT MUST HOLD AT 73",
+                "componentKind": "textarea",
+                "config": {
+                  "content": "OUTPUT MUST HOLD AT ##",
                   "font_family": "mono",
                   "font_size_px": 16,
                   "font_weight": 700,
@@ -104,8 +104,8 @@
               },
               {
                 "id": "generator-panel-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "The regulator is missing. A tuned controller could wake it.",
                   "font_family": "system",
                   "font_size_px": 15,
@@ -128,24 +128,24 @@
           "name": "Generator Panel",
           "root": {
             "id": "generator-panel-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "generator-panel-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#052e2b",
                   "css": "background: #052e2b;"
                 }
               },
               {
                 "id": "generator-panel-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#34d399",
@@ -154,8 +154,8 @@
               },
               {
                 "id": "generator-panel-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "GENERATOR ONLINE",
                   "font_family": "system",
                   "font_size_px": 23,
@@ -172,8 +172,8 @@
               },
               {
                 "id": "generator-panel-glow",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "circle",
                   "x": 50,
                   "y": 52,
@@ -188,8 +188,8 @@
               },
               {
                 "id": "generator-panel-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "The tuned regulator holds at 73. Power moves deeper into the room.",
                   "font_family": "system",
                   "font_size_px": 16,
@@ -225,24 +225,24 @@
           "name": "Numbered Gauge",
           "root": {
             "id": "numbered-gauge-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "numbered-gauge-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#172554",
                   "css": "background: #172554;"
                 }
               },
               {
                 "id": "numbered-gauge-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#93c5fd",
@@ -251,8 +251,8 @@
               },
               {
                 "id": "numbered-gauge-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "NUMBERED GAUGE",
                   "font_family": "system",
                   "font_size_px": 22,
@@ -269,8 +269,8 @@
               },
               {
                 "id": "numbered-gauge-value",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "73",
                   "font_family": "mono",
                   "font_size_px": 54,
@@ -287,8 +287,8 @@
               },
               {
                 "id": "numbered-gauge-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "The scratched needle stops at the generator's hold value.",
                   "font_family": "system",
                   "font_size_px": 15,
@@ -324,24 +324,24 @@
           "name": "Blank Controller",
           "root": {
             "id": "blank-controller-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "blank-controller-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#18181b",
                   "css": "background: #18181b;"
                 }
               },
               {
                 "id": "blank-controller-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#a1a1aa",
@@ -350,8 +350,8 @@
               },
               {
                 "id": "blank-controller-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "BLANK CONTROLLER",
                   "font_family": "system",
                   "font_size_px": 21,
@@ -368,8 +368,8 @@
               },
               {
                 "id": "blank-controller-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "A plain card with sockets for a component.",
                   "font_family": "system",
                   "font_size_px": 16,
@@ -396,7 +396,7 @@
       "tags": ["item", "component", "slider-component", "generator"],
       "collectible": true,
       "state": {
-        "componentType": "slider"
+        "componentKind": "slider"
       },
       "initialDocument": "default",
       "documents": {
@@ -405,24 +405,24 @@
           "name": "Slider Component",
           "root": {
             "id": "slider-component-root",
-            "type": "card",
-            "fragment": {
+            "componentKind": "card",
+            "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
             },
             "children": [
               {
                 "id": "slider-component-background",
-                "type": "background",
-                "fragment": {
+                "componentKind": "background",
+                "config": {
                   "background_color": "#0f172a",
                   "css": "background: #0f172a;"
                 }
               },
               {
                 "id": "slider-component-border",
-                "type": "border",
-                "fragment": {
+                "componentKind": "border",
+                "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#facc15",
@@ -431,8 +431,8 @@
               },
               {
                 "id": "slider-component-title",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "SLIDER COMPONENT",
                   "font_family": "system",
                   "font_size_px": 20,
@@ -449,8 +449,8 @@
               },
               {
                 "id": "slider-component-track",
-                "type": "shape",
-                "fragment": {
+                "componentKind": "shape",
+                "config": {
                   "shape": "roundedRectangle",
                   "x": 50,
                   "y": 56,
@@ -465,8 +465,8 @@
               },
               {
                 "id": "slider-component-body",
-                "type": "textarea",
-                "fragment": {
+                "componentKind": "textarea",
+                "config": {
                   "content": "Adds an adjustable output value to a controller.",
                   "font_family": "system",
                   "font_size_px": 15,
@@ -501,41 +501,41 @@
       },
       "sourceComponentConditions": [
         {
-          "type": "slider",
+          "componentKind": "slider",
           "valueEquals": 73
         }
       ],
       "failureMessage": "The generator coughs, but the regulator value is wrong.",
       "effects": [
         {
-          "type": "setFlag",
+          "effectKind": "setFlag",
           "flag": "generatorPowered",
           "value": true
         },
         {
-          "type": "setCardState",
+          "effectKind": "setCardState",
           "cardId": "generator-panel",
           "key": "powered",
           "value": true
         },
         {
-          "type": "setCardState",
+          "effectKind": "setCardState",
           "cardId": "generator-panel",
           "key": "useful",
           "value": true
         },
         {
-          "type": "removeCardTags",
+          "effectKind": "removeCardTags",
           "cardId": "generator-panel",
           "tags": ["inactive"]
         },
         {
-          "type": "setDocumentVariant",
+          "effectKind": "setDocumentVariant",
           "cardId": "generator-panel",
           "variant": "active"
         },
         {
-          "type": "setMessage",
+          "effectKind": "setMessage",
           "message": "The regulator locks at 73. The generator comes fully online."
         }
       ]

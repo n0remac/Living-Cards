@@ -1,10 +1,10 @@
 # Living Card
 
-Living Card is a Go web app for experimenting with cards as structured data. The current first-screen experience is a small world-deck game: the server renders cards, the browser cycles through the deck, collectible cards move into a library, and library cards can be played onto world cards.
+Living Card is a Go web app for experimenting with cards as structured data. The current first-screen experience is a small world-deck game: the server renders cards, the browser cycles through the deck, collectible cards move into a library, and library cards can be built into simple tools or played onto world cards.
 
-The app also retains a backend-owned draft-card designer API and hidden overlay for prompt-generated or manually edited component fragments. Both the world game and designer state are process-local, mutex-protected, and reset when the server process exits.
+The app also retains a backend-owned draft-card designer API and hidden overlay for prompt-generated or manually edited component configs. Both the world game and designer state are process-local, mutex-protected, and reset when the server process exits.
 
-Latest reviewed state: current working tree with chained fuse/switch puzzle packs.
+Latest reviewed state: source at `66a81b0 Added slider component and puzzle`, with documentation updated in this working tree.
 
 ## Current Scope
 
@@ -14,6 +14,9 @@ Latest reviewed state: current working tree with chained fuse/switch puzzle pack
 - The seeded deck has a locked door, inventory label, collectible bent iron key, faded photograph, and sleeping switch.
 - Playing the collected key onto the locked door is data-driven: a rule matches source/target/flags, sets `doorUnlocked`, updates door state/tags, swaps the door document variant, loads the fuse-room pack, and sets the message.
 - The fuse room adds clue/red herring cards and a collectible glass fuse. Playing the fuse onto the sleeping switch powers/flips the switch, swaps its document variant, and loads the generator-room pack.
+- The generator room adds a generator panel, numbered gauge clue, collectible Blank Controller, and collectible Slider Component.
+- After both generator parts are collected, the browser opens a controller builder from the Blank Controller library card. Saving creates or updates a server-owned Regulator Controller card with a normalized slider config.
+- Playing the Regulator Controller onto the generator panel is data-driven: the generator rule requires a slider source component with value `73`, then sets `generatorPowered`, updates generator state/tags, swaps the generator document variant, and sets the success message.
 - Game API responses include both card data and server-rendered preview HTML. Browser JavaScript does not own card state.
 - The draft-card designer remains available through `/api/draft-card/*`, but the current page does not expose a normal visible button to open the designer overlay.
 - No real database dependency has been added yet. The deck loader validates JSON data, materializes runtime session state, and merges embedded packs so a database source can later replace the embedded JSON source.
@@ -28,38 +31,43 @@ Latest reviewed state: current working tree with chained fuse/switch puzzle pack
 - `POST /api/game/cycle` moves the active world card forward or backward.
 - `POST /api/game/collect` collects a collectible active or specified card into the library.
 - `POST /api/game/play-card` plays a collected library card onto a target world card and evaluates declarative deck rules.
+- `POST /api/game/save-controller` validates a submitted controller document, requires the Blank Controller and Slider Component in the library, and saves a rendered Regulator Controller back into the library.
 - `GET /api/draft-card` returns the current backend-owned draft card document.
 - `GET /api/draft-card/rendered` returns the draft document, server-rendered preview HTML, and library items.
 - `GET /api/draft-card/interactive` returns draft document state, game progress, overlays, components, and library items for the hidden designer/tapping workflow.
 - `POST /api/draft-card/reset` resets draft document and draft progress while preserving the in-memory design library.
 - `POST /api/draft-card/tap`, `/interact`, `/control-change`, and `/randomize-component` drive the retained draft-card component progression system.
-- `POST /api/draft-card/components` adds a textarea, shape, or image component with a default or validated fragment.
-- `POST /api/draft-card/fragments/background`, `/border`, `/textarea`, and `/image` ask Ollama for AI-generated fragments.
-- `POST /api/draft-card/apply-fragment` validates and applies generated or manually edited fragments for background, border, textarea, shape, or image targets.
-- `GET /api/draft-card/library?target=...`, `POST /api/draft-card/library/save-applied`, and `POST /api/draft-card/library/apply` manage in-memory design presets and saved fragments.
+- `POST /api/draft-card/components` adds a textarea, shape, or image component with a default or validated config.
+- `POST /api/draft-card/configs/background`, `/border`, `/textarea`, and `/image` ask Ollama for AI-generated configs.
+- `POST /api/draft-card/apply-config` validates and applies generated or manually edited configs for background, border, textarea, shape, or image component kinds.
+- `GET /api/draft-card/library?componentKind=...`, `POST /api/draft-card/library/save-applied`, and `POST /api/draft-card/library/apply` manage in-memory design presets and saved configs.
 
 ## World Deck Model
 
-- `internal/game/deck.go` defines `DeckDefinition`, `CardDefinition`, `UseRuleDefinition`, card matchers, and rule effects.
+- `internal/game/deck.go` defines `DeckDefinition`, `CardDefinition`, `UseRuleDefinition`, card matchers, source component conditions, and rule effects.
 - `LoadEmbeddedSeededWorldDeck` reads the seed deck; `LoadEmbeddedDeck` reads any embedded deck pack by id.
 - `NewSessionFromDeck` materializes runtime `Card` values from deck definitions and keeps document variants available for rule effects.
 - `loadDeck` effects append cards from another embedded JSON file, merge rules/document variants/initial flags, focus the loaded pack’s initial active card, and are idempotent per session.
-- Validation rejects empty decks, duplicate card ids, missing initial active cards, missing initial document variants, mismatched document `card_id` values, unknown rule card references, unsupported effect types, invalid deck ids, and invalid document-variant references.
+- Validation rejects empty decks, duplicate card ids, missing initial active cards, missing initial document variants, mismatched document `card_id` values, unknown rule card references, unsupported source component conditions, unsupported effect types, invalid deck ids, and invalid document-variant references.
 - Pack validation can resolve rule references against cards already loaded in the current session, which lets `fuse_room` target the original `sleeping-switch`.
 - Supported rule effects are `setFlag`, `setCardState`, `removeCardTags`, `setDocumentVariant`, `setMessage`, and `loadDeck`.
-- The runtime session API shape is intentionally stable: `Card`, `Snapshot`, `Collect`, `Cycle`, and rendered web responses still use the same public fields.
+- Supported source component conditions currently cover slider configs with an exact `valueEquals` match.
+- `SaveController` is the current bespoke runtime action outside deck JSON. It requires collected `blank-controller` and `slider-component` cards, extracts the first valid slider config from the submitted document, and creates or updates `generator-regulator-controller` in the library.
+- Reset rebuilds from the seed deck definition, clears loaded packs, clears the saved regulator controller, and restores the initial active card.
+- The runtime session API shape is intentionally stable: `Card`, `Snapshot`, `Collect`, `Cycle`, `UseCard`, `SaveController`, and rendered web responses use explicit public fields.
 
 ## Draft Card Model
 
 - `card.Document` is a tree of `card.Node` values.
-- The root card fragment stores card padding and shell shadow.
-- Each child component stores target-specific JSON as `json.RawMessage`; JSON object fragments can be stored directly in document/deck JSON.
-- Registered component types are card, background, border, textarea, shape, and image.
+- The root card config stores card padding and shell shadow.
+- Each child component stores component-specific config JSON as `json.RawMessage`; JSON object configs can be stored directly in document/deck JSON.
+- Registered component types are card, background, border, textarea, shape, image, and slider.
 - Background and border contribute card shell styles.
 - Textarea contributes an absolutely positioned text layer.
 - Shape contributes an absolutely positioned SVG layer.
 - Image contributes an absolutely positioned safe embedded-image layer.
-- Render failures are treated as server errors for full preview reads and bad-request errors when applying fragments or interactions.
+- Slider contributes an absolutely positioned disabled range-control layer used by game cards and the regulator controller.
+- Render failures are treated as server errors for full preview reads and bad-request errors when applying configs or interactions.
 
 ## Draft Progression Rules
 
@@ -79,45 +87,52 @@ Latest reviewed state: current working tree with chained fuse/switch puzzle pack
 ## Backend Layout
 
 - `internal/config` owns environment config and validation.
-- `internal/ollama` owns the Ollama chat client used by fragment generation. Embedding/model-list helpers remain, but the current app path uses chat only.
-- `internal/fragment` owns strict JSON fragment generation, normalization, validation issues, repair attempts, and safe inline CSS helpers.
-- `internal/components/card` owns the document model, root fragment, registry, default document, library item shape, and GoDom preview shell rendering.
-- `internal/components/background`, `border`, `textarea`, `shape`, and `image` own component fragment schemas, validation, defaults, rendering, random generation, and AI prompt specs where implemented.
+- `internal/ollama` owns the Ollama chat client used by config generation. Embedding/model-list helpers remain, but the current app path uses chat only.
+- `internal/design` owns strict JSON config generation, normalization, validation issues, repair attempts, and safe inline CSS helpers.
+- `internal/components/card` owns the document model, root config, registry, default document, library item shape, and GoDom preview shell rendering.
+- `internal/components/background`, `border`, `textarea`, `shape`, and `image` own component config schemas, validation, defaults, rendering, random generation, and AI prompt specs where implemented.
+- `internal/components/slider` owns the normalized slider config schema, validation, and rendering used by the generator controller puzzle.
 - `internal/game` owns the data-driven world-deck model and process-local game session.
 - `internal/web` owns HTTP routing, page rendering, preview rendering, component registration, draft designer state, and world-game response rendering.
 - `internal/webbuild` builds the TypeScript bundle with esbuild.
 - `web/src/game/GameController.ts` owns the visible world-deck browser interactions.
 - `web/src/designer/*` and `web/src/stage/*` retain the hidden draft-card designer/tapping client flows.
 
-## Fragment Safety
+## Config Safety
 
-- AI output must be one strict JSON object with `target`, `description`, and `fragment`.
-- Unknown JSON fields are rejected during strict fragment decoding.
-- Fragment apply targets are restricted to `background`, `border`, `textarea`, `shape`, and `image`.
+- AI output must be one strict JSON object with `componentKind`, `description`, and `config`.
+- Unknown JSON fields are rejected during strict config decoding.
+- Config apply component kinds are restricted to `background`, `border`, `textarea`, `shape`, and `image`.
 - Active AI generation routes cover `background`, `border`, `textarea`, and `image`.
 - Colors must be hex, `rgb(...)`, `rgba(...)`, `hsl(...)`, or `hsla(...)`.
 - Inline CSS is allowlisted per component and rejects markers such as raw angle brackets, braces, `url(`, `javascript:`, `expression(`, `@import`, `position`, and `content`.
 - Image sources must be embedded PNG, JPEG, WebP, or GIF data URLs; SVG, external URLs, HTML, and JavaScript are rejected.
 - Numeric fields such as border width/radius, text size, shape size, image size, and component position are normalized with bounded ranges.
+- Slider configs normalize labels, clamp min/max/value to `0..100`, require positive steps, and reject out-of-range source component rule conditions.
+- Controller saves accept only submitted card documents that contain at least one valid slider component.
 - Invalid model output includes structured issues and, when available, the raw response so the frontend can show an editable recovery path.
 
 ## Recent Changes Reviewed
 
-- Current working tree adds `loadDeck`, idempotent embedded pack loading, `fuse_room.json`, `generator_room.json`, and tests for the chained fuse/switch puzzle.
+- `66a81b0` added the `slider` component, slider rendering/validation tests, component registry support, and TypeScript types for slider-bearing card documents.
+- `66a81b0` expanded `generator_room.json` into a playable generator puzzle with a numbered gauge, Blank Controller, Slider Component, and a slider-conditioned rule that powers the generator only at value `73`.
+- `66a81b0` added the `/api/game/save-controller` endpoint, session-side Regulator Controller creation/update logic, browser controller-builder overlay, and HTTP/session tests for malformed, missing-part, wrong-value, success, retune, and reset behavior.
+- The previous reviewed state added `loadDeck`, idempotent embedded pack loading, `fuse_room.json`, `generator_room.json`, and tests for the chained fuse/switch puzzle.
 - `1f5aa3e` moved the world deck out of Go constructors and into embedded pure JSON.
 - `1f5aa3e` added typed deck definitions, deck validation, `NewSessionFromDeck`, document variants, and declarative use-rule effects.
 - `1f5aa3e` simplified game-card rendering around the existing `card.Document` renderer and added tests for loaded deck data and invalid deck fixtures.
 - `68f2c84` introduced the visible world-deck game format, `/api/game/*` endpoints, collectible library cards, drag/drop play-card interactions, and image components.
-- `68f2c84` added image fragment schema/rendering/validation and expanded draft-card component APIs to include image.
+- `68f2c84` added image config schema/rendering/validation and expanded draft-card component APIs to include image.
 - `30b4f38` moved draft component controls into a static edge overlay with fixed top/side/bottom slots.
 
 ## Known Gaps
 
 - There is still no persistent database. Deck definitions are database-ready data, but the active content source is embedded JSON and session state is in memory.
-- The visible world-deck game is still a short linear puzzle path; the generator room is loaded as the next area but does not yet have its own deeper mechanics.
+- The visible world-deck game is still a short linear puzzle path. The generator room now has one slider-regulator puzzle, but there are no post-generator mechanics yet.
 - The designer overlay is still rendered and wired, but the current page does not render a visible `designer-toggle-btn`, so there is no normal UI path to open it.
-- Shape fragments can be applied manually and generated randomly, but there is still no `/api/draft-card/fragments/shape` AI generation route.
-- The seeded design library does not include shape or image presets.
+- Shape configs can be applied manually and generated randomly, but there is still no `/api/draft-card/configs/shape` AI generation route.
+- Slider configs are registered and renderable for game documents, but the retained draft designer does not expose slider add-component, slider controls, or a `/api/draft-card/configs/slider` AI route.
+- The seeded design library does not include shape, image, or slider presets.
 - The retained `web/src/stage/colorControls.ts` module and some older draft-card API helpers are unused by the visible world-deck UI.
 - `docker-compose.yml` still includes Qdrant from older flows, but the current app does not use a vector database.
 

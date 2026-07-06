@@ -6,28 +6,28 @@ export interface CardDocument {
 
 export interface ComponentNode {
   id: string;
-  type: string;
-  fragment?: FragmentJSON;
+  componentKind: string;
+  config?: ConfigJSON;
   children?: ComponentNode[];
 }
 
-export type FragmentTarget = "background" | "border" | "textarea" | "shape" | "image";
-export type ComponentType = "card" | "textarea" | "shape" | "image" | "slider";
-export type ComponentTarget = FragmentTarget | "slider" | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
+export type ConfigKind = "background" | "border" | "textarea" | "shape" | "image";
+export type ComponentKind = "card" | "textarea" | "shape" | "image" | "slider";
+export type ComponentTarget = ConfigKind | "slider" | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
 export type CardHitZone = "border" | "background" | "textarea" | "shape" | "image" | "slider";
 export type EditMode = "random" | "preset" | "simpleControls" | "advancedControls" | "aiPrompt" | "library";
 
-export type FragmentJSON = Record<string, unknown>;
+export type ConfigJSON = Record<string, unknown>;
 
-export interface GeneratedFragment<T = FragmentJSON> {
-  target: string;
+export interface GeneratedConfigEnvelope<T = ConfigJSON> {
+  componentKind: string;
   description: string;
-  fragment: T;
+  config: T;
 }
 
-export type GeneratedStyleFragment = GeneratedFragment;
+export type GeneratedConfig = GeneratedConfigEnvelope;
 
-export interface FragmentIssue {
+export interface ConfigIssue {
   path: string;
   code: string;
   message: string;
@@ -38,9 +38,9 @@ export interface FragmentIssue {
 export interface DesignLibraryItem {
   id: string;
   name: string;
-  target: FragmentTarget;
+  componentKind: ConfigKind;
   description: string;
-  fragment: FragmentJSON;
+  config: ConfigJSON;
   saved?: boolean;
 }
 
@@ -50,7 +50,7 @@ export interface RenderedDraftCard {
   library: DesignLibraryItem[];
 }
 
-export interface TargetProgress {
+export interface ComponentKindProgress {
   taps: number;
   level: number;
   unlockedModes: EditMode[];
@@ -58,7 +58,7 @@ export interface TargetProgress {
 
 export interface ComponentProgress {
   componentId: string;
-  componentType: ComponentType;
+  componentKind: ComponentKind;
   xp: number;
   level: number;
   interactions: number;
@@ -74,20 +74,20 @@ export interface GameState {
   totalXp: number;
   globalLevel: number;
   totalInteractions: number;
-  unlockedComponentTypes: ComponentType[];
+  unlockedComponentKinds: ComponentKind[];
+  unlockedConfigKinds: ConfigKind[];
   selectedComponentId?: string;
   componentProgress: Record<string, ComponentProgress>;
   tapCount: number;
   level: number;
   xp: number;
-  unlockedTargets: ComponentTarget[];
   unlockedModes: EditMode[];
-  targetProgress: Record<string, TargetProgress>;
+  componentKindProgress: Record<string, ComponentKindProgress>;
 }
 
 export interface ComponentDescriptor {
   componentId: string;
-  componentType: ComponentType;
+  componentKind: ComponentKind;
   label: string;
   traits: string[];
 }
@@ -111,31 +111,31 @@ export interface ControlDescriptor {
 
 export interface ComponentOverlay {
   componentId: string;
-  componentType: ComponentType;
+  componentKind: ComponentKind;
   title: string;
   randomizeEnabled: boolean;
   controls: ControlDescriptor[];
 }
 
 export type CardEvent =
-  | { type: "fragmentApplied"; target?: ComponentTarget; componentId?: string; componentType?: ComponentType; trait?: string; control?: string }
-  | { type: "controlChanged"; componentId: string; componentType: ComponentType; control: string }
-  | { type: "componentAdded"; componentId: string; componentType: ComponentType; message?: string }
+  | { type: "configApplied"; componentKind?: ComponentTarget; componentId?: string; trait?: string; control?: string }
+  | { type: "controlChanged"; componentId: string; componentKind: ComponentKind; control: string }
+  | { type: "componentAdded"; componentId: string; componentKind: ComponentKind; message?: string }
   | { type: "xpGained"; amount: number }
   | { type: "levelUp"; level: number }
-  | { type: "componentLevelUp"; componentId: string; componentType: ComponentType; level: number }
-  | { type: "componentUnlocked"; componentType: ComponentType; message?: string }
-  | { type: "componentSelected"; componentId: string; componentType: ComponentType }
-  | { type: "overlayOpened"; componentId: string; componentType: ComponentType }
-  | { type: "targetUnlocked"; target: ComponentTarget }
-  | { type: "modeUnlocked"; target: ComponentTarget; mode: EditMode }
-  | { type: "invalidAction"; target?: ComponentTarget; componentId?: string; message: string };
+  | { type: "componentLevelUp"; componentId: string; componentKind: ComponentKind; level: number }
+  | { type: "componentUnlocked"; componentKind: ComponentKind; message?: string }
+  | { type: "componentSelected"; componentId: string; componentKind: ComponentKind }
+  | { type: "overlayOpened"; componentId: string; componentKind: ComponentKind }
+  | { type: "configKindUnlocked"; componentKind: ConfigKind }
+  | { type: "modeUnlocked"; componentKind: ComponentTarget; mode: EditMode }
+  | { type: "invalidAction"; componentKind?: ComponentTarget; componentId?: string; message: string };
 
 export interface InteractiveDraftCardResponse {
   document: CardDocument;
   gameState: GameState;
   preview_html: string;
-  availableTargets: ComponentTarget[];
+  availableConfigKinds: ComponentTarget[];
   availableComponents: ComponentDescriptor[];
   overlay?: ComponentOverlay;
   library: DesignLibraryItem[];
@@ -144,16 +144,16 @@ export interface InteractiveDraftCardResponse {
 export interface TapCardResponse {
   document: CardDocument;
   gameState: GameState;
-  appliedFragment?: GeneratedStyleFragment;
+  appliedConfig?: GeneratedConfig;
   preview_html: string;
   events: CardEvent[];
   overlay?: ComponentOverlay;
   library: DesignLibraryItem[];
 }
 
-export interface ApplyFragmentResponse {
+export interface ApplyConfigResponse {
   document: CardDocument;
-  normalized_fragment: GeneratedStyleFragment;
+  normalized_config: GeneratedConfig;
   preview_html: string;
   library: DesignLibraryItem[];
 }

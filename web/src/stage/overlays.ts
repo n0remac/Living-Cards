@@ -47,7 +47,7 @@ export function showMessage(root: HTMLElement | null, message: string, tone: Not
 
 function showEvent(root: HTMLElement | null, event: CardEvent): void {
   switch (event.type) {
-    case "fragmentApplied":
+    case "configApplied":
       return;
     case "controlChanged":
       return;
@@ -56,20 +56,20 @@ function showEvent(root: HTMLElement | null, event: CardEvent): void {
     case "levelUp":
       return;
     case "componentLevelUp":
-      showMessage(root, labelForComponent(event.componentType) + " level " + event.level);
+      showMessage(root, labelForComponent(event.componentKind) + " level " + event.level);
       return;
     case "componentUnlocked":
-      showMessage(root, event.message || labelForComponent(event.componentType) + " unlocked");
+      showMessage(root, event.message || labelForComponent(event.componentKind) + " unlocked");
       return;
     case "componentSelected":
       return;
     case "overlayOpened":
       return;
-    case "targetUnlocked":
-      showMessage(root, labelForTarget(event.target) + " unlocked");
+    case "configKindUnlocked":
+      showMessage(root, labelForTarget(event.componentKind) + " unlocked");
       return;
     case "modeUnlocked":
-      showMessage(root, labelForTarget(event.target) + " " + event.mode + " unlocked");
+      showMessage(root, labelForTarget(event.componentKind) + " " + event.mode + " unlocked");
       return;
     case "invalidAction":
       showMessage(root, event.message || "Locked", "error");
@@ -172,8 +172,8 @@ function edgeControlStatus(): HTMLDivElement | null {
   return document.getElementById("stage-edge-controls-status") as HTMLDivElement | null;
 }
 
-function labelForTarget(target: string): string {
-  switch (target) {
+function labelForTarget(componentKind: string): string {
+  switch (componentKind) {
     case "background":
       return "Background";
     case "border":
@@ -185,8 +185,8 @@ function labelForTarget(target: string): string {
   }
 }
 
-function labelForComponent(componentType: string): string {
-  switch (componentType) {
+function labelForComponent(componentKind: string): string {
+  switch (componentKind) {
     case "textarea":
       return "Text";
     case "shape":

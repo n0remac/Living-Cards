@@ -3,12 +3,12 @@ var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { en
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
 // web/src/api.ts
-var FragmentGenerationError = class extends Error {
+var ConfigGenerationError = class extends Error {
   constructor(message, rawResponse, issues = []) {
     super(message);
     __publicField(this, "rawResponse");
     __publicField(this, "issues");
-    this.name = "FragmentGenerationError";
+    this.name = "ConfigGenerationError";
     this.rawResponse = rawResponse;
     this.issues = issues;
   }
@@ -27,30 +27,30 @@ async function resetDraftCard() {
   }
   return await response.json();
 }
-async function generateFragment(target, instruction, update = false) {
-  const response = await fetch("/api/draft-card/fragments/" + encodeURIComponent(target), {
+async function generateConfig(componentKind, instruction, update = false) {
+  const response = await fetch("/api/draft-card/configs/" + encodeURIComponent(componentKind), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ instruction, update })
   });
   if (!response.ok) {
-    throw await readFragmentError(response, "Failed to generate fragment.");
+    throw await readConfigError(response, "Failed to generate design.");
   }
   return await response.json();
 }
-async function applyDraftFragment(generatedFragment) {
-  const response = await fetch("/api/draft-card/apply-fragment", {
+async function applyDraftConfig(generatedConfig) {
+  const response = await fetch("/api/draft-card/apply-config", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ generated_fragment: generatedFragment })
+    body: JSON.stringify({ generated_config: generatedConfig })
   });
   if (!response.ok) {
-    throw await readFragmentError(response, "Failed to apply fragment.");
+    throw await readConfigError(response, "Failed to apply design.");
   }
   return await response.json();
 }
-async function fetchDesignLibrary(target = "") {
-  const suffix = target ? "?target=" + encodeURIComponent(target) : "";
+async function fetchDesignLibrary(componentKind = "") {
+  const suffix = componentKind ? "?componentKind=" + encodeURIComponent(componentKind) : "";
   const response = await fetch("/api/draft-card/library" + suffix, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to load design library."));
@@ -134,11 +134,11 @@ async function saveControllerCard(templateCardId, document2) {
   }
   return await response.json();
 }
-async function addDraftComponent(componentType, fragment) {
+async function addDraftComponent(componentKind, config) {
   const response = await fetch("/api/draft-card/components", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ componentType, fragment })
+    body: JSON.stringify({ componentKind, config })
   });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to add component."));
@@ -149,7 +149,7 @@ async function readError(response, fallback) {
   const text = String(await response.text() || "").trim();
   return text || fallback;
 }
-async function readFragmentError(response, fallback) {
+async function readConfigError(response, fallback) {
   const contentType = response.headers.get("Content-Type") || "";
   if (contentType.includes("application/json")) {
     try {
@@ -158,7 +158,7 @@ async function readFragmentError(response, fallback) {
       const rawResponse = String(payload.raw_response || "").trim();
       const issues = Array.isArray(payload.issues) ? payload.issues : [];
       if (rawResponse || issues.length) {
-        return new FragmentGenerationError(message, rawResponse, issues);
+        return new ConfigGenerationError(message, rawResponse, issues);
       }
       return new Error(message);
     } catch {
@@ -186,41 +186,41 @@ function replacePreviewHTML(previewHTML) {
   current.replaceWith(next);
 }
 
-// web/src/designer/fragments.ts
-async function generateTargetFragment(target, instruction, update = false) {
-  return await generateFragment(target, instruction, update);
+// web/src/designer/configs.ts
+async function generateComponentConfig(componentKind, instruction, update = false) {
+  return await generateConfig(componentKind, instruction, update);
 }
-function parseGeneratedFragment(raw) {
+function parseGeneratedConfigEnvelope(raw) {
   const trimmed = String(raw || "").trim();
   if (!trimmed || trimmed === "{}") {
-    throw new Error("Generate or paste a fragment before applying.");
+    throw new Error("Generate or paste a config before applying.");
   }
   let parsed;
   try {
     parsed = JSON.parse(trimmed);
   } catch {
-    throw new Error("Generated fragment is not valid JSON.");
+    throw new Error("Generated config is not valid JSON.");
   }
-  return normalizeGeneratedFragment(parsed);
+  return normalizeGeneratedConfigEnvelope(parsed);
 }
-function normalizeGeneratedFragment(value) {
+function normalizeGeneratedConfigEnvelope(value) {
   if (!value || typeof value !== "object") {
-    throw new Error("Generated fragment must be a JSON object.");
+    throw new Error("Generated config must be a JSON object.");
   }
   const record = value;
-  const target = String(record.target || "").trim();
-  const fragment = record.fragment;
-  if (!fragment || typeof fragment !== "object") {
-    throw new Error("Generated fragment must include a fragment object.");
+  const componentKind = String(record.componentKind || "").trim();
+  const config = record.config;
+  if (!config || typeof config !== "object") {
+    throw new Error("Generated config must include a config object.");
   }
   return {
-    target,
-    description: String(record.description || savedDesignFallbackName(target)).trim(),
-    fragment: cloneJSON(fragment)
+    componentKind,
+    description: String(record.description || savedDesignFallbackName(componentKind)).trim(),
+    config: cloneJSON(config)
   };
 }
-function isFragmentGenerationError(error) {
-  return error instanceof FragmentGenerationError;
+function isConfigGenerationError(error) {
+  return error instanceof ConfigGenerationError;
 }
 function cloneJSON(value) {
   return JSON.parse(JSON.stringify(value));
@@ -232,8 +232,8 @@ function formatIssues(issues) {
     return path + " " + message;
   }).join("; ");
 }
-function savedDesignFallbackName(target) {
-  switch (target) {
+function savedDesignFallbackName(componentKind) {
+  switch (componentKind) {
     case "background":
       return "Saved Background";
     case "border":
@@ -250,22 +250,22 @@ function initDesigner() {
   const form = byID("card-designer-form");
   if (form) {
     form.addEventListener("submit", (event) => {
-      void generateFragment2(event);
+      void generateConfig2(event);
     });
   }
-  const apply = byID("apply-fragment-btn");
+  const apply = byID("apply-config-btn");
   if (apply) {
     apply.addEventListener("click", () => {
-      void applyFragment();
+      void applyConfig();
     });
   }
-  const editor = byID("fragment-preview");
+  const editor = byID("config-preview");
   if (editor) {
     editor.addEventListener("input", () => {
-      const hasCandidate = hasEditableFragmentCandidate();
-      const description = byID("fragment-description");
+      const hasCandidate = hasEditableConfigCandidate();
+      const description = byID("config-description");
       if (description && hasCandidate) {
-        description.textContent = "Edited fragment. Apply to validate it against the selected target.";
+        description.textContent = "Edited design. Apply to validate it against the selected config kind.";
       }
       if (apply) {
         apply.disabled = !hasCandidate;
@@ -279,9 +279,9 @@ function initDesigner() {
       void saveAppliedDesignToLibrary();
     });
   }
-  const target = byID("fragment-target");
-  if (target) {
-    target.addEventListener("change", () => {
+  const configKind = byID("config-target");
+  if (configKind) {
+    configKind.addEventListener("change", () => {
       void loadDesignLibrary();
     });
   }
@@ -292,7 +292,7 @@ function initDesigner() {
     });
   }
   bindAddComponentControls();
-  renderProposedFragment(null);
+  renderProposedConfig(null);
   setSaveEnabled(false);
   void loadDesigner();
 }
@@ -301,7 +301,7 @@ async function resetDraft() {
   try {
     const response = await resetDraftCard();
     replacePreviewHTML(response.preview_html);
-    renderProposedFragment(null);
+    renderProposedConfig(null);
     renderDesignLibraryItems(response.library);
     setSaveEnabled(false);
     setDesignerStatus("Ready.", false);
@@ -315,7 +315,7 @@ async function loadDesigner() {
   try {
     const response = await fetchRenderedDraftCard();
     replacePreviewHTML(response.preview_html);
-    renderProposedFragment(null);
+    renderProposedConfig(null);
     renderDesignLibraryItems(response.library);
     setSaveEnabled(false);
     setDesignerStatus("Ready.", false);
@@ -323,24 +323,24 @@ async function loadDesigner() {
     setDesignerStatus(error instanceof Error ? error.message : "Failed to load draft card.", true);
   }
 }
-function renderProposedFragment(fragment) {
-  const preview = byID("fragment-preview");
-  const description = byID("fragment-description");
-  const apply = byID("apply-fragment-btn");
+function renderProposedConfig(config) {
+  const preview = byID("config-preview");
+  const description = byID("config-description");
+  const apply = byID("apply-config-btn");
   if (preview) {
-    preview.value = fragment ? JSON.stringify(fragment, null, 2) : "{}";
+    preview.value = config ? JSON.stringify(config, null, 2) : "{}";
   }
   if (description) {
-    description.textContent = fragment ? fragment.description : "No generated fragment yet.";
+    description.textContent = config ? config.description : "No generated config yet.";
   }
   if (apply) {
-    apply.disabled = !fragment;
+    apply.disabled = !config;
   }
 }
-function renderFailedFragment(rawResponse, message, issues = []) {
-  const preview = byID("fragment-preview");
-  const description = byID("fragment-description");
-  const apply = byID("apply-fragment-btn");
+function renderFailedConfig(rawResponse, message, issues = []) {
+  const preview = byID("config-preview");
+  const description = byID("config-description");
+  const apply = byID("apply-config-btn");
   if (preview) {
     preview.value = rawResponse || "{}";
   }
@@ -349,14 +349,14 @@ function renderFailedFragment(rawResponse, message, issues = []) {
     description.textContent = issueSummary ? "Generation failed: " + issueSummary + " Edit the response below, then apply it to validate." : "Generation failed. Edit the response below, then apply it to validate.";
   }
   if (apply) {
-    apply.disabled = !hasEditableFragmentCandidate();
+    apply.disabled = !hasEditableConfigCandidate();
   }
   setSaveEnabled(false);
   setDesignerStatus(message, true);
 }
 async function loadDesignLibrary() {
   try {
-    renderDesignLibraryItems(await fetchDesignLibrary(readTarget()));
+    renderDesignLibraryItems(await fetchDesignLibrary(readConfigKind()));
   } catch (error) {
     setDesignerStatus(error instanceof Error ? error.message : "Failed to load design library.", true);
   }
@@ -364,8 +364,8 @@ async function loadDesignLibrary() {
 function renderDesignLibraryItems(items) {
   const list = byID("design-library-list");
   if (!list) return;
-  const target = readTarget();
-  const visibleItems = items.filter((item) => item.target === target);
+  const configKind = readConfigKind();
+  const visibleItems = items.filter((item) => item.componentKind === configKind);
   if (!visibleItems.length) {
     list.innerHTML = '<div class="rounded-md border border-dashed border-[var(--app-border)] px-3 py-4 text-center text-sm text-[var(--app-fg-soft)]">No saved designs.</div>';
     return;
@@ -388,11 +388,11 @@ function setDesignerStatus(message, isError) {
   status.textContent = message;
   status.className = isError ? "mt-4 text-sm text-red-300" : "mt-4 text-sm text-[var(--app-fg-soft)]";
 }
-async function generateFragment2(event) {
+async function generateConfig2(event) {
   event.preventDefault();
-  const target = readTarget();
-  const isUpdate = event.submitter?.id === "update-fragment-btn";
-  const input = byID("fragment-instruction");
+  const configKind = readConfigKind();
+  const isUpdate = event.submitter?.id === "update-config-btn";
+  const input = byID("config-instruction");
   const instruction = String(input?.value || "").trim();
   if (!instruction) {
     setDesignerStatus("Instruction cannot be empty.", true);
@@ -400,39 +400,39 @@ async function generateFragment2(event) {
   }
   setBusy(true, isUpdate);
   setSaveEnabled(false);
-  setDesignerStatus(isUpdate ? "Updating fragment..." : "Generating fragment...", false);
+  setDesignerStatus(isUpdate ? "Updating design..." : "Generating design...", false);
   try {
-    const fragment = await generateTargetFragment(target, instruction, isUpdate);
-    renderProposedFragment(fragment);
-    setDesignerStatus(isUpdate ? "Fragment updated. Review it before applying." : "Fragment generated. Review it before applying.", false);
+    const config = await generateComponentConfig(configKind, instruction, isUpdate);
+    renderProposedConfig(config);
+    setDesignerStatus(isUpdate ? "Config updated. Review it before applying." : "Config generated. Review it before applying.", false);
   } catch (error) {
-    if (isFragmentGenerationError(error)) {
-      renderFailedFragment(error.rawResponse, error.message, error.issues);
+    if (isConfigGenerationError(error)) {
+      renderFailedConfig(error.rawResponse, error.message, error.issues);
       return;
     }
-    setDesignerStatus(error instanceof Error ? error.message : "Fragment generation failed.", true);
+    setDesignerStatus(error instanceof Error ? error.message : "Config generation failed.", true);
   } finally {
     setBusy(false, isUpdate);
   }
 }
-async function applyFragment() {
+async function applyConfig() {
   try {
-    const fragment = readFragmentFromEditor();
+    const config = readConfigFromEditor();
     setBusy(true);
-    setDesignerStatus("Applying fragment...", false);
-    const response = await applyDraftFragment(fragment);
+    setDesignerStatus("Applying design...", false);
+    const response = await applyDraftConfig(config);
     replacePreviewHTML(response.preview_html);
-    renderProposedFragment(response.normalized_fragment);
+    renderProposedConfig(response.normalized_config);
     renderDesignLibraryItems(response.library);
     setSaveEnabled(true);
-    setDesignerStatus("Fragment applied to the preview.", false);
+    setDesignerStatus("Config applied to the preview.", false);
   } catch (error) {
-    if (isFragmentGenerationError(error)) {
-      const editor = byID("fragment-preview");
-      renderFailedFragment(error.rawResponse || String(editor?.value || ""), error.message, error.issues);
+    if (isConfigGenerationError(error)) {
+      const editor = byID("config-preview");
+      renderFailedConfig(error.rawResponse || String(editor?.value || ""), error.message, error.issues);
       return;
     }
-    setDesignerStatus(error instanceof Error ? error.message : "Fragment could not be applied.", true);
+    setDesignerStatus(error instanceof Error ? error.message : "Config could not be applied.", true);
   } finally {
     setBusy(false);
   }
@@ -443,7 +443,7 @@ async function applyLibraryItem(itemID) {
     setDesignerStatus("Applying library design...", false);
     const response = await applyLibraryDesign(itemID);
     replacePreviewHTML(response.preview_html);
-    renderProposedFragment(response.normalized_fragment);
+    renderProposedConfig(response.normalized_config);
     renderDesignLibraryItems(response.library);
     setSaveEnabled(true);
     setDesignerStatus("Library design applied to the preview.", false);
@@ -468,8 +468,8 @@ function setSaveEnabled(enabled) {
   if (!save) return;
   save.disabled = !enabled;
 }
-function readTarget() {
-  const select = byID("fragment-target");
+function readConfigKind() {
+  const select = byID("config-target");
   switch (select?.value) {
     case "border":
     case "textarea":
@@ -494,10 +494,10 @@ function bindAddComponentControls() {
     void addImageComponent(file);
   });
 }
-async function addComponent(componentType) {
+async function addComponent(componentKind) {
   try {
     setDesignerStatus("Adding component...", false);
-    const response = await addDraftComponent(componentType);
+    const response = await addDraftComponent(componentKind);
     renderDesignLibraryItems(response.library);
     setDesignerStatus("Component added to the draft card.", false);
     document.dispatchEvent(new CustomEvent("living-card:interactive-refresh"));
@@ -540,9 +540,9 @@ function fileToDataURL(file) {
   });
 }
 function setBusy(isBusy, isUpdate = false) {
-  const generate = byID("generate-fragment-btn");
-  const update = byID("update-fragment-btn");
-  const apply = byID("apply-fragment-btn");
+  const generate = byID("generate-config-btn");
+  const update = byID("update-config-btn");
+  const apply = byID("apply-config-btn");
   if (generate) {
     generate.disabled = isBusy;
     generate.textContent = isBusy && !isUpdate ? "Generating..." : "Generate";
@@ -552,15 +552,15 @@ function setBusy(isBusy, isUpdate = false) {
     update.textContent = isBusy && isUpdate ? "Updating..." : "Update";
   }
   if (apply) {
-    apply.disabled = isBusy || !hasEditableFragmentCandidate();
+    apply.disabled = isBusy || !hasEditableConfigCandidate();
   }
 }
-function readFragmentFromEditor() {
-  const editor = byID("fragment-preview");
-  return parseGeneratedFragment(String(editor?.value || ""));
+function readConfigFromEditor() {
+  const editor = byID("config-preview");
+  return parseGeneratedConfigEnvelope(String(editor?.value || ""));
 }
-function hasEditableFragmentCandidate() {
-  const editor = byID("fragment-preview");
+function hasEditableConfigCandidate() {
+  const editor = byID("config-preview");
   const raw = String(editor?.value || "").trim();
   return Boolean(raw && raw !== "{}");
 }
@@ -788,8 +788,8 @@ function existingControllerValue() {
   return controller ? sliderValueFromNode(controller.document.root) : null;
 }
 function sliderValueFromNode(node) {
-  if (node.type === "slider" && node.fragment && typeof node.fragment.value === "number") {
-    return clampControllerValue(node.fragment.value);
+  if (node.componentKind === "slider" && node.config && typeof node.config.value === "number") {
+    return clampControllerValue(node.config.value);
   }
   for (const child of node.children || []) {
     const value = sliderValueFromNode(child);
@@ -818,15 +818,15 @@ function createControllerDocument(value) {
     name: "Regulator Controller",
     root: {
       id: "generator-regulator-controller-root",
-      type: "card",
-      fragment: {
+      componentKind: "card",
+      config: {
         padding_px: 18,
         shadow: "0 24px 60px rgba(8,47,73,0.34)"
       },
       children: [{
         id: "regulator-output-slider",
-        type: "slider",
-        fragment: {
+        componentKind: "slider",
+        config: {
           label: "Output",
           min: 0,
           max: 100,

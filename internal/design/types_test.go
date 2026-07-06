@@ -1,4 +1,4 @@
-package fragment
+package design
 
 import (
 	"context"
@@ -9,14 +9,14 @@ import (
 	"github.com/n0remac/Living-Card/internal/ollama"
 )
 
-type testFragment struct {
+type testConfig struct {
 	Foo string `json:"foo"`
 }
 
 func TestDecodeGeneratedInvalidJSONReturnsPathIssue(t *testing.T) {
 	t.Parallel()
 
-	_, issues := DecodeGenerated[testFragment](`{"target":"test"`)
+	_, issues := DecodeGeneratedConfig[testConfig](`{"componentKind":"test"`)
 	if len(issues) != 1 {
 		t.Fatalf("issues = %#v", issues)
 	}
@@ -28,36 +28,36 @@ func TestDecodeGeneratedInvalidJSONReturnsPathIssue(t *testing.T) {
 func TestServiceRepairsInvalidOutputOnce(t *testing.T) {
 	t.Parallel()
 
-	invalid := `{"target":"test","description":"Bad","fragment":{"foo":"bad"}}`
+	invalid := `{"componentKind":"test","description":"Bad","config":{"foo":"bad"}}`
 	client := &testChatClient{responses: []string{
 		invalid,
-		`{"target":"test","description":"Good","fragment":{"foo":"ok"}}`,
+		`{"componentKind":"test","description":"Good","config":{"foo":"ok"}}`,
 	}}
 	service := NewService(client, "test-model", testSpec())
 
 	response, err := service.Generate(context.Background(), GenerateRequest{
 		Instruction: "make it useful",
-		OldCode:     `{"target":"test","fragment":{"foo":"old"}}`,
+		OldCode:     `{"componentKind":"test","config":{"foo":"old"}}`,
 		ComponentID: "component-1",
 	})
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
-	if response.Description != "Good" || response.Fragment.Foo != "ok" {
+	if response.Description != "Good" || response.Config.Foo != "ok" {
 		t.Fatalf("response = %#v", response)
 	}
 	if len(client.calls) != 2 {
 		t.Fatalf("calls = %d, want 2", len(client.calls))
 	}
-	repairPrompt := joinedFragmentMessages(client.calls[1])
+	repairPrompt := joinedConfigMessages(client.calls[1])
 	for _, marker := range []string{
 		"make it useful",
-		`{"target":"test","fragment":{"foo":"old"}}`,
+		`{"componentKind":"test","config":{"foo":"old"}}`,
 		"component-1",
 		invalid,
-		`"path": "fragment.foo"`,
+		`"path": "config.foo"`,
 		`"code": "invalid_value"`,
-		`"target":"test"`,
+		`"componentKind":"test"`,
 		`"foo":"ok"`,
 		"Preserve valid fields",
 	} {
@@ -71,9 +71,9 @@ func TestServiceFailedRepairReturnsRepairRawOutputAndIssues(t *testing.T) {
 	t.Parallel()
 
 	client := &testChatClient{responses: []string{
-		`{"target":"test","description":"Bad","fragment":{"foo":"bad"}}`,
-		`{"target":"test","description":"Still bad","fragment":{"foo":"bad"}}`,
-		`{"target":"test","description":"Would be ignored","fragment":{"foo":"ok"}}`,
+		`{"componentKind":"test","description":"Bad","config":{"foo":"bad"}}`,
+		`{"componentKind":"test","description":"Still bad","config":{"foo":"bad"}}`,
+		`{"componentKind":"test","description":"Would be ignored","config":{"foo":"ok"}}`,
 	}}
 	service := NewService(client, "test-model", testSpec())
 
@@ -89,7 +89,7 @@ func TestServiceFailedRepairReturnsRepairRawOutputAndIssues(t *testing.T) {
 		t.Fatalf("RawModelOutput() = %q, %v", raw, ok)
 	}
 	issues := Issues(err)
-	if len(issues) != 1 || issues[0].Path != "fragment.foo" {
+	if len(issues) != 1 || issues[0].Path != "config.foo" {
 		t.Fatalf("issues = %#v", issues)
 	}
 }
@@ -98,7 +98,7 @@ func TestServiceDoesNotRepairEmptyInstruction(t *testing.T) {
 	t.Parallel()
 
 	client := &testChatClient{responses: []string{
-		`{"target":"test","description":"Good","fragment":{"foo":"ok"}}`,
+		`{"componentKind":"test","description":"Good","config":{"foo":"ok"}}`,
 	}}
 	service := NewService(client, "test-model", testSpec())
 
@@ -111,23 +111,23 @@ func TestServiceDoesNotRepairEmptyInstruction(t *testing.T) {
 	}
 }
 
-func testSpec() Spec[testFragment] {
-	return Spec[testFragment]{
-		Target:       "test",
-		SystemPrompt: "Generate a test fragment.",
-		Example:      `{"target":"test","description":"Example","fragment":{"foo":"ok"}}`,
-		Normalize: func(generated *Generated[testFragment]) {
-			generated.Target = strings.TrimSpace(generated.Target)
+func testSpec() Spec[testConfig] {
+	return Spec[testConfig]{
+		ComponentKind: "test",
+		SystemPrompt:  "Generate a test design.",
+		Example:       `{"componentKind":"test","description":"Example","config":{"foo":"ok"}}`,
+		Normalize: func(generated *GeneratedConfig[testConfig]) {
+			generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 			generated.Description = strings.TrimSpace(generated.Description)
-			generated.Fragment.Foo = strings.TrimSpace(generated.Fragment.Foo)
+			generated.Config.Foo = strings.TrimSpace(generated.Config.Foo)
 		},
-		Validate: func(generated Generated[testFragment]) []Issue {
-			if generated.Fragment.Foo != "ok" {
+		Validate: func(generated GeneratedConfig[testConfig]) []Issue {
+			if generated.Config.Foo != "ok" {
 				return []Issue{{
-					Path:    "fragment.foo",
+					Path:    "config.foo",
 					Code:    "invalid_value",
 					Message: "foo must be ok",
-					Actual:  generated.Fragment.Foo,
+					Actual:  generated.Config.Foo,
 					Allowed: []string{"ok"},
 				}}
 			}
@@ -151,7 +151,7 @@ func (f *testChatClient) Chat(_ context.Context, _ string, messages []ollama.Cha
 	return response, nil
 }
 
-func joinedFragmentMessages(messages []ollama.ChatMessage) string {
+func joinedConfigMessages(messages []ollama.ChatMessage) string {
 	parts := make([]string, 0, len(messages))
 	for _, message := range messages {
 		parts = append(parts, message.Content)

@@ -10,12 +10,12 @@ import (
 	godom "github.com/n0remac/GoDom/html"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/fragment"
+	"github.com/n0remac/Living-Card/internal/design"
 )
 
-const Type = "textarea"
+const Kind = "textarea"
 
-type Fragment struct {
+type Config struct {
 	Content         string `json:"content"`
 	FontFamily      string `json:"font_family"`
 	FontSizePX      int    `json:"font_size_px"`
@@ -34,8 +34,8 @@ type Fragment struct {
 	CSS             string `json:"css"`
 }
 
-func DefaultFragment() Fragment {
-	return Fragment{
+func DefaultConfig() Config {
+	return Config{
 		Content:         "Start designing this card.",
 		FontFamily:      "system",
 		FontSizePX:      16,
@@ -57,7 +57,7 @@ func DefaultFragment() Fragment {
 
 func Presets() []card.LibraryItem {
 	return []card.LibraryItem{
-		preset("seed-textarea-bold-statement", "Bold Statement", "Large centered display text", Fragment{
+		preset("seed-textarea-bold-statement", "Bold Statement", "Large centered display text", Config{
 			Content:    "Signal Bloom",
 			FontFamily: "display",
 			FontSizePX: 42,
@@ -70,7 +70,7 @@ func Presets() []card.LibraryItem {
 			Y:          50,
 			CSS:        "font-size: 42px; font-weight: 800; text-align: center; letter-spacing: 0.04em; text-transform: uppercase;",
 		}),
-		preset("seed-textarea-elegant-serif", "Elegant Serif", "Refined serif text treatment", Fragment{
+		preset("seed-textarea-elegant-serif", "Elegant Serif", "Refined serif text treatment", Config{
 			Content:    "A quiet note from the edge of the map.",
 			FontFamily: "serif",
 			FontSizePX: 18,
@@ -83,8 +83,8 @@ func Presets() []card.LibraryItem {
 			Y:          50,
 			CSS:        "font-family: Georgia, serif; font-style: italic; line-height: 1.5; text-align: center;",
 		}),
-		preset("seed-textarea-bottom-caption", "Bottom Caption", "Small readable note near the bottom", Fragment{
-			Content:    "Generated fragments become reviewable card design data.",
+		preset("seed-textarea-bottom-caption", "Bottom Caption", "Small readable note near the bottom", Config{
+			Content:    "Generated configs become reviewable card design data.",
 			FontFamily: "system",
 			FontSizePX: 15,
 			FontWeight: 400,
@@ -99,14 +99,14 @@ func Presets() []card.LibraryItem {
 	}
 }
 
-func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
+func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
 	options := []struct {
 		description string
-		part        Fragment
+		part        Config
 	}{
 		{
 			description: "A compact centered title treatment.",
-			part: Fragment{
+			part: Config{
 				Content:         "Living Card",
 				FontFamily:      "display",
 				FontSizePX:      34,
@@ -127,7 +127,7 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		},
 		{
 			description: "A small bottom caption with quiet contrast.",
-			part: Fragment{
+			part: Config{
 				Content:         "Tap, tune, and lock in the design.",
 				FontFamily:      "system",
 				FontSizePX:      15,
@@ -148,7 +148,7 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		},
 		{
 			description: "A refined serif note in the center.",
-			part: Fragment{
+			part: Config{
 				Content:         "A small surface for deliberate edits.",
 				FontFamily:      "serif",
 				FontSizePX:      19,
@@ -171,10 +171,10 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 	if level > 2 {
 		options = append(options, struct {
 			description string
-			part        Fragment
+			part        Config
 		}{
 			description: "A bold editorial text panel.",
-			part: Fragment{
+			part: Config{
 				Content:         "DETERMINISTIC",
 				FontFamily:      "mono",
 				FontSizePX:      24,
@@ -195,53 +195,53 @@ func RandomGenerated(seed int64, level int) fragment.Generated[Fragment] {
 		})
 	}
 	pick := options[rand.New(rand.NewSource(seed)).Intn(len(options))]
-	return fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: pick.description,
-		Fragment:    pick.part,
+	return design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   pick.description,
+		Config:        pick.part,
 	}
 }
 
-func Spec() fragment.Spec[Fragment] {
-	return fragment.Spec[Fragment]{
-		Target:       Type,
-		SystemPrompt: systemPrompt,
-		Example:      exampleJSON,
-		Normalize:    NormalizeGenerated,
-		Validate:     ValidateGenerated,
+func Spec() design.Spec[Config] {
+	return design.Spec[Config]{
+		ComponentKind: Kind,
+		SystemPrompt:  systemPrompt,
+		Example:       exampleJSON,
+		Normalize:     NormalizeGenerated,
+		Validate:      ValidateGenerated,
 	}
 }
 
 func Definition() card.Definition {
 	return card.Definition{
-		Type: Type,
+		ComponentKind: Kind,
 		Contribute: func(node card.Node, renderContext card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeFragment[Fragment](node)
+			part, err := card.DecodeConfig[Config](node)
 			if err != nil {
 				return card.Contribution{}, err
 			}
-			generated := fragment.Generated[Fragment]{
-				Target:      Type,
-				Description: "Rendered textarea",
-				Fragment:    part,
+			generated := design.GeneratedConfig[Config]{
+				ComponentKind: Kind,
+				Description:   "Rendered textarea",
+				Config:        part,
 			}
 			NormalizeGenerated(&generated)
 			if issues := ValidateGenerated(generated); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid textarea fragment at %s: %s", issues[0].Path, issues[0].Message)
+				return card.Contribution{}, fmt.Errorf("invalid textarea config at %s: %s", issues[0].Path, issues[0].Message)
 			}
 			return card.Contribution{
-				Layers: []*godom.Node{RenderLayerWithContext(node.ID, generated.Fragment, renderContext)},
+				Layers: []*godom.Node{RenderLayerWithContext(node.ID, generated.Config, renderContext)},
 			}, nil
 		},
 	}
 }
 
-func RenderLayer(componentID string, part Fragment) *godom.Node {
+func RenderLayer(componentID string, part Config) *godom.Node {
 	return RenderLayerWithContext(componentID, part, card.RenderContext{})
 }
 
-func RenderLayerWithContext(componentID string, part Fragment, renderContext card.RenderContext) *godom.Node {
-	part = normalizedFragment(part)
+func RenderLayerWithContext(componentID string, part Config, renderContext card.RenderContext) *godom.Node {
+	part = normalizedConfig(part)
 	style := map[string]string{
 		"color":         part.Color,
 		"font-family":   fontFamilyCSS(part.FontFamily),
@@ -269,209 +269,209 @@ func RenderLayerWithContext(componentID string, part Fragment, renderContext car
 		style["border-width"] = fmt.Sprintf("%dpx", part.BorderWidthPX)
 	}
 	style["border-radius"] = fmt.Sprintf("%dpx", part.BorderRadiusPX)
-	for property, value := range fragment.CSSDeclarations(part.CSS, AllowedCSS()) {
+	for property, value := range design.CSSDeclarations(part.CSS, AllowedCSS()) {
 		style[property] = value
 	}
 	return godom.Div(
 		godom.Id(renderContext.LayerID(componentID)),
 		godom.Class("absolute"),
 		godom.Attr("data-component-id", componentID),
-		godom.Attr("data-component-type", Type),
+		godom.Attr("data-component-kind", Kind),
 		godom.Attr("style", styleString(style)),
 		godom.T(part.Content),
 	)
 }
 
-func NormalizeGenerated(generated *fragment.Generated[Fragment]) {
+func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
-	generated.Target = strings.TrimSpace(generated.Target)
+	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Fragment.Content = strings.TrimSpace(generated.Fragment.Content)
-	generated.Fragment.FontFamily = strings.TrimSpace(generated.Fragment.FontFamily)
-	generated.Fragment.FontStyle = strings.TrimSpace(generated.Fragment.FontStyle)
-	generated.Fragment.Color = strings.TrimSpace(generated.Fragment.Color)
-	generated.Fragment.Align = strings.TrimSpace(generated.Fragment.Align)
-	generated.Fragment.Position = strings.TrimSpace(generated.Fragment.Position)
-	generated.Fragment.BackgroundColor = strings.TrimSpace(generated.Fragment.BackgroundColor)
-	generated.Fragment.BorderColor = strings.TrimSpace(generated.Fragment.BorderColor)
-	generated.Fragment.CSS = strings.TrimSpace(generated.Fragment.CSS)
-	defaults := DefaultFragment()
-	if generated.Fragment.FontFamily == "" {
-		generated.Fragment.FontFamily = defaults.FontFamily
+	generated.Config.Content = strings.TrimSpace(generated.Config.Content)
+	generated.Config.FontFamily = strings.TrimSpace(generated.Config.FontFamily)
+	generated.Config.FontStyle = strings.TrimSpace(generated.Config.FontStyle)
+	generated.Config.Color = strings.TrimSpace(generated.Config.Color)
+	generated.Config.Align = strings.TrimSpace(generated.Config.Align)
+	generated.Config.Position = strings.TrimSpace(generated.Config.Position)
+	generated.Config.BackgroundColor = strings.TrimSpace(generated.Config.BackgroundColor)
+	generated.Config.BorderColor = strings.TrimSpace(generated.Config.BorderColor)
+	generated.Config.CSS = strings.TrimSpace(generated.Config.CSS)
+	defaults := DefaultConfig()
+	if generated.Config.FontFamily == "" {
+		generated.Config.FontFamily = defaults.FontFamily
 	}
-	if generated.Fragment.FontSizePX == 0 {
-		generated.Fragment.FontSizePX = defaults.FontSizePX
+	if generated.Config.FontSizePX == 0 {
+		generated.Config.FontSizePX = defaults.FontSizePX
 	}
-	if generated.Fragment.FontWeight == 0 {
-		generated.Fragment.FontWeight = defaults.FontWeight
+	if generated.Config.FontWeight == 0 {
+		generated.Config.FontWeight = defaults.FontWeight
 	}
-	if generated.Fragment.FontStyle == "" {
-		generated.Fragment.FontStyle = defaults.FontStyle
+	if generated.Config.FontStyle == "" {
+		generated.Config.FontStyle = defaults.FontStyle
 	}
-	if generated.Fragment.Color == "" {
-		generated.Fragment.Color = defaults.Color
+	if generated.Config.Color == "" {
+		generated.Config.Color = defaults.Color
 	}
-	if generated.Fragment.Align == "" {
-		generated.Fragment.Align = defaults.Align
+	if generated.Config.Align == "" {
+		generated.Config.Align = defaults.Align
 	}
-	if generated.Fragment.Position == "" {
-		generated.Fragment.Position = defaults.Position
+	if generated.Config.Position == "" {
+		generated.Config.Position = defaults.Position
 	}
-	if generated.Fragment.X == 0 && generated.Fragment.Y == 0 {
-		generated.Fragment.X, generated.Fragment.Y = positionDefaults(generated.Fragment.Position)
+	if generated.Config.X == 0 && generated.Config.Y == 0 {
+		generated.Config.X, generated.Config.Y = positionDefaults(generated.Config.Position)
 	}
-	if generated.Fragment.BackgroundColor == "" {
-		generated.Fragment.BackgroundColor = defaults.BackgroundColor
+	if generated.Config.BackgroundColor == "" {
+		generated.Config.BackgroundColor = defaults.BackgroundColor
 	}
-	if generated.Fragment.BorderColor == "" {
-		generated.Fragment.BorderColor = defaults.BorderColor
+	if generated.Config.BorderColor == "" {
+		generated.Config.BorderColor = defaults.BorderColor
 	}
-	if generated.Fragment.BorderRadiusPX == 0 {
-		generated.Fragment.BorderRadiusPX = defaults.BorderRadiusPX
+	if generated.Config.BorderRadiusPX == 0 {
+		generated.Config.BorderRadiusPX = defaults.BorderRadiusPX
 	}
-	generated.Fragment.FontSizePX = clamp(generated.Fragment.FontSizePX, 10, 72)
-	generated.Fragment.X = clamp(generated.Fragment.X, 0, 100)
-	generated.Fragment.Y = clamp(generated.Fragment.Y, 0, 100)
-	generated.Fragment.BorderWidthPX = clamp(generated.Fragment.BorderWidthPX, 0, 12)
-	generated.Fragment.BorderRadiusPX = clamp(generated.Fragment.BorderRadiusPX, 0, 40)
-	generated.Fragment.PaddingPX = clamp(generated.Fragment.PaddingPX, 0, 32)
+	generated.Config.FontSizePX = clamp(generated.Config.FontSizePX, 10, 72)
+	generated.Config.X = clamp(generated.Config.X, 0, 100)
+	generated.Config.Y = clamp(generated.Config.Y, 0, 100)
+	generated.Config.BorderWidthPX = clamp(generated.Config.BorderWidthPX, 0, 12)
+	generated.Config.BorderRadiusPX = clamp(generated.Config.BorderRadiusPX, 0, 40)
+	generated.Config.PaddingPX = clamp(generated.Config.PaddingPX, 0, 32)
 }
 
-func ValidateGenerated(generated fragment.Generated[Fragment]) []fragment.Issue {
-	var issues []fragment.Issue
-	if strings.TrimSpace(generated.Fragment.Content) == "" {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.content",
+func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
+	var issues []design.Issue
+	if strings.TrimSpace(generated.Config.Content) == "" {
+		issues = append(issues, design.Issue{
+			Path:    "config.content",
 			Code:    "required",
 			Message: "content is required",
 		})
 	}
-	if !contains(AllowedFontFamilies(), generated.Fragment.FontFamily) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.font_family",
+	if !contains(AllowedFontFamilies(), generated.Config.FontFamily) {
+		issues = append(issues, design.Issue{
+			Path:    "config.font_family",
 			Code:    "invalid_value",
 			Message: "font_family is not allowed",
-			Actual:  generated.Fragment.FontFamily,
+			Actual:  generated.Config.FontFamily,
 			Allowed: AllowedFontFamilies(),
 		})
 	}
-	if generated.Fragment.FontSizePX < 10 || generated.Fragment.FontSizePX > 72 {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.font_size_px",
+	if generated.Config.FontSizePX < 10 || generated.Config.FontSizePX > 72 {
+		issues = append(issues, design.Issue{
+			Path:    "config.font_size_px",
 			Code:    "out_of_range",
 			Message: "font_size_px must be between 10 and 72",
-			Actual:  generated.Fragment.FontSizePX,
+			Actual:  generated.Config.FontSizePX,
 		})
 	}
-	if !containsInt(AllowedWeights(), generated.Fragment.FontWeight) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.font_weight",
+	if !containsInt(AllowedWeights(), generated.Config.FontWeight) {
+		issues = append(issues, design.Issue{
+			Path:    "config.font_weight",
 			Code:    "invalid_value",
 			Message: "font_weight is not allowed",
-			Actual:  generated.Fragment.FontWeight,
+			Actual:  generated.Config.FontWeight,
 			Allowed: intsToStrings(AllowedWeights()),
 		})
 	}
-	if !contains(AllowedFontStyles(), generated.Fragment.FontStyle) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.font_style",
+	if !contains(AllowedFontStyles(), generated.Config.FontStyle) {
+		issues = append(issues, design.Issue{
+			Path:    "config.font_style",
 			Code:    "invalid_value",
 			Message: "font_style is not allowed",
-			Actual:  generated.Fragment.FontStyle,
+			Actual:  generated.Config.FontStyle,
 			Allowed: AllowedFontStyles(),
 		})
 	}
-	if color := strings.TrimSpace(generated.Fragment.Color); color == "" {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.color",
+	if color := strings.TrimSpace(generated.Config.Color); color == "" {
+		issues = append(issues, design.Issue{
+			Path:    "config.color",
 			Code:    "required",
 			Message: "color is required",
 		})
-	} else if !fragment.IsAllowedColor(color) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.color",
+	} else if !design.IsAllowedColor(color) {
+		issues = append(issues, design.Issue{
+			Path:    "config.color",
 			Code:    "invalid_color",
 			Message: "color must be a hex, rgb, rgba, hsl, or hsla color",
 			Actual:  color,
 		})
 	}
-	if !contains(AllowedAlignments(), generated.Fragment.Align) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.align",
+	if !contains(AllowedAlignments(), generated.Config.Align) {
+		issues = append(issues, design.Issue{
+			Path:    "config.align",
 			Code:    "invalid_value",
 			Message: "align is not allowed",
-			Actual:  generated.Fragment.Align,
+			Actual:  generated.Config.Align,
 			Allowed: AllowedAlignments(),
 		})
 	}
-	if !contains(AllowedPositions(), generated.Fragment.Position) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.position",
+	if !contains(AllowedPositions(), generated.Config.Position) {
+		issues = append(issues, design.Issue{
+			Path:    "config.position",
 			Code:    "invalid_value",
 			Message: "position is not allowed",
-			Actual:  generated.Fragment.Position,
+			Actual:  generated.Config.Position,
 			Allowed: AllowedPositions(),
 		})
 	}
-	if generated.Fragment.X < 0 || generated.Fragment.X > 100 {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.x",
+	if generated.Config.X < 0 || generated.Config.X > 100 {
+		issues = append(issues, design.Issue{
+			Path:    "config.x",
 			Code:    "out_of_range",
 			Message: "x must be between 0 and 100",
-			Actual:  generated.Fragment.X,
+			Actual:  generated.Config.X,
 		})
 	}
-	if generated.Fragment.Y < 0 || generated.Fragment.Y > 100 {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.y",
+	if generated.Config.Y < 0 || generated.Config.Y > 100 {
+		issues = append(issues, design.Issue{
+			Path:    "config.y",
 			Code:    "out_of_range",
 			Message: "y must be between 0 and 100",
-			Actual:  generated.Fragment.Y,
+			Actual:  generated.Config.Y,
 		})
 	}
-	if color := strings.TrimSpace(generated.Fragment.BackgroundColor); color != "" && !fragment.IsAllowedColor(color) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.background_color",
+	if color := strings.TrimSpace(generated.Config.BackgroundColor); color != "" && !design.IsAllowedColor(color) {
+		issues = append(issues, design.Issue{
+			Path:    "config.background_color",
 			Code:    "invalid_color",
 			Message: "background_color must be a hex, rgb, rgba, hsl, or hsla color",
 			Actual:  color,
 		})
 	}
-	if color := strings.TrimSpace(generated.Fragment.BorderColor); color != "" && !fragment.IsAllowedColor(color) {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.border_color",
+	if color := strings.TrimSpace(generated.Config.BorderColor); color != "" && !design.IsAllowedColor(color) {
+		issues = append(issues, design.Issue{
+			Path:    "config.border_color",
 			Code:    "invalid_color",
 			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
 			Actual:  color,
 		})
 	}
-	if generated.Fragment.BorderWidthPX < 0 || generated.Fragment.BorderWidthPX > 12 {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.border_width_px",
+	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 12 {
+		issues = append(issues, design.Issue{
+			Path:    "config.border_width_px",
 			Code:    "out_of_range",
 			Message: "border_width_px must be between 0 and 12",
-			Actual:  generated.Fragment.BorderWidthPX,
+			Actual:  generated.Config.BorderWidthPX,
 		})
 	}
-	if generated.Fragment.BorderRadiusPX < 0 || generated.Fragment.BorderRadiusPX > 40 {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.border_radius_px",
+	if generated.Config.BorderRadiusPX < 0 || generated.Config.BorderRadiusPX > 40 {
+		issues = append(issues, design.Issue{
+			Path:    "config.border_radius_px",
 			Code:    "out_of_range",
 			Message: "border_radius_px must be between 0 and 40",
-			Actual:  generated.Fragment.BorderRadiusPX,
+			Actual:  generated.Config.BorderRadiusPX,
 		})
 	}
-	if generated.Fragment.PaddingPX < 0 || generated.Fragment.PaddingPX > 32 {
-		issues = append(issues, fragment.Issue{
-			Path:    "fragment.padding_px",
+	if generated.Config.PaddingPX < 0 || generated.Config.PaddingPX > 32 {
+		issues = append(issues, design.Issue{
+			Path:    "config.padding_px",
 			Code:    "out_of_range",
 			Message: "padding_px must be between 0 and 32",
-			Actual:  generated.Fragment.PaddingPX,
+			Actual:  generated.Config.PaddingPX,
 		})
 	}
-	issues = append(issues, fragment.ValidateInlineCSS("fragment.css", generated.Fragment.CSS, AllowedCSS())...)
+	issues = append(issues, design.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
 	return issues
 }
 
@@ -517,14 +517,14 @@ func AllowedPositions() []string {
 	return []string{"top-left", "top-center", "center", "bottom-left", "bottom-center"}
 }
 
-func normalizedFragment(part Fragment) Fragment {
-	generated := fragment.Generated[Fragment]{
-		Target:      Type,
-		Description: "Rendered textarea",
-		Fragment:    part,
+func normalizedConfig(part Config) Config {
+	generated := design.GeneratedConfig[Config]{
+		ComponentKind: Kind,
+		Description:   "Rendered textarea",
+		Config:        part,
 	}
 	NormalizeGenerated(&generated)
-	return generated.Fragment
+	return generated.Config
 }
 
 func fontFamilyCSS(value string) string {
@@ -593,17 +593,17 @@ func containsInt(values []int, target int) bool {
 	return false
 }
 
-func preset(id, name, description string, part Fragment) card.LibraryItem {
+func preset(id, name, description string, part Config) card.LibraryItem {
 	raw, err := json.Marshal(part)
 	if err != nil {
 		panic(err)
 	}
 	return card.LibraryItem{
-		ID:          id,
-		Name:        name,
-		Target:      Type,
-		Description: description,
-		Fragment:    raw,
+		ID:            id,
+		Name:          name,
+		ComponentKind: Kind,
+		Description:   description,
+		Config:        raw,
 	}
 }
 
@@ -626,9 +626,9 @@ func clamp(value, min, max int) int {
 }
 
 const exampleJSON = `{
-  "target": "textarea",
+  "componentKind": "textarea",
   "description": "A centered calm text treatment for the main card message.",
-  "fragment": {
+  "config": {
     "content": "Start designing this card.",
     "font_family": "system",
     "font_size_px": 16,
@@ -641,13 +641,13 @@ const exampleJSON = `{
   }
 }`
 
-const systemPrompt = `You generate safe declarative JSON fragments for the textarea component of a card.
+const systemPrompt = `You generate safe declarative JSON configs for the textarea component of a card.
 Return exactly one JSON object and no markdown, prose, HTML, selectors, braces, or JavaScript.
 The JSON object must match this shape:
 {
-  "target": "textarea",
+  "componentKind": "textarea",
   "description": "short human-readable summary",
-  "fragment": {
+  "config": {
     "content": "text shown on the card",
     "font_family": "system",
     "font_size_px": 16,
@@ -660,7 +660,7 @@ The JSON object must match this shape:
   }
 }
 Rules:
-- target must be "textarea".
+- componentKind must be "textarea".
 - description and content are required.
 - font_family must be one of: system, serif, mono, display.
 - font_size_px is clamped to 10..72.

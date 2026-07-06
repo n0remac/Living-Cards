@@ -1,26 +1,26 @@
 import type {
-  ApplyFragmentResponse,
+  ApplyConfigResponse,
   CardDocument,
   CardHitZone,
   ComponentTarget,
   DesignLibraryItem,
-  FragmentIssue,
-  FragmentJSON,
+  ConfigIssue,
+  ConfigJSON,
   GameSessionSnapshot,
-  GeneratedStyleFragment,
+  GeneratedConfig,
   InteractiveDraftCardResponse,
   LibraryResponse,
   RenderedDraftCard,
   TapCardResponse,
 } from "./types";
 
-export class FragmentGenerationError extends Error {
+export class ConfigGenerationError extends Error {
   rawResponse: string;
-  issues: FragmentIssue[];
+  issues: ConfigIssue[];
 
-  constructor(message: string, rawResponse: string, issues: FragmentIssue[] = []) {
+  constructor(message: string, rawResponse: string, issues: ConfigIssue[] = []) {
     super(message);
-    this.name = "FragmentGenerationError";
+    this.name = "ConfigGenerationError";
     this.rawResponse = rawResponse;
     this.issues = issues;
   }
@@ -50,11 +50,11 @@ export async function resetDraftCard(): Promise<RenderedDraftCard> {
   return await response.json() as RenderedDraftCard;
 }
 
-export async function tapCardZone(target: ComponentTarget, zone: CardHitZone, x: number, y: number): Promise<TapCardResponse> {
+export async function tapCardZone(componentKind: ComponentTarget, zone: CardHitZone, x: number, y: number): Promise<TapCardResponse> {
   const response = await fetch("/api/draft-card/tap", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target, zone, x, y }),
+    body: JSON.stringify({ componentKind, zone, x, y }),
   });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to apply card tap."));
@@ -111,11 +111,11 @@ export async function randomizeComponent(componentId: string, trait = "", scope 
   return await response.json() as TapCardResponse;
 }
 
-export async function applyColorControl(target: ComponentTarget, control: ColorControlPayload): Promise<TapCardResponse> {
+export async function applyColorControl(componentKind: ComponentTarget, control: ColorControlPayload): Promise<TapCardResponse> {
   const response = await fetch("/api/draft-card/control-change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ target, ...control }),
+    body: JSON.stringify({ componentKind, ...control }),
   });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to apply color."));
@@ -123,32 +123,32 @@ export async function applyColorControl(target: ComponentTarget, control: ColorC
   return await response.json() as TapCardResponse;
 }
 
-export async function generateFragment(target: string, instruction: string, update = false): Promise<GeneratedStyleFragment> {
-  const response = await fetch("/api/draft-card/fragments/" + encodeURIComponent(target), {
+export async function generateConfig(componentKind: string, instruction: string, update = false): Promise<GeneratedConfig> {
+  const response = await fetch("/api/draft-card/configs/" + encodeURIComponent(componentKind), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ instruction, update }),
   });
   if (!response.ok) {
-    throw await readFragmentError(response, "Failed to generate fragment.");
+    throw await readConfigError(response, "Failed to generate design.");
   }
-  return await response.json() as GeneratedStyleFragment;
+  return await response.json() as GeneratedConfig;
 }
 
-export async function applyDraftFragment(generatedFragment: GeneratedStyleFragment): Promise<ApplyFragmentResponse> {
-  const response = await fetch("/api/draft-card/apply-fragment", {
+export async function applyDraftConfig(generatedConfig: GeneratedConfig): Promise<ApplyConfigResponse> {
+  const response = await fetch("/api/draft-card/apply-config", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ generated_fragment: generatedFragment }),
+    body: JSON.stringify({ generated_config: generatedConfig }),
   });
   if (!response.ok) {
-    throw await readFragmentError(response, "Failed to apply fragment.");
+    throw await readConfigError(response, "Failed to apply design.");
   }
-  return await response.json() as ApplyFragmentResponse;
+  return await response.json() as ApplyConfigResponse;
 }
 
-export async function fetchDesignLibrary(target = ""): Promise<DesignLibraryItem[]> {
-  const suffix = target ? "?target=" + encodeURIComponent(target) : "";
+export async function fetchDesignLibrary(componentKind = ""): Promise<DesignLibraryItem[]> {
+  const suffix = componentKind ? "?componentKind=" + encodeURIComponent(componentKind) : "";
   const response = await fetch("/api/draft-card/library" + suffix, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to load design library."));
@@ -165,7 +165,7 @@ export async function saveAppliedDesign(): Promise<LibraryResponse> {
   return await response.json() as LibraryResponse;
 }
 
-export async function applyLibraryDesign(itemID: string): Promise<ApplyFragmentResponse> {
+export async function applyLibraryDesign(itemID: string): Promise<ApplyConfigResponse> {
   const response = await fetch("/api/draft-card/library/apply", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -174,7 +174,7 @@ export async function applyLibraryDesign(itemID: string): Promise<ApplyFragmentR
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to apply library design."));
   }
-  return await response.json() as ApplyFragmentResponse;
+  return await response.json() as ApplyConfigResponse;
 }
 
 export async function fetchGameSession(): Promise<GameSessionSnapshot> {
@@ -241,11 +241,11 @@ export async function saveControllerCard(templateCardId: string, document: CardD
   return await response.json() as GameSessionSnapshot;
 }
 
-export async function addDraftComponent(componentType: "textarea" | "shape" | "image", fragment?: FragmentJSON): Promise<TapCardResponse> {
+export async function addDraftComponent(componentKind: "textarea" | "shape" | "image", config?: ConfigJSON): Promise<TapCardResponse> {
   const response = await fetch("/api/draft-card/components", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ componentType, fragment }),
+    body: JSON.stringify({ componentKind, config }),
   });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to add component."));
@@ -258,16 +258,16 @@ async function readError(response: Response, fallback: string): Promise<string> 
   return text || fallback;
 }
 
-async function readFragmentError(response: Response, fallback: string): Promise<Error> {
+async function readConfigError(response: Response, fallback: string): Promise<Error> {
   const contentType = response.headers.get("Content-Type") || "";
   if (contentType.includes("application/json")) {
     try {
-      const payload = await response.json() as { message?: string; raw_response?: string; issues?: FragmentIssue[] };
+      const payload = await response.json() as { message?: string; raw_response?: string; issues?: ConfigIssue[] };
       const message = String(payload.message || fallback).trim();
       const rawResponse = String(payload.raw_response || "").trim();
       const issues = Array.isArray(payload.issues) ? payload.issues : [];
       if (rawResponse || issues.length) {
-        return new FragmentGenerationError(message, rawResponse, issues);
+        return new ConfigGenerationError(message, rawResponse, issues);
       }
       return new Error(message);
     } catch {
