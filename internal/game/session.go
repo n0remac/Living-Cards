@@ -44,8 +44,16 @@ type Snapshot struct {
 	ActiveWorldCardID string          `json:"activeWorldCardId"`
 	ActiveIndex       int             `json:"activeIndex"`
 	Library           []Card          `json:"library"`
+	EditSession       *EditSession    `json:"editSession,omitempty"`
 	SolvedFlags       map[string]bool `json:"solvedFlags"`
 	Message           string          `json:"message,omitempty"`
+}
+
+type EditSession struct {
+	TargetCardID                string   `json:"targetCardId"`
+	DraftCard                   Card     `json:"draftCard"`
+	PendingConsumedComponentIDs []string `json:"pendingConsumedComponentIds,omitempty"`
+	SelectedComponentID         string   `json:"selectedComponentId,omitempty"`
 }
 
 type Session struct {
@@ -58,6 +66,7 @@ type Session struct {
 	worldDeck        []Card
 	activeIndex      int
 	library          []Card
+	editSession      *EditSession
 	solvedFlags      map[string]bool
 	lastMessage      string
 }
@@ -123,6 +132,7 @@ func (s *Session) Reset() (Snapshot, error) {
 	s.worldDeck = next.worldDeck
 	s.activeIndex = next.activeIndex
 	s.library = next.library
+	s.editSession = next.editSession
 	s.solvedFlags = next.solvedFlags
 	s.lastMessage = next.lastMessage
 	return s.snapshotLocked()
@@ -222,6 +232,310 @@ func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
 	return s.snapshotLocked()
 }
 
+func (s *Session) StartEdit(cardID string) (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cardID = strings.TrimSpace(cardID)
+	index := s.libraryCardIndex(cardID)
+	if index < 0 {
+		return Snapshot{}, fmt.Errorf("card %q is not in your library", cardID)
+	}
+	card := s.library[index]
+	if !stateBool(card.State, "editable") {
+		return Snapshot{}, fmt.Errorf("%s cannot be edited", card.Name)
+	}
+	s.editSession = &EditSession{
+		TargetCardID: card.ID,
+		DraftCard:    cloneValue(card),
+	}
+	s.lastMessage = "Editing " + card.Name + "."
+	return s.snapshotLocked()
+}
+
+func (s *Session) InstallEditComponent(componentCardID string) (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.editSession == nil {
+		return Snapshot{}, fmt.Errorf("start editing a card first")
+	}
+	componentCardID = strings.TrimSpace(componentCardID)
+	componentIndex := s.libraryCardIndex(componentCardID)
+	if componentIndex < 0 {
+		return Snapshot{}, fmt.Errorf("component card %q is not in your library", componentCardID)
+	}
+	if componentCardID == s.editSession.TargetCardID {
+		return Snapshot{}, fmt.Errorf("a card cannot install itself")
+	}
+	if stringInSlice(s.editSession.PendingConsumedComponentIDs, componentCardID) {
+		return Snapshot{}, fmt.Errorf("%s is already pending for this edit", s.library[componentIndex].Name)
+	}
+
+	component := s.library[componentIndex]
+	componentKind := stateString(component.State, "componentKind")
+	switch componentKind {
+	case slider.Kind:
+		part, err := sliderConfigFromComponentCard(component)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		nodeID := nextComponentNodeID(s.editSession.DraftCard.Document, preferredSliderNodeID(s.editSession.TargetCardID))
+		s.editSession.DraftCard.Document.Root.Children = append(s.editSession.DraftCard.Document.Root.Children, cardcomponent.Node{
+			ID:            nodeID,
+			ComponentKind: slider.Kind,
+			Config:        mustRaw(part),
+		})
+		s.editSession.SelectedComponentID = nodeID
+	case border.Kind:
+		part, err := borderConfigFromComponentCard(component)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		node := findNodeByKindPtr(&s.editSession.DraftCard.Document.Root, border.Kind)
+		if node == nil {
+			nodeID := nextComponentNodeID(s.editSession.DraftCard.Document, s.editSession.TargetCardID+"-border")
+			s.editSession.DraftCard.Document.Root.Children = append(s.editSession.DraftCard.Document.Root.Children, cardcomponent.Node{
+				ID:            nodeID,
+				ComponentKind: border.Kind,
+				Config:        mustRaw(part),
+			})
+			s.editSession.SelectedComponentID = nodeID
+		} else {
+			node.Config = mustRaw(part)
+			s.editSession.SelectedComponentID = node.ID
+		}
+	default:
+		if componentKind == "" {
+			return Snapshot{}, fmt.Errorf("%s is not a component card", component.Name)
+		}
+		return Snapshot{}, fmt.Errorf("component kind %q is not supported yet", componentKind)
+	}
+
+	s.editSession.PendingConsumedComponentIDs = append(s.editSession.PendingConsumedComponentIDs, componentCardID)
+	s.lastMessage = component.Name + " added to the draft."
+	return s.snapshotLocked()
+}
+
+func (s *Session) ApplyEditControl(componentID, control string, value json.RawMessage) (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.editSession == nil {
+		return Snapshot{}, fmt.Errorf("start editing a card first")
+	}
+	componentID = strings.TrimSpace(componentID)
+	if componentID == "" {
+		componentID = strings.TrimSpace(s.editSession.SelectedComponentID)
+	}
+	if componentID == "" {
+		if node := findNodeByKind(s.editSession.DraftCard.Document.Root, slider.Kind); node != nil {
+			componentID = node.ID
+		} else if node := findNodeByKind(s.editSession.DraftCard.Document.Root, border.Kind); node != nil {
+			componentID = node.ID
+		}
+	}
+	node := findNodeByIDPtr(&s.editSession.DraftCard.Document.Root, componentID)
+	if node == nil {
+		return Snapshot{}, fmt.Errorf("component %q is not on the draft card", componentID)
+	}
+	control = strings.TrimSpace(control)
+	switch node.ComponentKind {
+	case slider.Kind:
+		part, err := decodeSliderNode(*node)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		switch control {
+		case "label":
+			next, err := readJSONString(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.Label = next
+		case "value":
+			next, err := readJSONInt(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.Value = next
+		case "min":
+			next, err := readJSONInt(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.Min = next
+		case "max":
+			next, err := readJSONInt(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.Max = next
+		case "step":
+			next, err := readJSONInt(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.Step = next
+		case "x":
+			next, err := readJSONInt(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.X = next
+		case "y":
+			next, err := readJSONInt(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.Y = next
+		case "width":
+			next, err := readJSONInt(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.Width = next
+		case "track_color":
+			next, err := readJSONString(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.TrackColor = next
+		case "accent_color":
+			next, err := readJSONString(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.AccentColor = next
+		default:
+			return Snapshot{}, fmt.Errorf("control %q is not supported for slider", control)
+		}
+		part = slider.NormalizeConfig(part)
+		if issues := slider.ValidateConfig(part); len(issues) > 0 {
+			return Snapshot{}, fmt.Errorf("invalid slider config at %s: %s", issues[0].Path, issues[0].Message)
+		}
+		node.Config = mustRaw(part)
+		s.editSession.SelectedComponentID = node.ID
+		s.lastMessage = fmt.Sprintf("%s %s updated.", s.editSession.DraftCard.Name, control)
+	case border.Kind:
+		part, err := decodeBorderNode(*node)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		switch control {
+		case "border_color":
+			next, err := readJSONString(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.BorderColor = next
+		case "border_width_px":
+			next, err := readJSONInt(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.BorderWidthPX = next
+		case "border_radius_px":
+			next, err := readJSONInt(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.BorderRadiusPX = next
+		case "border_style":
+			next, err := readJSONString(value)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			part.BorderStyle = next
+		default:
+			return Snapshot{}, fmt.Errorf("control %q is not supported for border", control)
+		}
+		part = normalizeBorderConfig(part)
+		if issues := validateBorderConfig(part); len(issues) > 0 {
+			return Snapshot{}, fmt.Errorf("invalid border config at %s: %s", issues[0].Path, issues[0].Message)
+		}
+		node.Config = mustRaw(part)
+		s.editSession.SelectedComponentID = node.ID
+		s.lastMessage = fmt.Sprintf("%s %s updated.", s.editSession.DraftCard.Name, control)
+	default:
+		return Snapshot{}, fmt.Errorf("component kind %q does not support edit controls", node.ComponentKind)
+	}
+	return s.snapshotLocked()
+}
+
+func (s *Session) SaveEdit() (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.editSession == nil {
+		return Snapshot{}, fmt.Errorf("start editing a card first")
+	}
+	targetIndex := s.libraryCardIndex(s.editSession.TargetCardID)
+	if targetIndex < 0 {
+		return Snapshot{}, fmt.Errorf("target card %q is not in your library", s.editSession.TargetCardID)
+	}
+
+	card := cloneValue(s.editSession.DraftCard)
+	card.ID = s.editSession.TargetCardID
+	card.Collectible = false
+	card.Collected = true
+	card.Document.CardID = card.ID
+	if card.State == nil {
+		card.State = map[string]any{}
+	}
+	card.State["editable"] = true
+
+	installedKinds := map[string]bool{}
+	if findNodeByKind(card.Document.Root, slider.Kind) != nil {
+		installedKinds[slider.Kind] = true
+		card.Tags = appendStringOnce(card.Tags, "controller")
+		card.Tags = appendStringOnce(card.Tags, "slider-controller")
+		card.State["built"] = true
+		if card.ID == BlankControllerCardID {
+			card.Name = "Regulator Controller"
+			card.Document.Name = "Regulator Controller"
+		}
+	}
+	if findNodeByKind(card.Document.Root, border.Kind) != nil {
+		installedKinds[border.Kind] = true
+	}
+	for kind := range installedKinds {
+		card.State["installedComponents"] = appendStateStringOnce(card.State["installedComponents"], kind)
+	}
+
+	s.library[targetIndex] = card
+	pending := map[string]bool{}
+	for _, cardID := range s.editSession.PendingConsumedComponentIDs {
+		pending[cardID] = true
+	}
+	if len(pending) > 0 {
+		next := make([]Card, 0, len(s.library))
+		for _, candidate := range s.library {
+			if pending[candidate.ID] && candidate.ID != card.ID {
+				continue
+			}
+			next = append(next, candidate)
+		}
+		s.library = next
+	}
+	s.lastMessage = card.Name + " saved to your library."
+	s.editSession = nil
+	return s.snapshotLocked()
+}
+
+func (s *Session) CancelEdit() (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.editSession == nil {
+		return Snapshot{}, fmt.Errorf("start editing a card first")
+	}
+	cardName := s.editSession.DraftCard.Name
+	s.editSession = nil
+	s.lastMessage = "Canceled editing " + cardName + "."
+	return s.snapshotLocked()
+}
+
 func (s *Session) SaveController(templateCardID string, document cardcomponent.Document) (Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -274,12 +588,18 @@ func (s *Session) snapshotLocked() (Snapshot, error) {
 	}
 	worldDeck := cloneCards(s.worldDeck)
 	library := cloneCards(s.library)
+	var editSession *EditSession
+	if s.editSession != nil {
+		edit := cloneValue(*s.editSession)
+		editSession = &edit
+	}
 	return Snapshot{
 		WorldDeck:         worldDeck,
 		ActiveWorldCard:   cloneValue(s.worldDeck[s.activeIndex]),
 		ActiveWorldCardID: s.worldDeck[s.activeIndex].ID,
 		ActiveIndex:       s.activeIndex,
 		Library:           library,
+		EditSession:       editSession,
 		SolvedFlags:       cloneValue(s.solvedFlags),
 		Message:           s.lastMessage,
 	}, nil
@@ -301,6 +621,15 @@ func (s *Session) libraryCard(cardID string) *Card {
 		}
 	}
 	return nil
+}
+
+func (s *Session) libraryCardIndex(cardID string) int {
+	for index := range s.library {
+		if s.library[index].ID == cardID {
+			return index
+		}
+	}
+	return -1
 }
 
 func materializeDeck(definition DeckDefinition) ([]Card, map[string]map[string]cardcomponent.Document, map[string]CardDefinition, int, error) {

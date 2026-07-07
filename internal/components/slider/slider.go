@@ -14,20 +14,30 @@ import (
 const Kind = "slider"
 
 type Config struct {
-	Label string `json:"label"`
-	Min   int    `json:"min"`
-	Max   int    `json:"max"`
-	Step  int    `json:"step"`
-	Value int    `json:"value"`
+	Label       string `json:"label"`
+	Min         int    `json:"min"`
+	Max         int    `json:"max"`
+	Step        int    `json:"step"`
+	Value       int    `json:"value"`
+	X           int    `json:"x"`
+	Y           int    `json:"y"`
+	Width       int    `json:"width"`
+	TrackColor  string `json:"track_color"`
+	AccentColor string `json:"accent_color"`
 }
 
 func DefaultConfig() Config {
 	return Config{
-		Label: "Output",
-		Min:   0,
-		Max:   100,
-		Step:  1,
-		Value: 50,
+		Label:       "Output",
+		Min:         0,
+		Max:         100,
+		Step:        1,
+		Value:       50,
+		X:           50,
+		Y:           70,
+		Width:       72,
+		TrackColor:  "rgba(15,23,42,0.72)",
+		AccentColor: "#7dd3fc",
 	}
 }
 
@@ -66,6 +76,26 @@ func NormalizeConfig(part Config) Config {
 	}
 	part.Step = clamp(part.Step, 1, 100)
 	part.Value = clamp(part.Value, part.Min, part.Max)
+	if part.X == 0 {
+		part.X = defaults.X
+	}
+	if part.Y == 0 {
+		part.Y = defaults.Y
+	}
+	if part.Width == 0 {
+		part.Width = defaults.Width
+	}
+	part.X = clamp(part.X, 0, 100)
+	part.Y = clamp(part.Y, 0, 100)
+	part.Width = clamp(part.Width, 12, 100)
+	part.TrackColor = strings.TrimSpace(part.TrackColor)
+	if part.TrackColor == "" {
+		part.TrackColor = defaults.TrackColor
+	}
+	part.AccentColor = strings.TrimSpace(part.AccentColor)
+	if part.AccentColor == "" {
+		part.AccentColor = defaults.AccentColor
+	}
 	return part
 }
 
@@ -120,6 +150,31 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 			Actual:  generated.Config.Value,
 		})
 	}
+	if generated.Config.X < 0 || generated.Config.X > 100 {
+		issues = append(issues, rangeIssue("config.x", "x", generated.Config.X, 0, 100))
+	}
+	if generated.Config.Y < 0 || generated.Config.Y > 100 {
+		issues = append(issues, rangeIssue("config.y", "y", generated.Config.Y, 0, 100))
+	}
+	if generated.Config.Width < 12 || generated.Config.Width > 100 {
+		issues = append(issues, rangeIssue("config.width", "width", generated.Config.Width, 12, 100))
+	}
+	if !design.IsAllowedColor(generated.Config.TrackColor) {
+		issues = append(issues, design.Issue{
+			Path:    "config.track_color",
+			Code:    "invalid_color",
+			Message: "track_color must be a hex, rgb, rgba, hsl, or hsla color",
+			Actual:  generated.Config.TrackColor,
+		})
+	}
+	if !design.IsAllowedColor(generated.Config.AccentColor) {
+		issues = append(issues, design.Issue{
+			Path:    "config.accent_color",
+			Code:    "invalid_color",
+			Message: "accent_color must be a hex, rgb, rgba, hsl, or hsla color",
+			Actual:  generated.Config.AccentColor,
+		})
+	}
 	return issues
 }
 
@@ -130,19 +185,19 @@ func RenderLayer(componentID string, part Config) *godom.Node {
 func RenderLayerWithContext(componentID string, part Config, renderContext card.RenderContext) *godom.Node {
 	part = NormalizeConfig(part)
 	style := map[string]string{
-		"background":     "rgba(15,23,42,0.72)",
-		"border":         "1px solid rgba(125,211,252,0.42)",
+		"background":     part.TrackColor,
+		"border":         "1px solid " + part.AccentColor,
 		"border-radius":  "14px",
 		"box-shadow":     "0 14px 34px rgba(8,47,73,0.22)",
 		"color":          "#e0f2fe",
 		"display":        "grid",
 		"gap":            "8px",
-		"left":           "50%",
+		"left":           fmt.Sprintf("%d%%", part.X),
 		"padding":        "12px",
 		"pointer-events": "auto",
-		"top":            "70%",
+		"top":            fmt.Sprintf("%d%%", part.Y),
 		"transform":      "translate(-50%, -50%)",
-		"width":          "72%",
+		"width":          fmt.Sprintf("%d%%", part.Width),
 		"z-index":        "2",
 	}
 	return godom.Div(
@@ -164,7 +219,8 @@ func RenderLayerWithContext(componentID string, part Config, renderContext card.
 			godom.Value(fmt.Sprintf("%d", part.Value)),
 			godom.Attr("aria-label", part.Label),
 			godom.Attr("disabled", "disabled"),
-			godom.Class("w-full accent-sky-300"),
+			godom.Attr("style", "accent-color: "+part.AccentColor+";"),
+			godom.Class("w-full"),
 		),
 	)
 }

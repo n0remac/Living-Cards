@@ -100,15 +100,16 @@ type ComponentOverlay struct {
 }
 
 type ControlDescriptor struct {
-	Trait   string          `json:"trait"`
-	Control string          `json:"control"`
-	Kind    string          `json:"kind"`
-	Label   string          `json:"label"`
-	Value   any             `json:"value,omitempty"`
-	Options []ControlOption `json:"options,omitempty"`
-	Min     int             `json:"min,omitempty"`
-	Max     int             `json:"max,omitempty"`
-	Step    int             `json:"step,omitempty"`
+	Trait    string          `json:"trait"`
+	Control  string          `json:"control"`
+	Kind     string          `json:"kind"`
+	Label    string          `json:"label"`
+	Property string          `json:"property,omitempty"`
+	Value    any             `json:"value,omitempty"`
+	Options  []ControlOption `json:"options,omitempty"`
+	Min      int             `json:"min,omitempty"`
+	Max      int             `json:"max,omitempty"`
+	Step     int             `json:"step,omitempty"`
 }
 
 type ControlOption struct {

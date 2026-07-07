@@ -16,6 +16,7 @@ type Config struct {
 	BorderWidthPX  int    `json:"border_width_px"`
 	BorderRadiusPX int    `json:"border_radius_px"`
 	BorderColor    string `json:"border_color"`
+	BorderStyle    string `json:"border_style"`
 	CSS            string `json:"css"`
 }
 
@@ -24,6 +25,7 @@ func DefaultConfig() Config {
 		BorderWidthPX:  1,
 		BorderRadiusPX: 24,
 		BorderColor:    "rgba(255,255,255,0.16)",
+		BorderStyle:    "solid",
 		CSS:            "",
 	}
 }
@@ -151,10 +153,12 @@ func Definition() card.Definition {
 			if issues := ValidateGenerated(generated); len(issues) > 0 {
 				return card.Contribution{}, fmt.Errorf("invalid border config at %s: %s", issues[0].Path, issues[0].Message)
 			}
+			part = generated.Config
 			styles := map[string]string{
-				"border":        fmt.Sprintf("%dpx solid %s", part.BorderWidthPX, part.BorderColor),
+				"border":        fmt.Sprintf("%dpx %s %s", part.BorderWidthPX, part.BorderStyle, part.BorderColor),
 				"border-color":  part.BorderColor,
 				"border-radius": fmt.Sprintf("%dpx", part.BorderRadiusPX),
+				"border-style":  part.BorderStyle,
 				"border-width":  fmt.Sprintf("%dpx", part.BorderWidthPX),
 			}
 			for property, value := range design.CSSDeclarations(part.CSS, AllowedCSS()) {
@@ -172,6 +176,7 @@ func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
 	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
 	generated.Config.BorderColor = strings.TrimSpace(generated.Config.BorderColor)
+	generated.Config.BorderStyle = normalizeBorderStyle(generated.Config.BorderStyle)
 	generated.Config.CSS = strings.TrimSpace(generated.Config.CSS)
 	generated.Config.BorderWidthPX = clamp(generated.Config.BorderWidthPX, 0, 16)
 	generated.Config.BorderRadiusPX = clamp(generated.Config.BorderRadiusPX, 0, 64)
@@ -179,6 +184,7 @@ func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
 
 func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
 	var issues []design.Issue
+	generated.Config.BorderStyle = normalizeBorderStyle(generated.Config.BorderStyle)
 	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 16 {
 		issues = append(issues, design.Issue{
 			Path:    "config.border_width_px",
@@ -210,6 +216,15 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 			Actual:  color,
 		})
 	}
+	if !borderStyleAllowed(generated.Config.BorderStyle) {
+		issues = append(issues, design.Issue{
+			Path:    "config.border_style",
+			Code:    "invalid_option",
+			Message: "border_style must be solid, dashed, dotted, or double",
+			Actual:  generated.Config.BorderStyle,
+			Allowed: []string{"solid", "dashed", "dotted", "double"},
+		})
+	}
 	issues = append(issues, design.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
 	return issues
 }
@@ -220,9 +235,31 @@ func AllowedCSS() map[string]struct{} {
 		"border-color":  {},
 		"border-image":  {},
 		"border-radius": {},
+		"border-style":  {},
 		"border-width":  {},
 		"box-shadow":    {},
 	}
+}
+
+func AllowedStyles() []string {
+	return []string{"solid", "dashed", "dotted", "double"}
+}
+
+func normalizeBorderStyle(style string) string {
+	style = strings.ToLower(strings.TrimSpace(style))
+	if style == "" {
+		return "solid"
+	}
+	return style
+}
+
+func borderStyleAllowed(style string) bool {
+	for _, candidate := range AllowedStyles() {
+		if style == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func clamp(value, min, max int) int {

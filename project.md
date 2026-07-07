@@ -14,9 +14,9 @@ Latest reviewed state: source at `66a81b0 Added slider component and puzzle`, wi
 - The seeded deck has a locked door, inventory label, collectible bent iron key, faded photograph, and sleeping switch.
 - Playing the collected key onto the locked door is data-driven: a rule matches source/target/flags, sets `doorUnlocked`, updates door state/tags, swaps the door document variant, loads the fuse-room pack, and sets the message.
 - The fuse room adds clue/red herring cards and a collectible glass fuse. Playing the fuse onto the sleeping switch powers/flips the switch, swaps its document variant, and loads the generator-room pack.
-- The generator room adds a generator panel, numbered gauge clue, collectible Blank Controller, and collectible Slider Component.
-- After both generator parts are collected, the browser opens a controller builder from the Blank Controller library card. Saving creates or updates a server-owned Regulator Controller card with a normalized slider config.
-- Playing the Regulator Controller onto the generator panel is data-driven: the generator rule requires a slider source component with value `73`, then sets `generatorPowered`, updates generator state/tags, swaps the generator document variant, and sets the success message.
+- The generator room adds a generator panel, numbered gauge clue, collectible Blank Controller, collectible Slider Component, and collectible Border Component.
+- After generator parts are collected, the player can edit the Blank Controller full-screen, install component cards into a server-owned draft, tune visual controls, and save the draft back into the library. Component cards are consumed on save only.
+- Playing the tuned controller onto the generator panel is data-driven: the generator rule requires a slider source component with value `73`, then sets `generatorPowered`, updates generator state/tags, swaps the generator document variant, and sets the success message.
 - Game API responses include both card data and server-rendered preview HTML. Browser JavaScript does not own card state.
 - The draft-card designer remains available through `/api/draft-card/*`, but the current page does not expose a normal visible button to open the designer overlay.
 - No real database dependency has been added yet. The deck loader validates JSON data, materializes runtime session state, and merges embedded packs so a database source can later replace the embedded JSON source.
@@ -31,7 +31,12 @@ Latest reviewed state: source at `66a81b0 Added slider component and puzzle`, wi
 - `POST /api/game/cycle` moves the active world card forward or backward.
 - `POST /api/game/collect` collects a collectible active or specified card into the library.
 - `POST /api/game/play-card` plays a collected library card onto a target world card and evaluates declarative deck rules.
-- `POST /api/game/save-controller` validates a submitted controller document, requires the Blank Controller and Slider Component in the library, and saves a rendered Regulator Controller back into the library.
+- `POST /api/game/edit/start` opens a server-owned draft for an editable library card.
+- `POST /api/game/edit/install-component` applies a component card to the draft and marks that component for save-time consumption.
+- `POST /api/game/edit/control-change` updates HTML/CSS-style controls on the draft preview without committing to the library.
+- `POST /api/game/edit/save` commits the draft to the library card and consumes pending component cards.
+- `POST /api/game/edit/cancel` discards the draft without consuming components.
+- `POST /api/game/save-controller` remains as a legacy bespoke controller-save endpoint.
 - `GET /api/draft-card` returns the current backend-owned draft card document.
 - `GET /api/draft-card/rendered` returns the draft document, server-rendered preview HTML, and library items.
 - `GET /api/draft-card/interactive` returns draft document state, game progress, overlays, components, and library items for the hidden designer/tapping workflow.
@@ -52,9 +57,10 @@ Latest reviewed state: source at `66a81b0 Added slider component and puzzle`, wi
 - Pack validation can resolve rule references against cards already loaded in the current session, which lets `fuse_room` target the original `sleeping-switch`.
 - Supported rule effects are `setFlag`, `setCardState`, `removeCardTags`, `setDocumentVariant`, `setMessage`, and `loadDeck`.
 - Supported source component conditions currently cover slider configs with an exact `valueEquals` match.
-- `SaveController` is the current bespoke runtime action outside deck JSON. It requires collected `blank-controller` and `slider-component` cards, extracts the first valid slider config from the submitted document, and creates or updates `generator-regulator-controller` in the library.
+- Full-screen card editing is the current visible runtime action outside deck JSON. It tracks one editable library card as a server-owned draft, installs collected component cards into that draft, applies component control changes to the draft preview, and commits/consumes only on save.
+- `SaveController` remains as a legacy bespoke action. It requires collected `blank-controller` and `slider-component` cards, extracts the first valid slider config from the submitted document, and creates or updates `generator-regulator-controller` in the library.
 - Reset rebuilds from the seed deck definition, clears loaded packs, clears the saved regulator controller, and restores the initial active card.
-- The runtime session API shape is intentionally stable: `Card`, `Snapshot`, `Collect`, `Cycle`, `UseCard`, `SaveController`, and rendered web responses use explicit public fields.
+- The runtime session API shape is intentionally stable: `Card`, `Snapshot`, `Collect`, `Cycle`, `UseCard`, draft edit actions, `SaveController`, and rendered web responses use explicit public fields.
 
 ## Draft Card Model
 
@@ -116,6 +122,7 @@ Latest reviewed state: source at `66a81b0 Added slider component and puzzle`, wi
 
 - `66a81b0` added the `slider` component, slider rendering/validation tests, component registry support, and TypeScript types for slider-bearing card documents.
 - `66a81b0` expanded `generator_room.json` into a playable generator puzzle with a numbered gauge, Blank Controller, Slider Component, and a slider-conditioned rule that powers the generator only at value `73`.
+- The current working tree replaces the visible controller-builder overlay with field-card editing: play editable cards to the field, install component cards, expose slider controls in the edge overlay, and use the edited card through normal play-card rules.
 - `66a81b0` added the `/api/game/save-controller` endpoint, session-side Regulator Controller creation/update logic, browser controller-builder overlay, and HTTP/session tests for malformed, missing-part, wrong-value, success, retune, and reset behavior.
 - The previous reviewed state added `loadDeck`, idempotent embedded pack loading, `fuse_room.json`, `generator_room.json`, and tests for the chained fuse/switch puzzle.
 - `1f5aa3e` moved the world deck out of Go constructors and into embedded pure JSON.

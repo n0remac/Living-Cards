@@ -26,7 +26,6 @@ func Page() *Node {
 					Attr("aria-live", "polite"),
 					stageEdgeControlsView(),
 				),
-				controllerBuilderView(),
 				designerOverlayView(),
 			),
 			Script(Type("module"), Src("/assets/app.js")),
@@ -68,6 +67,38 @@ func gameStageView() *Node {
 				),
 			),
 			Button(Id("game-next-card"), Type("button"), Class("game-cycle-button"), Attr("aria-label", "Next card"), T("›")),
+		),
+		Div(
+			Id("game-edit-mode"),
+			Class("game-edit-mode"),
+			Attr("hidden", "hidden"),
+			Div(
+				Class("game-edit-topbar"),
+				Div(
+					Class("game-edit-title-block"),
+					H2(Id("game-edit-title"), Class("game-edit-title"), T("Edit Card")),
+					Div(Id("game-edit-status"), Class("game-edit-status"), T("Drag a component onto the card.")),
+				),
+				Div(
+					Class("game-edit-actions"),
+					Button(Id("game-edit-cancel"), Type("button"), Class(uiSecondaryButtonClass("sm")), T("Cancel")),
+					Button(Id("game-edit-save"), Type("button"), Class(uiPrimaryButtonClass("sm")), T("Save")),
+				),
+			),
+			Div(
+				Id("game-edit-canvas"),
+				Class("game-edit-canvas"),
+				Div(Id("game-edit-card"), Class("game-edit-card"), T("Start editing a card.")),
+			),
+			Div(
+				Class("game-edit-tray-panel"),
+				Div(
+					Class("game-library-header"),
+					H2(Class("game-library-title"), T("Components")),
+					Span(Id("game-edit-component-count"), Class("game-library-count"), T("Empty")),
+				),
+				Div(Id("game-edit-component-tray"), Class("game-edit-component-tray"), T("No component cards collected.")),
+			),
 		),
 		Div(
 			Class("game-library-panel"),
@@ -141,54 +172,6 @@ func stageEdgeControlsView() *Node {
 			Id("stage-edge-controls-bottom"),
 			Class("stage-edge-controls-bottom"),
 			Div(Id("stage-edge-controls-status"), Class("stage-edge-controls-status"), T("")),
-		),
-	)
-}
-
-func controllerBuilderView() *Node {
-	return Div(
-		Id("controller-builder-overlay"),
-		Class("controller-builder-overlay"),
-		Attr("role", "dialog"),
-		Attr("aria-modal", "true"),
-		Attr("aria-labelledby", "controller-builder-title"),
-		Div(
-			Class("controller-builder-panel"),
-			Div(
-				Class("controller-builder-header"),
-				H2(Id("controller-builder-title"), Class("controller-builder-title"), T("Regulator Controller")),
-				Button(Id("controller-builder-close"), Type("button"), Class(uiSecondaryButtonClass("xs")), T("Close")),
-			),
-			Div(
-				Class("controller-builder-body"),
-				Label(Attr("for", "controller-slider-input"), Class("controller-builder-label"), T("Output")),
-				Div(
-					Class("controller-builder-value-row"),
-					Input(
-						Id("controller-slider-input"),
-						Type("range"),
-						Attr("min", "0"),
-						Attr("max", "100"),
-						Attr("step", "1"),
-						Value("50"),
-						Class("controller-builder-range"),
-					),
-					Input(
-						Id("controller-slider-number"),
-						Type("number"),
-						Attr("min", "0"),
-						Attr("max", "100"),
-						Attr("step", "1"),
-						Value("50"),
-						Class("controller-builder-number"),
-					),
-				),
-			),
-			Div(
-				Class("controller-builder-actions"),
-				Button(Id("controller-builder-cancel"), Type("button"), Class(uiSecondaryButtonClass("sm")), T("Cancel")),
-				Button(Id("controller-builder-save"), Type("button"), Class(uiPrimaryButtonClass("sm")), T("Save Controller")),
-			),
 		),
 	)
 }
@@ -459,6 +442,124 @@ func pageCSS() string {
   font-weight: 650;
 }
 
+.game-edit-mode {
+  min-height: 0;
+  display: none;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 0.85rem;
+}
+
+.game-stage-shell[data-editing="true"] .game-board,
+.game-stage-shell[data-editing="true"] .game-library-panel {
+  display: none;
+}
+
+.game-stage-shell[data-editing="true"] .game-edit-mode {
+  display: grid;
+}
+
+.game-edit-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+  padding-bottom: 0.75rem;
+}
+
+.game-edit-title-block {
+  min-width: 0;
+}
+
+.game-edit-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.game-edit-status {
+  margin-top: 0.2rem;
+  color: rgba(244,244,245,0.62);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.game-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.game-edit-canvas {
+  min-height: min(38rem, calc(100dvh - 14rem));
+  display: grid;
+  place-items: center;
+  border: 1px dashed rgba(255,255,255,0.18);
+  border-radius: 0.55rem;
+  background: rgba(9,9,11,0.42);
+  padding: 1rem;
+}
+
+.game-edit-canvas[data-drop-active="true"] {
+  border-color: rgba(250,204,21,0.82);
+  background: rgba(250,204,21,0.08);
+}
+
+.game-edit-card {
+  width: min(88vw, 32rem, calc((100dvh - 15rem) * 5 / 7));
+  color: var(--app-fg);
+}
+
+.game-edit-card > [data-card-id] {
+  width: 100%;
+  max-width: none;
+}
+
+.game-edit-tray-panel {
+  display: grid;
+  gap: 0.65rem;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  padding-top: 0.75rem;
+}
+
+.game-edit-component-tray {
+  min-height: 7rem;
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+  color: rgba(244,244,245,0.52);
+  font-size: 0.85rem;
+}
+
+.game-edit-component-card {
+  flex: 0 0 8rem;
+  display: grid;
+  gap: 0.35rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: grab;
+}
+
+.game-edit-component-card[data-pending="true"] {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.game-edit-component-card:active {
+  cursor: grabbing;
+}
+
+.game-edit-component-card [data-card-id] {
+  width: 8rem;
+  max-width: none;
+  pointer-events: none;
+}
+
 .game-library-panel {
   display: grid;
   gap: 0.65rem;
@@ -509,6 +610,15 @@ func pageCSS() string {
   cursor: grab;
 }
 
+.game-library-card[data-on-field="true"] {
+  opacity: 0.72;
+}
+
+.game-library-card[data-on-field="true"] [data-card-id] {
+  outline: 2px solid rgba(52,211,153,0.74);
+  outline-offset: 2px;
+}
+
 .game-library-card:active {
   cursor: grabbing;
 }
@@ -525,108 +635,26 @@ func pageCSS() string {
   font-weight: 700;
 }
 
-.game-library-build {
+.game-library-action {
   min-height: 2rem;
   border-radius: 0.45rem;
-  border: 1px solid rgba(125, 211, 252, 0.36);
-  background: rgba(14, 165, 233, 0.14);
-  color: rgba(224, 242, 254, 0.95);
+  border: 1px solid rgba(52, 211, 153, 0.32);
+  background: rgba(16, 185, 129, 0.12);
+  color: rgba(236, 253, 245, 0.95);
   font-size: 0.72rem;
   font-weight: 800;
   cursor: pointer;
 }
 
-.game-library-build:disabled {
+.game-library-action[data-kind="component"] {
+  border-color: rgba(250, 204, 21, 0.36);
+  background: rgba(250, 204, 21, 0.12);
+  color: rgba(254, 243, 199, 0.95);
+}
+
+.game-library-action:disabled {
   cursor: not-allowed;
   opacity: 0.52;
-}
-
-.controller-builder-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 45;
-  display: none;
-  place-items: center;
-  padding: 1rem;
-  background: rgba(0,0,0,0.58);
-  backdrop-filter: blur(10px);
-}
-
-.controller-builder-open .controller-builder-overlay {
-  display: grid;
-}
-
-.controller-builder-panel {
-  width: min(100%, 28rem);
-  display: grid;
-  gap: 0;
-  overflow: hidden;
-  border: 1px solid rgba(212,212,216,0.28);
-  border-radius: 0.5rem;
-  background: rgba(24,24,27,0.98);
-  box-shadow: 0 1.5rem 4rem rgba(0,0,0,0.46);
-}
-
-.controller-builder-header,
-.controller-builder-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 1rem;
-}
-
-.controller-builder-header {
-  border-bottom: 1px solid rgba(255,255,255,0.12);
-}
-
-.controller-builder-title {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 800;
-  letter-spacing: 0;
-}
-
-.controller-builder-body {
-  display: grid;
-  gap: 0.8rem;
-  padding: 1rem;
-}
-
-.controller-builder-label {
-  color: rgba(244,244,245,0.72);
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-}
-
-.controller-builder-value-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 5rem;
-  gap: 0.75rem;
-  align-items: center;
-}
-
-.controller-builder-range {
-  width: 100%;
-  accent-color: #7dd3fc;
-}
-
-.controller-builder-number {
-  width: 100%;
-  height: 2.5rem;
-  border: 1px solid rgba(212,212,216,0.26);
-  border-radius: 0.45rem;
-  background: rgba(9,9,11,0.7);
-  color: rgba(244,244,245,0.95);
-  font-size: 1rem;
-  font-weight: 800;
-  text-align: center;
-}
-
-.controller-builder-actions {
-  justify-content: flex-end;
-  border-top: 1px solid rgba(255,255,255,0.12);
 }
 
 @media (max-width: 42rem) {
@@ -646,6 +674,19 @@ func pageCSS() string {
 
   .game-action-row {
     grid-template-columns: 1fr;
+  }
+
+  .game-edit-topbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .game-edit-actions {
+    justify-content: stretch;
+  }
+
+  .game-edit-actions > button {
+    flex: 1 1 8rem;
   }
 }
 
@@ -878,6 +919,14 @@ func pageCSS() string {
   font-weight: 650;
   color: rgba(244, 244, 245, 0.52);
   text-transform: uppercase;
+}
+
+.stage-edge-property {
+  color: rgba(125, 211, 252, 0.74);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.66rem;
+  font-weight: 650;
+  text-transform: none;
 }
 
 .stage-edge-controls-group {

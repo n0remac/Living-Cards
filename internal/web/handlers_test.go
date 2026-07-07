@@ -35,11 +35,16 @@ func TestPageRendersInteractiveStageWorkflow(t *testing.T) {
 		`id="game-next-card"`,
 		`id="game-collect-card"`,
 		`id="game-status"`,
+		`id="game-edit-mode"`,
+		`id="game-edit-title"`,
+		`id="game-edit-status"`,
+		`id="game-edit-save"`,
+		`id="game-edit-cancel"`,
+		`id="game-edit-canvas"`,
+		`id="game-edit-card"`,
+		`id="game-edit-component-tray"`,
 		`id="game-library-list"`,
 		`id="game-library-count"`,
-		`id="controller-builder-overlay"`,
-		`id="controller-slider-input"`,
-		`id="controller-builder-save"`,
 		`id="stage-overlay-root"`,
 		`id="stage-edge-controls"`,
 		`id="stage-edge-controls-top"`,
@@ -69,6 +74,12 @@ func TestPageRendersInteractiveStageWorkflow(t *testing.T) {
 	for _, marker := range []string{
 		`id="app-header"`,
 		`id="designer-toggle-btn"`,
+		`id="controller-builder-overlay"`,
+		`id="controller-slider-input"`,
+		`id="controller-builder-save"`,
+		`id="game-field-panel"`,
+		`id="game-field-card"`,
+		`id="game-field-edit"`,
 		`<aside`,
 		`lg:grid-cols`,
 		`value="title"`,
@@ -335,6 +346,129 @@ func TestGameSaveControllerAddsRenderedLibraryCard(t *testing.T) {
 	}
 	if !strings.Contains(controller.PreviewHTML, `data-component-kind="slider"`) || !strings.Contains(controller.PreviewHTML, `value="73"`) {
 		t.Fatalf("controller preview missing slider: %s", controller.PreviewHTML)
+	}
+}
+
+func TestGameEditWorkflowInstallsTunesAndSavesSlider(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	advanceWebToGeneratorRoom(t, mux)
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "blank-controller"})
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "slider-component"})
+
+	startRecorder := postJSON(t, mux, "/api/game/edit/start", map[string]any{"cardId": "blank-controller"})
+	if startRecorder.Code != http.StatusOK {
+		t.Fatalf("start status = %d, want 200 body=%s", startRecorder.Code, startRecorder.Body.String())
+	}
+	var startPayload GameSessionSnapshot
+	if err := json.Unmarshal(startRecorder.Body.Bytes(), &startPayload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, startRecorder.Body.String())
+	}
+	if startPayload.EditSession == nil || startPayload.EditSession.DraftCard.ID != "blank-controller" || startPayload.EditSession.EditingOverlay != nil {
+		t.Fatalf("start payload = %#v, want draft with no selected component overlay", startPayload)
+	}
+
+	installRecorder := postJSON(t, mux, "/api/game/edit/install-component", map[string]any{"componentCardId": "slider-component"})
+	if installRecorder.Code != http.StatusOK {
+		t.Fatalf("install status = %d, want 200 body=%s", installRecorder.Code, installRecorder.Body.String())
+	}
+	var installPayload GameSessionSnapshot
+	if err := json.Unmarshal(installRecorder.Body.Bytes(), &installPayload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, installRecorder.Body.String())
+	}
+	if gameCard(installPayload.Library, "slider-component") == nil {
+		t.Fatalf("library = %#v, slider component should not be consumed before save", installPayload.Library)
+	}
+	if installPayload.EditSession == nil || !strings.Contains(installPayload.EditSession.DraftCard.PreviewHTML, `data-component-kind="slider"`) {
+		t.Fatalf("draft card missing slider: %#v", installPayload.EditSession)
+	}
+	if installPayload.EditSession.EditingOverlay == nil ||
+		installPayload.EditSession.EditingOverlay.ComponentKind != "slider" ||
+		!hasControlWithProperty(installPayload.EditSession.EditingOverlay.Controls, "value", `input[type=range].value`) ||
+		!hasControlWithProperty(installPayload.EditSession.EditingOverlay.Controls, "track_color", "background-color") {
+		t.Fatalf("editing overlay = %#v, want slider controls with property hints", installPayload.EditSession.EditingOverlay)
+	}
+
+	tuneRecorder := postJSON(t, mux, "/api/game/edit/control-change", map[string]any{
+		"componentId": "regulator-output-slider",
+		"control":     "value",
+		"value":       73,
+	})
+	if tuneRecorder.Code != http.StatusOK {
+		t.Fatalf("tune status = %d, want 200 body=%s", tuneRecorder.Code, tuneRecorder.Body.String())
+	}
+	var tuned GameSessionSnapshot
+	if err := json.Unmarshal(tuneRecorder.Body.Bytes(), &tuned); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, tuneRecorder.Body.String())
+	}
+	if tuned.EditSession == nil || !strings.Contains(tuned.EditSession.DraftCard.PreviewHTML, `value="73"`) {
+		t.Fatalf("tuned draft preview missing value 73: %#v", tuned.EditSession)
+	}
+
+	saveRecorder := postJSON(t, mux, "/api/game/edit/save", map[string]any{})
+	if saveRecorder.Code != http.StatusOK {
+		t.Fatalf("save status = %d, want 200 body=%s", saveRecorder.Code, saveRecorder.Body.String())
+	}
+	var saved GameSessionSnapshot
+	if err := json.Unmarshal(saveRecorder.Body.Bytes(), &saved); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, saveRecorder.Body.String())
+	}
+	if saved.EditSession != nil || gameCard(saved.Library, "slider-component") != nil {
+		t.Fatalf("saved payload = %#v, want closed edit and consumed slider", saved)
+	}
+
+	playRecorder := postJSON(t, mux, "/api/game/play-card", map[string]any{
+		"sourceCardId": "blank-controller",
+		"targetCardId": "generator-panel",
+	})
+	if playRecorder.Code != http.StatusOK {
+		t.Fatalf("play status = %d, want 200 body=%s", playRecorder.Code, playRecorder.Body.String())
+	}
+	var played GameSessionSnapshot
+	if err := json.Unmarshal(playRecorder.Body.Bytes(), &played); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, playRecorder.Body.String())
+	}
+	if !played.SolvedFlags["generatorPowered"] || !strings.Contains(gameCardHTML(played.WorldDeck, "generator-panel"), "GENERATOR ONLINE") {
+		t.Fatalf("played payload = %#v, want powered generator", played)
+	}
+}
+
+func TestGameEditWorkflowExposesBorderControls(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	advanceWebToGeneratorRoom(t, mux)
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "blank-controller"})
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "border-component"})
+	postJSON(t, mux, "/api/game/edit/start", map[string]any{"cardId": "blank-controller"})
+
+	installRecorder := postJSON(t, mux, "/api/game/edit/install-component", map[string]any{"componentCardId": "border-component"})
+	if installRecorder.Code != http.StatusOK {
+		t.Fatalf("install status = %d, want 200 body=%s", installRecorder.Code, installRecorder.Body.String())
+	}
+	var installPayload GameSessionSnapshot
+	if err := json.Unmarshal(installRecorder.Body.Bytes(), &installPayload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, installRecorder.Body.String())
+	}
+	if installPayload.EditSession == nil || installPayload.EditSession.EditingOverlay == nil || installPayload.EditSession.EditingOverlay.ComponentKind != "border" {
+		t.Fatalf("editing overlay = %#v, want border controls", installPayload.EditSession)
+	}
+	if !hasControlWithProperty(installPayload.EditSession.EditingOverlay.Controls, "border_color", "border-color") ||
+		!hasControlWithProperty(installPayload.EditSession.EditingOverlay.Controls, "border_style", "border-style") {
+		t.Fatalf("border overlay controls = %#v, want property hints", installPayload.EditSession.EditingOverlay.Controls)
+	}
+
+	cancelRecorder := postJSON(t, mux, "/api/game/edit/cancel", map[string]any{})
+	if cancelRecorder.Code != http.StatusOK {
+		t.Fatalf("cancel status = %d, want 200 body=%s", cancelRecorder.Code, cancelRecorder.Body.String())
+	}
+	var canceled GameSessionSnapshot
+	if err := json.Unmarshal(cancelRecorder.Body.Bytes(), &canceled); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, cancelRecorder.Body.String())
+	}
+	if canceled.EditSession != nil || gameCard(canceled.Library, "border-component") == nil {
+		t.Fatalf("canceled payload = %#v, want closed edit and retained border component", canceled)
 	}
 }
 
@@ -1715,6 +1849,15 @@ func hasComponent(components []ComponentDescriptor, componentID string) bool {
 func hasControl(controls []ControlDescriptor, control string) bool {
 	for _, candidate := range controls {
 		if candidate.Control == control {
+			return true
+		}
+	}
+	return false
+}
+
+func hasControlWithProperty(controls []ControlDescriptor, control, property string) bool {
+	for _, candidate := range controls {
+		if candidate.Control == control && candidate.Property == property {
 			return true
 		}
 	}

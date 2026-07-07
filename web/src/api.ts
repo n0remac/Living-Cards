@@ -229,6 +229,58 @@ export async function playGameCard(sourceCardId: string, targetCardId: string): 
   return await response.json() as GameSessionSnapshot;
 }
 
+export async function startGameEdit(cardId: string): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/edit/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cardId }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to start editing card."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function installGameEditComponent(componentCardId: string): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/edit/install-component", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ componentCardId }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to install component."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function applyGameEditControl(componentId: string, control: string, value: unknown): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/edit/control-change", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ componentId, control, value }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to update draft card."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function saveGameEdit(): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/edit/save", { method: "POST" });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to save edited card."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function cancelGameEdit(): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/edit/cancel", { method: "POST" });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to cancel editing."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
 export async function saveControllerCard(templateCardId: string, document: CardDocument): Promise<GameSessionSnapshot> {
   const response = await fetch("/api/game/save-controller", {
     method: "POST",

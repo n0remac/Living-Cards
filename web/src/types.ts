@@ -12,7 +12,7 @@ export interface ComponentNode {
 }
 
 export type ConfigKind = "background" | "border" | "textarea" | "shape" | "image";
-export type ComponentKind = "card" | "textarea" | "shape" | "image" | "slider";
+export type ComponentKind = "card" | "border" | "textarea" | "shape" | "image" | "slider";
 export type ComponentTarget = ConfigKind | "slider" | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
 export type CardHitZone = "border" | "background" | "textarea" | "shape" | "image" | "slider";
 export type EditMode = "random" | "preset" | "simpleControls" | "advancedControls" | "aiPrompt" | "library";
@@ -102,6 +102,7 @@ export interface ControlDescriptor {
   control: string;
   kind: "checkbox" | "color" | "range" | "select" | "text";
   label: string;
+  property?: string;
   value?: unknown;
   options?: ControlOption[];
   min?: number;
@@ -175,12 +176,21 @@ export interface RenderedGameCard {
   preview_html: string;
 }
 
+export interface GameEditSession {
+  targetCardId: string;
+  draftCard: RenderedGameCard;
+  pendingConsumedComponentIds?: string[];
+  selectedComponentId?: string;
+  editingOverlay?: ComponentOverlay;
+}
+
 export interface GameSessionSnapshot {
   worldDeck: RenderedGameCard[];
   activeWorldCard: RenderedGameCard;
   activeWorldCardId: string;
   activeIndex: number;
   library: RenderedGameCard[];
+  editSession?: GameEditSession;
   solvedFlags: Record<string, boolean>;
   message?: string;
 }

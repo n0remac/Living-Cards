@@ -300,6 +300,99 @@ func TestSessionSliderControllerPowersGenerator(t *testing.T) {
 	}
 }
 
+func TestSessionEditWorkflowBuildsAndUsesSliderController(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	loadGeneratorRoom(t, session)
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(SliderComponentCardID)
+	})
+	started := mustResult(t, func() (Snapshot, error) {
+		return session.StartEdit(BlankControllerCardID)
+	})
+	if started.EditSession == nil || started.EditSession.TargetCardID != BlankControllerCardID || started.EditSession.DraftCard.ID != BlankControllerCardID {
+		t.Fatalf("edit snapshot = %#v, want blank controller draft", started)
+	}
+	installed := mustResult(t, func() (Snapshot, error) {
+		return session.InstallEditComponent(SliderComponentCardID)
+	})
+	if findCard(installed.Library, SliderComponentCardID) == nil {
+		t.Fatalf("library = %#v, slider component should not be consumed before save", installed.Library)
+	}
+	if installed.EditSession == nil || !stringInSlice(installed.EditSession.PendingConsumedComponentIDs, SliderComponentCardID) {
+		t.Fatalf("edit session = %#v, want pending slider consumption", installed.EditSession)
+	}
+	if !documentContains(installed.EditSession.DraftCard.Document, `"componentKind":"slider"`) {
+		t.Fatalf("draft card missing slider: %#v", installed.EditSession.DraftCard)
+	}
+	tuned := mustResult(t, func() (Snapshot, error) {
+		return session.ApplyEditControl("regulator-output-slider", "value", json.RawMessage("73"))
+	})
+	tuned = mustResult(t, func() (Snapshot, error) {
+		return session.ApplyEditControl("regulator-output-slider", "width", json.RawMessage("82"))
+	})
+	if tuned.EditSession == nil || !documentContains(tuned.EditSession.DraftCard.Document, `"value":73`) || !documentContains(tuned.EditSession.DraftCard.Document, `"width":82`) {
+		t.Fatalf("tuned draft card = %#v, want slider value 73 and width 82", tuned.EditSession)
+	}
+	saved := mustResult(t, session.SaveEdit)
+	if saved.EditSession != nil {
+		t.Fatalf("edit session = %#v, want cleared after save", saved.EditSession)
+	}
+	if findCard(saved.Library, SliderComponentCardID) != nil {
+		t.Fatalf("library = %#v, slider component should be consumed on save", saved.Library)
+	}
+	controller := findCard(saved.Library, BlankControllerCardID)
+	if controller == nil {
+		t.Fatalf("library = %#v, want edited blank controller", saved.Library)
+	}
+	if controller.Name != "Regulator Controller" || !hasTag(*controller, "controller") || !documentContains(controller.Document, `"componentKind":"slider"`) {
+		t.Fatalf("controller = %#v, want named controller with slider", controller)
+	}
+	snapshot := mustResult(t, func() (Snapshot, error) {
+		return session.UseCard(BlankControllerCardID, "generator-panel")
+	})
+	if !snapshot.SolvedFlags[GeneratorPoweredFlag] {
+		t.Fatalf("solved flags = %#v, want generator powered", snapshot.SolvedFlags)
+	}
+	if generator := findCard(snapshot.WorldDeck, "generator-panel"); generator == nil || !documentContains(generator.Document, "GENERATOR ONLINE") {
+		t.Fatalf("generator should be online: %#v", generator)
+	}
+}
+
+func TestSessionEditCancelLeavesLibraryUnchanged(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	loadGeneratorRoom(t, session)
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(SliderComponentCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.StartEdit(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.InstallEditComponent(SliderComponentCardID)
+	})
+	canceled := mustResult(t, session.CancelEdit)
+	if canceled.EditSession != nil {
+		t.Fatalf("edit session = %#v, want cleared after cancel", canceled.EditSession)
+	}
+	if findCard(canceled.Library, SliderComponentCardID) == nil {
+		t.Fatalf("library = %#v, slider component should remain after cancel", canceled.Library)
+	}
+	controller := findCard(canceled.Library, BlankControllerCardID)
+	if controller == nil || controller.Name != "Blank Controller" || documentContains(controller.Document, `"componentKind":"slider"`) {
+		t.Fatalf("controller = %#v, want unchanged blank controller", controller)
+	}
+}
+
 func TestSessionPoweredGeneratorDoesNotAcceptWrongRetune(t *testing.T) {
 	t.Parallel()
 

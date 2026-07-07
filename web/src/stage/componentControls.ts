@@ -178,7 +178,7 @@ function renderCheckboxControl(control: ControlDescriptor, onValue: (value: unkn
 }
 
 function renderColorControl(control: ControlDescriptor, onValue: (value: unknown) => void): HTMLElement {
-  const wrapper = controlWrapper(control.label);
+  const wrapper = controlWrapper(control);
   const current = hexOrFallback(String(control.value || "#22c55e"));
   const row = document.createElement("div");
   row.className = "grid grid-cols-[1fr_auto] gap-2";
@@ -219,7 +219,7 @@ function renderColorControl(control: ControlDescriptor, onValue: (value: unknown
 }
 
 function renderRangeControl(control: ControlDescriptor, onValue: (value: unknown) => void): HTMLElement {
-  const wrapper = controlWrapper(control.label);
+  const wrapper = controlWrapper(control);
   const value = document.createElement("span");
   value.className = "text-xs font-semibold text-[var(--app-fg-soft)]";
   value.textContent = String(control.value ?? control.min ?? 0);
@@ -242,7 +242,7 @@ function renderRangeControl(control: ControlDescriptor, onValue: (value: unknown
 }
 
 function renderSelectControl(control: ControlDescriptor, onValue: (value: unknown) => void): HTMLElement {
-  const wrapper = controlWrapper(control.label);
+  const wrapper = controlWrapper(control);
   const select = document.createElement("select");
   select.className = "h-9 rounded-md border border-[var(--app-border)] bg-[var(--app-panel)] px-2 text-sm text-[var(--app-fg)] outline-none";
   (control.options || []).forEach((option) => {
@@ -258,7 +258,7 @@ function renderSelectControl(control: ControlDescriptor, onValue: (value: unknow
 }
 
 function renderTextControl(control: ControlDescriptor, onValue: (value: unknown) => void): HTMLElement {
-  const wrapper = controlWrapper(control.label);
+  const wrapper = controlWrapper(control);
   const input = document.createElement("input");
   input.type = "text";
   input.value = String(control.value ?? "");
@@ -275,12 +275,21 @@ function renderTextControl(control: ControlDescriptor, onValue: (value: unknown)
   return wrapper;
 }
 
-function controlWrapper(label: string): HTMLElement {
+function controlWrapper(control: ControlDescriptor): HTMLElement {
   const wrapper = document.createElement("label");
   wrapper.className = "grid gap-1 text-xs font-semibold uppercase text-[var(--app-fg-soft)]";
+  const header = document.createElement("span");
+  header.className = "grid gap-0.5";
   const text = document.createElement("span");
-  text.textContent = label;
-  wrapper.appendChild(text);
+  text.textContent = control.label;
+  header.appendChild(text);
+  if (control.property) {
+    const property = document.createElement("span");
+    property.className = "stage-edge-property";
+    property.textContent = control.property;
+    header.appendChild(property);
+  }
+  wrapper.appendChild(header);
   return wrapper;
 }
 

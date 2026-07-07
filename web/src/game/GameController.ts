@@ -1,13 +1,29 @@
-import { collectGameCard, cycleGameCard, fetchGameSession, playGameCard, resetGameSession, saveControllerCard } from "../api";
+import {
+  applyGameEditControl,
+  cancelGameEdit,
+  collectGameCard,
+  cycleGameCard,
+  fetchGameSession,
+  installGameEditComponent,
+  playGameCard,
+  resetGameSession,
+  saveGameEdit,
+  startGameEdit,
+} from "../api";
 import { byID } from "../dom";
-import type { CardDocument, ComponentNode, GameSessionSnapshot, RenderedGameCard } from "../types";
+import { closeComponentOverlay, openComponentOverlay } from "../stage/componentControls";
+import type { ComponentOverlay, ControlDescriptor, GameSessionSnapshot, RenderedGameCard } from "../types";
 
 let latestSession: GameSessionSnapshot | null = null;
 let busy = false;
+let controlBusy = false;
+
+interface RenderOptions {
+  openOverlay?: boolean;
+}
 
 export function initGameStage(): void {
   bindControls();
-  bindControllerBuilder();
   void loadSession();
 }
 
@@ -26,43 +42,51 @@ function bindControls(): void {
   byID<HTMLButtonElement>("reset-draft-btn")?.addEventListener("click", () => {
     void reset();
   });
+  byID<HTMLButtonElement>("game-edit-save")?.addEventListener("click", () => {
+    void saveEdit();
+  });
+  byID<HTMLButtonElement>("game-edit-cancel")?.addEventListener("click", () => {
+    void cancelEdit();
+  });
 
-  const dropTarget = byID<HTMLElement>("game-world-card");
-  dropTarget?.addEventListener("dragover", (event) => {
+  const worldTarget = byID<HTMLElement>("game-world-card");
+  worldTarget?.addEventListener("dragover", (event) => {
     event.preventDefault();
     event.dataTransfer!.dropEffect = "move";
   });
-  dropTarget?.addEventListener("drop", (event) => {
+  worldTarget?.addEventListener("drop", (event) => {
     event.preventDefault();
     const sourceCardId = event.dataTransfer?.getData("text/plain") || "";
     const targetCardId = latestSession?.activeWorldCardId || "";
     if (sourceCardId && targetCardId) {
+      closeComponentOverlay(overlayRoot());
       void play(sourceCardId, targetCardId);
     }
   });
-}
 
-function bindControllerBuilder(): void {
-  byID<HTMLButtonElement>("controller-builder-close")?.addEventListener("click", closeControllerBuilder);
-  byID<HTMLButtonElement>("controller-builder-cancel")?.addEventListener("click", closeControllerBuilder);
-  byID<HTMLButtonElement>("controller-builder-save")?.addEventListener("click", () => {
-    void saveController();
+  const editCanvas = byID<HTMLElement>("game-edit-canvas");
+  editCanvas?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    editCanvas.dataset.dropActive = "true";
+    event.dataTransfer!.dropEffect = "move";
   });
-  byID<HTMLDivElement>("controller-builder-overlay")?.addEventListener("click", (event) => {
-    if (event.target === event.currentTarget) {
-      closeControllerBuilder();
+  editCanvas?.addEventListener("dragleave", () => {
+    delete editCanvas.dataset.dropActive;
+  });
+  editCanvas?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    delete editCanvas.dataset.dropActive;
+    const sourceCardId = event.dataTransfer?.getData("text/plain") || "";
+    if (sourceCardId) {
+      void installEditComponent(sourceCardId);
     }
   });
+
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && document.body.classList.contains("controller-builder-open")) {
-      closeControllerBuilder();
+    if (event.key === "Escape") {
+      closeComponentOverlay(overlayRoot());
     }
   });
-
-  const range = byID<HTMLInputElement>("controller-slider-input");
-  const number = byID<HTMLInputElement>("controller-slider-number");
-  range?.addEventListener("input", () => syncControllerInputs(Number(range.value)));
-  number?.addEventListener("input", () => syncControllerInputs(Number(number.value)));
 }
 
 async function loadSession(): Promise<void> {
@@ -77,6 +101,7 @@ async function loadSession(): Promise<void> {
 async function reset(): Promise<void> {
   if (busy) return;
   busy = true;
+  closeComponentOverlay(overlayRoot());
   setStatus("Resetting scene...");
   try {
     renderSession(await resetGameSession());
@@ -123,20 +148,82 @@ async function play(sourceCardId: string, targetCardId: string): Promise<void> {
   }
 }
 
-function renderSession(session: GameSessionSnapshot): void {
+async function startEdit(cardId: string): Promise<void> {
+  if (busy) return;
+  busy = true;
+  closeComponentOverlay(overlayRoot());
+  try {
+    renderSession(await startGameEdit(cardId));
+  } catch (error) {
+    setStatus(errorMessage(error), true);
+  } finally {
+    busy = false;
+  }
+}
+
+async function installEditComponent(componentCardId: string): Promise<void> {
+  if (busy || !latestSession?.editSession) return;
+  const card = latestSession.library.find((candidate) => candidate.id === componentCardId);
+  if (!card || !componentKindForCard(card) || pendingComponentIds().has(componentCardId)) return;
+  busy = true;
+  try {
+    renderSession(await installGameEditComponent(componentCardId), { openOverlay: true });
+  } catch (error) {
+    setEditStatus(errorMessage(error), true);
+  } finally {
+    busy = false;
+  }
+}
+
+async function saveEdit(): Promise<void> {
+  if (busy || !latestSession?.editSession) return;
+  busy = true;
+  closeComponentOverlay(overlayRoot());
+  try {
+    renderSession(await saveGameEdit());
+  } catch (error) {
+    setEditStatus(errorMessage(error), true);
+  } finally {
+    busy = false;
+  }
+}
+
+async function cancelEdit(): Promise<void> {
+  if (busy || !latestSession?.editSession) return;
+  busy = true;
+  closeComponentOverlay(overlayRoot());
+  try {
+    renderSession(await cancelGameEdit());
+  } catch (error) {
+    setEditStatus(errorMessage(error), true);
+  } finally {
+    busy = false;
+  }
+}
+
+function renderSession(session: GameSessionSnapshot, options: RenderOptions = {}): void {
   latestSession = session;
   renderActiveCard(session.activeWorldCard);
   renderLibrary(session.library);
+  renderEditMode(session);
   renderAction(session.activeWorldCard);
   setStatus(session.message || "");
 
   const progress = byID<HTMLElement>("game-progress");
   if (progress) {
-    progress.textContent = `${session.library.length} cards collected`;
+    progress.textContent = `${session.library.length} cards in library`;
   }
   const count = byID<HTMLElement>("game-library-count");
   if (count) {
     count.textContent = session.library.length ? `${session.library.length} card${session.library.length === 1 ? "" : "s"}` : "Empty";
+  }
+
+  if (!session.editSession) {
+    closeComponentOverlay(overlayRoot());
+    return;
+  }
+  if (options.openOverlay) {
+    openEditingOverlay(session.editSession.editingOverlay);
   }
 }
 
@@ -146,6 +233,29 @@ function renderActiveCard(card: RenderedGameCard): void {
   root.innerHTML = card.preview_html;
   root.dataset.activeCardId = card.id;
   root.dataset.cardKind = card.kind;
+}
+
+function renderEditMode(session: GameSessionSnapshot): void {
+  const shell = byID<HTMLElement>("card-workspace");
+  const mode = byID<HTMLElement>("game-edit-mode");
+  const cardRoot = byID<HTMLElement>("game-edit-card");
+  const title = byID<HTMLElement>("game-edit-title");
+  if (!shell || !mode || !cardRoot) return;
+
+  const editing = Boolean(session.editSession);
+  shell.dataset.editing = editing ? "true" : "false";
+  mode.hidden = !editing;
+  if (!session.editSession) {
+    cardRoot.innerHTML = "";
+    renderComponentTray([]);
+    return;
+  }
+
+  cardRoot.innerHTML = session.editSession.draftCard.preview_html;
+  cardRoot.dataset.cardId = session.editSession.draftCard.id;
+  if (title) title.textContent = session.editSession.draftCard.name;
+  setEditStatus(session.message || "Drag a component onto the card.");
+  renderComponentTray(session.library);
 }
 
 function renderAction(card: RenderedGameCard): void {
@@ -165,12 +275,23 @@ function renderLibrary(cards: RenderedGameCard[]): void {
   }
   cards.forEach((card) => {
     const item = document.createElement("div");
+    item.setAttribute("role", "button");
+    item.tabIndex = 0;
     item.className = "game-library-card";
     item.draggable = true;
     item.dataset.cardId = card.id;
     item.addEventListener("dragstart", (event) => {
       event.dataTransfer?.setData("text/plain", card.id);
       event.dataTransfer!.effectAllowed = "move";
+    });
+    item.addEventListener("click", () => {
+      void handleLibraryClick(card);
+    });
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        void handleLibraryClick(card);
+      }
     });
 
     const preview = document.createElement("div");
@@ -181,126 +302,143 @@ function renderLibrary(cards: RenderedGameCard[]): void {
     label.textContent = card.name;
 
     item.append(preview, label);
-    if (card.id === "blank-controller") {
-      const build = document.createElement("button");
-      build.type = "button";
-      build.className = "game-library-build";
-      build.textContent = "Build";
-      build.disabled = !hasLibraryCard("slider-component");
-      build.title = build.disabled ? "Collect Slider Component first." : "Build Regulator Controller";
-      build.addEventListener("pointerdown", (event) => {
-        event.stopPropagation();
-      });
-      build.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        openControllerBuilder();
-      });
-      item.appendChild(build);
+    const action = libraryAction(card);
+    if (action) {
+      item.appendChild(action);
     }
     root.appendChild(item);
   });
 }
 
-function openControllerBuilder(): void {
-  if (!hasLibraryCard("blank-controller")) {
-    setStatus("Collect the Blank Controller first.", true);
+function libraryAction(card: RenderedGameCard): HTMLButtonElement | null {
+  if (!isEditableCard(card)) return null;
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "game-library-action";
+  action.textContent = "Edit";
+  action.title = "Edit this card";
+  action.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+  action.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void startEdit(card.id);
+  });
+  return action;
+}
+
+function renderComponentTray(cards: RenderedGameCard[]): void {
+  const root = byID<HTMLElement>("game-edit-component-tray");
+  const count = byID<HTMLElement>("game-edit-component-count");
+  if (!root) return;
+  root.innerHTML = "";
+  const pending = pendingComponentIds();
+  const components = cards.filter((card) => componentKindForCard(card));
+  if (count) {
+    count.textContent = components.length ? `${components.length} component${components.length === 1 ? "" : "s"}` : "Empty";
+  }
+  if (!components.length) {
+    root.textContent = "No component cards collected.";
     return;
   }
-  if (!hasLibraryCard("slider-component")) {
-    setStatus("Collect the Slider Component first.", true);
+  components.forEach((card) => {
+    const disabled = pending.has(card.id);
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "game-edit-component-card";
+    item.dataset.cardId = card.id;
+    item.dataset.componentKind = componentKindForCard(card);
+    if (disabled) item.dataset.pending = "true";
+    item.draggable = !disabled;
+    item.disabled = disabled;
+    item.addEventListener("dragstart", (event) => {
+      if (disabled) return;
+      event.dataTransfer?.setData("text/plain", card.id);
+      event.dataTransfer!.effectAllowed = "move";
+    });
+    item.addEventListener("click", () => {
+      if (!disabled) void installEditComponent(card.id);
+    });
+
+    const preview = document.createElement("div");
+    preview.innerHTML = card.preview_html;
+
+    const label = document.createElement("div");
+    label.className = "game-library-card-name";
+    label.textContent = card.name;
+
+    item.append(preview, label);
+    root.appendChild(item);
+  });
+}
+
+async function handleLibraryClick(card: RenderedGameCard): Promise<void> {
+  if (isEditableCard(card)) {
+    await startEdit(card.id);
     return;
   }
-  syncControllerInputs(existingControllerValue() ?? 50);
-  document.body.classList.add("controller-builder-open");
+  setStatus("Drag this card onto the active world card to use it.");
 }
 
-function closeControllerBuilder(): void {
-  document.body.classList.remove("controller-builder-open");
-}
-
-async function saveController(): Promise<void> {
-  if (busy) return;
-  busy = true;
-  setStatus("Saving controller...");
-  try {
-    const value = readControllerValue();
-    const snapshot = await saveControllerCard("blank-controller", createControllerDocument(value));
-    closeControllerBuilder();
-    renderSession(snapshot);
-  } catch (error) {
-    setStatus(errorMessage(error), true);
-  } finally {
-    busy = false;
+function openEditingOverlay(overlay = latestSession?.editSession?.editingOverlay): void {
+  if (!latestSession?.editSession) {
+    setStatus("Start editing a card first.", true);
+    return;
   }
-}
-
-function hasLibraryCard(cardId: string): boolean {
-  return Boolean(latestSession?.library.some((card) => card.id === cardId));
-}
-
-function existingControllerValue(): number | null {
-  const controller = latestSession?.library.find((card) => card.id === "generator-regulator-controller");
-  return controller ? sliderValueFromNode(controller.document.root) : null;
-}
-
-function sliderValueFromNode(node: ComponentNode): number | null {
-  if (node.componentKind === "slider" && node.config && typeof node.config.value === "number") {
-    return clampControllerValue(node.config.value);
+  if (!overlay) {
+    setEditStatus("Add or select a component to edit its properties.", true);
+    return;
   }
-  for (const child of node.children || []) {
-    const value = sliderValueFromNode(child);
-    if (value !== null) return value;
-  }
-  return null;
-}
-
-function syncControllerInputs(value: number): void {
-  const normalized = clampControllerValue(value);
-  const range = byID<HTMLInputElement>("controller-slider-input");
-  const number = byID<HTMLInputElement>("controller-slider-number");
-  if (range) range.value = String(normalized);
-  if (number) number.value = String(normalized);
-}
-
-function readControllerValue(): number {
-  const number = byID<HTMLInputElement>("controller-slider-number");
-  return clampControllerValue(Number(number?.value ?? 50));
-}
-
-function clampControllerValue(value: number): number {
-  if (!Number.isFinite(value)) return 50;
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function createControllerDocument(value: number): CardDocument {
-  return {
-    card_id: "generator-regulator-controller",
-    name: "Regulator Controller",
-    root: {
-      id: "generator-regulator-controller-root",
-      componentKind: "card",
-      config: {
-        padding_px: 18,
-        shadow: "0 24px 60px rgba(8,47,73,0.34)",
-      },
-      children: [{
-        id: "regulator-output-slider",
-        componentKind: "slider",
-        config: {
-          label: "Output",
-          min: 0,
-          max: 100,
-          step: 1,
-          value: clampControllerValue(value),
-        },
-      }],
+  openComponentOverlay({
+    root: overlayRoot(),
+    overlay,
+    onClose: () => undefined,
+    onControl: (control, value) => {
+      void applyEditControl(overlay, control, value);
     },
-  };
+  });
+}
+
+async function applyEditControl(overlay: ComponentOverlay, control: ControlDescriptor, value: unknown): Promise<void> {
+  if (controlBusy) return;
+  controlBusy = true;
+  try {
+    const snapshot = await applyGameEditControl(overlay.componentId, control.control, value);
+    renderSession(snapshot, { openOverlay: true });
+  } catch (error) {
+    setEditStatus(errorMessage(error), true);
+  } finally {
+    controlBusy = false;
+  }
+}
+
+function isEditableCard(card: RenderedGameCard): boolean {
+  return Boolean(card.state?.editable);
+}
+
+function componentKindForCard(card: RenderedGameCard): string {
+  const value = card.state?.componentKind;
+  return typeof value === "string" ? value : "";
+}
+
+function pendingComponentIds(): Set<string> {
+  return new Set(latestSession?.editSession?.pendingConsumedComponentIds || []);
+}
+
+function overlayRoot(): HTMLElement | null {
+  return byID<HTMLElement>("stage-overlay-root");
 }
 
 function setStatus(message: string, isError = false): void {
   const status = byID<HTMLElement>("game-status");
+  if (!status) return;
+  status.textContent = message;
+  status.dataset.tone = isError ? "error" : "info";
+}
+
+function setEditStatus(message: string, isError = false): void {
+  const status = byID<HTMLElement>("game-edit-status");
   if (!status) return;
   status.textContent = message;
   status.dataset.tone = isError ? "error" : "info";

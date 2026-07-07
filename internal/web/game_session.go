@@ -25,13 +25,22 @@ type RenderedGameCard struct {
 }
 
 type GameSessionSnapshot struct {
-	WorldDeck         []RenderedGameCard `json:"worldDeck"`
-	ActiveWorldCard   RenderedGameCard   `json:"activeWorldCard"`
-	ActiveWorldCardID string             `json:"activeWorldCardId"`
-	ActiveIndex       int                `json:"activeIndex"`
-	Library           []RenderedGameCard `json:"library"`
-	SolvedFlags       map[string]bool    `json:"solvedFlags"`
-	Message           string             `json:"message,omitempty"`
+	WorldDeck         []RenderedGameCard       `json:"worldDeck"`
+	ActiveWorldCard   RenderedGameCard         `json:"activeWorldCard"`
+	ActiveWorldCardID string                   `json:"activeWorldCardId"`
+	ActiveIndex       int                      `json:"activeIndex"`
+	Library           []RenderedGameCard       `json:"library"`
+	EditSession       *RenderedGameEditSession `json:"editSession,omitempty"`
+	SolvedFlags       map[string]bool          `json:"solvedFlags"`
+	Message           string                   `json:"message,omitempty"`
+}
+
+type RenderedGameEditSession struct {
+	TargetCardID                string            `json:"targetCardId"`
+	DraftCard                   RenderedGameCard  `json:"draftCard"`
+	PendingConsumedComponentIDs []string          `json:"pendingConsumedComponentIds,omitempty"`
+	SelectedComponentID         string            `json:"selectedComponentId,omitempty"`
+	EditingOverlay              *ComponentOverlay `json:"editingOverlay,omitempty"`
 }
 
 func gameResourceHandler(state *game.Session) http.HandlerFunc {
@@ -95,6 +104,66 @@ func gameResourceHandler(state *game.Session) http.HandlerFunc {
 			}
 			snapshot, err := state.UseCard(request.SourceCardID, request.TargetCardID)
 			writeGameSnapshot(w, snapshot, err)
+		case "edit/start":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var request struct {
+				CardID string `json:"cardId"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			snapshot, err := state.StartEdit(request.CardID)
+			writeGameSnapshot(w, snapshot, err)
+		case "edit/install-component":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var request struct {
+				ComponentCardID string `json:"componentCardId"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			snapshot, err := state.InstallEditComponent(request.ComponentCardID)
+			writeGameSnapshot(w, snapshot, err)
+		case "edit/control-change":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			var request struct {
+				ComponentID string          `json:"componentId"`
+				Control     string          `json:"control"`
+				Value       json.RawMessage `json:"value"`
+			}
+			decoder := json.NewDecoder(r.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			snapshot, err := state.ApplyEditControl(request.ComponentID, request.Control, request.Value)
+			writeGameSnapshot(w, snapshot, err)
+		case "edit/save":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			snapshot, err := state.SaveEdit()
+			writeGameSnapshot(w, snapshot, err)
+		case "edit/cancel":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			snapshot, err := state.CancelEdit()
+			writeGameSnapshot(w, snapshot, err)
 		case "save-controller":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -144,12 +213,27 @@ func renderGameSessionSnapshot(snapshot game.Snapshot) (GameSessionSnapshot, err
 	if err != nil {
 		return GameSessionSnapshot{}, err
 	}
+	var editSession *RenderedGameEditSession
+	if snapshot.EditSession != nil {
+		rendered, err := renderGameCard(snapshot.EditSession.DraftCard, "game-edit-"+safeDOMID(snapshot.EditSession.DraftCard.ID))
+		if err != nil {
+			return GameSessionSnapshot{}, err
+		}
+		editSession = &RenderedGameEditSession{
+			TargetCardID:                snapshot.EditSession.TargetCardID,
+			DraftCard:                   rendered,
+			PendingConsumedComponentIDs: append([]string(nil), snapshot.EditSession.PendingConsumedComponentIDs...),
+			SelectedComponentID:         snapshot.EditSession.SelectedComponentID,
+			EditingOverlay:              gameEditingOverlay(snapshot.EditSession.DraftCard, snapshot.EditSession.SelectedComponentID),
+		}
+	}
 	return GameSessionSnapshot{
 		WorldDeck:         worldDeck,
 		ActiveWorldCard:   activeWorldCard,
 		ActiveWorldCardID: snapshot.ActiveWorldCardID,
 		ActiveIndex:       snapshot.ActiveIndex,
 		Library:           library,
+		EditSession:       editSession,
 		SolvedFlags:       cloneValue(snapshot.SolvedFlags),
 		Message:           snapshot.Message,
 	}, nil
