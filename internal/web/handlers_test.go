@@ -385,9 +385,8 @@ func TestGameEditWorkflowInstallsTunesAndSavesSlider(t *testing.T) {
 	}
 	if installPayload.EditSession.EditingOverlay == nil ||
 		installPayload.EditSession.EditingOverlay.ComponentKind != "slider" ||
-		!hasControlWithProperty(installPayload.EditSession.EditingOverlay.Controls, "value", `input[type=range].value`) ||
-		!hasControlWithProperty(installPayload.EditSession.EditingOverlay.Controls, "track_color", "background-color") {
-		t.Fatalf("editing overlay = %#v, want slider controls with property hints", installPayload.EditSession.EditingOverlay)
+		len(installPayload.EditSession.EditingOverlay.Controls) != 0 {
+		t.Fatalf("editing overlay = %#v, want selectable slider overlay without controls", installPayload.EditSession.EditingOverlay)
 	}
 
 	tuneRecorder := postJSON(t, mux, "/api/game/edit/control-change", map[string]any{
@@ -434,6 +433,86 @@ func TestGameEditWorkflowInstallsTunesAndSavesSlider(t *testing.T) {
 	}
 }
 
+func TestGameEditComponentSelectEndpointReopensSliderAndBorderOverlays(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	advanceWebToGeneratorRoom(t, mux)
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "blank-controller"})
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "slider-component"})
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "border-component"})
+	postJSON(t, mux, "/api/game/edit/start", map[string]any{"cardId": "blank-controller"})
+	postJSON(t, mux, "/api/game/edit/install-component", map[string]any{"componentCardId": "slider-component"})
+	postJSON(t, mux, "/api/game/edit/install-component", map[string]any{"componentCardId": "border-component"})
+
+	sliderRecorder := postJSON(t, mux, "/api/game/edit/component/select", map[string]any{"componentKind": "slider"})
+	if sliderRecorder.Code != http.StatusOK {
+		t.Fatalf("slider select status = %d, want 200 body=%s", sliderRecorder.Code, sliderRecorder.Body.String())
+	}
+	var sliderPayload GameSessionSnapshot
+	if err := json.Unmarshal(sliderRecorder.Body.Bytes(), &sliderPayload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, sliderRecorder.Body.String())
+	}
+	if sliderPayload.EditSession == nil ||
+		sliderPayload.EditSession.SelectedComponentID != "regulator-output-slider" ||
+		sliderPayload.EditSession.EditingOverlay == nil ||
+		sliderPayload.EditSession.EditingOverlay.ComponentKind != "slider" ||
+		len(sliderPayload.EditSession.EditingOverlay.Controls) != 0 {
+		t.Fatalf("slider select payload = %#v, want slider overlay without controls", sliderPayload.EditSession)
+	}
+
+	borderRecorder := postJSON(t, mux, "/api/game/edit/component/select", map[string]any{"componentKind": "border"})
+	if borderRecorder.Code != http.StatusOK {
+		t.Fatalf("border select status = %d, want 200 body=%s", borderRecorder.Code, borderRecorder.Body.String())
+	}
+	var borderPayload GameSessionSnapshot
+	if err := json.Unmarshal(borderRecorder.Body.Bytes(), &borderPayload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, borderRecorder.Body.String())
+	}
+	if borderPayload.EditSession == nil ||
+		borderPayload.EditSession.SelectedComponentID != "blank-controller-border" ||
+		borderPayload.EditSession.EditingOverlay == nil ||
+		borderPayload.EditSession.EditingOverlay.ComponentKind != "border" ||
+		!hasControl(borderPayload.EditSession.EditingOverlay.Controls, "border_color") {
+		t.Fatalf("border select payload = %#v, want border overlay controls", borderPayload.EditSession)
+	}
+}
+
+func TestGameLibrarySliderControlChangeEndpointRetunesSavedController(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	advanceWebToGeneratorRoom(t, mux)
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "blank-controller"})
+	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "slider-component"})
+	recorder := postJSON(t, mux, "/api/game/save-controller", map[string]any{
+		"templateCardId": "blank-controller",
+		"document":       webControllerDocument(t, 73),
+	})
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("save-controller status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	updateRecorder := postJSON(t, mux, "/api/game/library/component/control-change", map[string]any{
+		"cardId":        "generator-regulator-controller",
+		"componentId":   "regulator-output-slider",
+		"componentKind": "slider",
+		"control":       "value",
+		"value":         72,
+	})
+	if updateRecorder.Code != http.StatusOK {
+		t.Fatalf("library update status = %d, want 200 body=%s", updateRecorder.Code, updateRecorder.Body.String())
+	}
+	var payload GameSessionSnapshot
+	if err := json.Unmarshal(updateRecorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, updateRecorder.Body.String())
+	}
+	controller := gameCard(payload.Library, "generator-regulator-controller")
+	if controller == nil || !strings.Contains(controller.PreviewHTML, `value="72"`) {
+		t.Fatalf("controller = %#v, want retuned library slider", controller)
+	}
+}
+
 func TestGameEditWorkflowExposesBorderControls(t *testing.T) {
 	t.Parallel()
 
@@ -469,6 +548,66 @@ func TestGameEditWorkflowExposesBorderControls(t *testing.T) {
 	}
 	if canceled.EditSession != nil || gameCard(canceled.Library, "border-component") == nil {
 		t.Fatalf("canceled payload = %#v, want closed edit and retained border component", canceled)
+	}
+}
+
+func TestGameActiveComponentSelectionAndControlChange(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	selectRecorder := postJSON(t, mux, "/api/game/component/select", map[string]any{
+		"cardId":        "rusted-cell-door",
+		"componentId":   "door-title",
+		"componentKind": "textarea",
+	})
+	if selectRecorder.Code != http.StatusOK {
+		t.Fatalf("select status = %d, want 200 body=%s", selectRecorder.Code, selectRecorder.Body.String())
+	}
+	var selected GameSessionSnapshot
+	if err := json.Unmarshal(selectRecorder.Body.Bytes(), &selected); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, selectRecorder.Body.String())
+	}
+	if selected.ActiveEditingComponentID != "door-title" || selected.ActiveEditingOverlay == nil || selected.ActiveEditingOverlay.ComponentKind != "textarea" {
+		t.Fatalf("selected payload = %#v, want text active editing overlay", selected)
+	}
+	if !hasControl(selected.ActiveEditingOverlay.Controls, "content") || !hasControl(selected.ActiveEditingOverlay.Controls, "x") {
+		t.Fatalf("active text controls = %#v, want content and x controls", selected.ActiveEditingOverlay.Controls)
+	}
+
+	moveRecorder := postJSON(t, mux, "/api/game/component/control-change", map[string]any{
+		"cardId":        "rusted-cell-door",
+		"componentId":   "door-title",
+		"componentKind": "textarea",
+		"control":       "position",
+		"value":         map[string]any{"x": 27, "y": 33},
+	})
+	if moveRecorder.Code != http.StatusOK {
+		t.Fatalf("move status = %d, want 200 body=%s", moveRecorder.Code, moveRecorder.Body.String())
+	}
+	var moved GameSessionSnapshot
+	if err := json.Unmarshal(moveRecorder.Body.Bytes(), &moved); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, moveRecorder.Body.String())
+	}
+	rawDocument, err := json.Marshal(moved.ActiveWorldCard.Document)
+	if err != nil {
+		t.Fatalf("json.Marshal(document) error = %v", err)
+	}
+	if !strings.Contains(string(rawDocument), `"x":27`) || !strings.Contains(string(rawDocument), `"y":33`) {
+		t.Fatalf("moved document = %s, want x/y position", string(rawDocument))
+	}
+	if !strings.Contains(moved.ActiveWorldCard.PreviewHTML, `left: 27%`) || !strings.Contains(moved.ActiveWorldCard.PreviewHTML, `top: 33%`) {
+		t.Fatalf("moved preview missing position: %s", moved.ActiveWorldCard.PreviewHTML)
+	}
+
+	borderRecorder := postJSON(t, mux, "/api/game/component/select", map[string]any{
+		"cardId":        "rusted-cell-door",
+		"componentKind": "border",
+	})
+	if borderRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("border status = %d, want 400 body=%s", borderRecorder.Code, borderRecorder.Body.String())
+	}
+	if !strings.Contains(borderRecorder.Body.String(), "require finding") {
+		t.Fatalf("border body = %q, want missing component card error", borderRecorder.Body.String())
 	}
 }
 

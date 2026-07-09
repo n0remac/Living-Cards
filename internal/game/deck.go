@@ -20,6 +20,7 @@ const (
 	EffectSetDocumentVariant  = "setDocumentVariant"
 	EffectSetMessage          = "setMessage"
 	EffectLoadDeck            = "loadDeck"
+	EffectCopySourceComponent = "copySourceComponentToTarget"
 	SeededWorldDeckDefinition = "seeded_world"
 	FuseRoomDeckDefinition    = "fuse_room"
 	GeneratorDeckDefinition   = "generator_room"
@@ -67,15 +68,17 @@ type ComponentConditionDefinition struct {
 }
 
 type RuleEffectDefinition struct {
-	EffectKind string   `json:"effectKind"`
-	CardID     string   `json:"cardId,omitempty"`
-	Key        string   `json:"key,omitempty"`
-	Flag       string   `json:"flag,omitempty"`
-	Value      any      `json:"value,omitempty"`
-	Tags       []string `json:"tags,omitempty"`
-	Variant    string   `json:"variant,omitempty"`
-	Message    string   `json:"message,omitempty"`
-	DeckID     string   `json:"deckId,omitempty"`
+	EffectKind    string   `json:"effectKind"`
+	CardID        string   `json:"cardId,omitempty"`
+	ComponentID   string   `json:"componentId,omitempty"`
+	ComponentKind string   `json:"componentKind,omitempty"`
+	Key           string   `json:"key,omitempty"`
+	Flag          string   `json:"flag,omitempty"`
+	Value         any      `json:"value,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	Variant       string   `json:"variant,omitempty"`
+	Message       string   `json:"message,omitempty"`
+	DeckID        string   `json:"deckId,omitempty"`
 }
 
 func LoadEmbeddedSeededWorldDeck() (DeckDefinition, error) {
@@ -331,6 +334,13 @@ func validateRuleEffect(effect RuleEffectDefinition, target CardMatcherDefinitio
 	case EffectLoadDeck:
 		if err := validateDeckID(effect.DeckID); err != nil {
 			return fmt.Errorf("%s effect requires valid deckId: %w", EffectLoadDeck, err)
+		}
+	case EffectCopySourceComponent:
+		if strings.TrimSpace(effect.ComponentKind) != slider.Kind {
+			return fmt.Errorf("%s effect currently supports componentKind %q", EffectCopySourceComponent, slider.Kind)
+		}
+		if _, err := effectCardDefinition(effect, target, cardsByID); err != nil {
+			return err
 		}
 	default:
 		return fmt.Errorf("unsupported effect kind %q", effect.EffectKind)

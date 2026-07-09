@@ -229,6 +229,30 @@ export async function playGameCard(sourceCardId: string, targetCardId: string): 
   return await response.json() as GameSessionSnapshot;
 }
 
+export async function selectGameCardComponent(cardId: string, componentId: string, componentKind: string): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/component/select", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cardId, componentId, componentKind }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to select component."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function applyGameCardComponentControl(cardId: string, componentId: string, componentKind: string, control: string, value: unknown): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/component/control-change", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cardId, componentId, componentKind, control, value }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to update active card."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
 export async function startGameEdit(cardId: string): Promise<GameSessionSnapshot> {
   const response = await fetch("/api/game/edit/start", {
     method: "POST",
@@ -253,6 +277,18 @@ export async function installGameEditComponent(componentCardId: string): Promise
   return await response.json() as GameSessionSnapshot;
 }
 
+export async function selectGameEditComponent(componentId: string, componentKind: string): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/edit/component/select", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ componentId, componentKind }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to select draft component."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
 export async function applyGameEditControl(componentId: string, control: string, value: unknown): Promise<GameSessionSnapshot> {
   const response = await fetch("/api/game/edit/control-change", {
     method: "POST",
@@ -261,6 +297,18 @@ export async function applyGameEditControl(componentId: string, control: string,
   });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to update draft card."));
+  }
+  return await response.json() as GameSessionSnapshot;
+}
+
+export async function applyGameLibraryComponentControl(cardId: string, componentId: string, componentKind: string, control: string, value: unknown): Promise<GameSessionSnapshot> {
+  const response = await fetch("/api/game/library/component/control-change", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cardId, componentId, componentKind, control, value }),
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to update library card."));
   }
   return await response.json() as GameSessionSnapshot;
 }

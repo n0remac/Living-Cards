@@ -12,7 +12,7 @@ export interface ComponentNode {
 }
 
 export type ConfigKind = "background" | "border" | "textarea" | "shape" | "image";
-export type ComponentKind = "card" | "border" | "textarea" | "shape" | "image" | "slider";
+export type ComponentKind = "card" | "background" | "border" | "textarea" | "shape" | "image" | "slider";
 export type ComponentTarget = ConfigKind | "slider" | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
 export type CardHitZone = "border" | "background" | "textarea" | "shape" | "image" | "slider";
 export type EditMode = "random" | "preset" | "simpleControls" | "advancedControls" | "aiPrompt" | "library";
@@ -189,6 +189,8 @@ export interface GameSessionSnapshot {
   activeWorldCard: RenderedGameCard;
   activeWorldCardId: string;
   activeIndex: number;
+  activeEditingComponentId?: string;
+  activeEditingOverlay?: ComponentOverlay;
   library: RenderedGameCard[];
   editSession?: GameEditSession;
   solvedFlags: Record<string, boolean>;

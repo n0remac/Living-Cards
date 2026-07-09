@@ -624,6 +624,11 @@
           "variant": "active"
         },
         {
+          "effectKind": "copySourceComponentToTarget",
+          "cardId": "generator-panel",
+          "componentKind": "slider"
+        },
+        {
           "effectKind": "setMessage",
           "message": "The regulator locks at 73. The generator comes fully online."
         }

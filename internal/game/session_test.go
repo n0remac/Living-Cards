@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/n0remac/Living-Card/internal/components/border"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/slider"
 	"github.com/n0remac/Living-Card/internal/design"
@@ -333,10 +334,13 @@ func TestSessionEditWorkflowBuildsAndUsesSliderController(t *testing.T) {
 		return session.ApplyEditControl("regulator-output-slider", "value", json.RawMessage("73"))
 	})
 	tuned = mustResult(t, func() (Snapshot, error) {
-		return session.ApplyEditControl("regulator-output-slider", "width", json.RawMessage("82"))
+		return session.ApplyEditControl("regulator-output-slider", "position", json.RawMessage(`{"x":42,"y":64}`))
 	})
-	if tuned.EditSession == nil || !documentContains(tuned.EditSession.DraftCard.Document, `"value":73`) || !documentContains(tuned.EditSession.DraftCard.Document, `"width":82`) {
-		t.Fatalf("tuned draft card = %#v, want slider value 73 and width 82", tuned.EditSession)
+	if tuned.EditSession == nil ||
+		!documentContains(tuned.EditSession.DraftCard.Document, `"value":73`) ||
+		!documentContains(tuned.EditSession.DraftCard.Document, `"x":42`) ||
+		!documentContains(tuned.EditSession.DraftCard.Document, `"y":64`) {
+		t.Fatalf("tuned draft card = %#v, want slider value 73 and dragged position", tuned.EditSession)
 	}
 	saved := mustResult(t, session.SaveEdit)
 	if saved.EditSession != nil {
@@ -360,6 +364,121 @@ func TestSessionEditWorkflowBuildsAndUsesSliderController(t *testing.T) {
 	}
 	if generator := findCard(snapshot.WorldDeck, "generator-panel"); generator == nil || !documentContains(generator.Document, "GENERATOR ONLINE") {
 		t.Fatalf("generator should be online: %#v", generator)
+	}
+}
+
+func TestSessionSelectsEditSliderAndBorderAfterOverlayClose(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	loadGeneratorRoom(t, session)
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(SliderComponentCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect("border-component")
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.StartEdit(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.InstallEditComponent(SliderComponentCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.InstallEditComponent("border-component")
+	})
+
+	sliderSelected := mustResult(t, func() (Snapshot, error) {
+		return session.SelectEditComponent("", slider.Kind)
+	})
+	if sliderSelected.EditSession == nil || sliderSelected.EditSession.SelectedComponentID != "regulator-output-slider" {
+		t.Fatalf("selected slider = %#v, want regulator slider selected", sliderSelected.EditSession)
+	}
+	borderSelected := mustResult(t, func() (Snapshot, error) {
+		return session.SelectEditComponent("", border.Kind)
+	})
+	if borderSelected.EditSession == nil || borderSelected.EditSession.SelectedComponentID != BlankControllerCardID+"-border" {
+		t.Fatalf("selected border = %#v, want controller border selected", borderSelected.EditSession)
+	}
+}
+
+func TestSessionLibrarySliderControlChangeRetunesSavedController(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	loadGeneratorRoom(t, session)
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(SliderComponentCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.StartEdit(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.InstallEditComponent(SliderComponentCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.ApplyEditControl("regulator-output-slider", "value", json.RawMessage("73"))
+	})
+	mustResult(t, session.SaveEdit)
+
+	updated := mustResult(t, func() (Snapshot, error) {
+		return session.ApplyLibraryComponentControl(BlankControllerCardID, "regulator-output-slider", slider.Kind, "value", json.RawMessage("72"))
+	})
+	controller := findCard(updated.Library, BlankControllerCardID)
+	if controller == nil || !documentContains(controller.Document, `"value":72`) {
+		t.Fatalf("controller = %#v, want library slider value 72", controller)
+	}
+}
+
+func TestSessionWrongControllerMountsGeneratorSliderAndMountedTunePowersGenerator(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	loadGeneratorRoom(t, session)
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect(SliderComponentCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.StartEdit(BlankControllerCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.InstallEditComponent(SliderComponentCardID)
+	})
+	mustResult(t, func() (Snapshot, error) {
+		return session.ApplyEditControl("regulator-output-slider", "value", json.RawMessage("72"))
+	})
+	mustResult(t, session.SaveEdit)
+
+	mounted := mustResult(t, func() (Snapshot, error) {
+		return session.UseCard(BlankControllerCardID, "generator-panel")
+	})
+	generator := findCard(mounted.WorldDeck, "generator-panel")
+	if generator == nil || !documentContains(generator.Document, `"componentKind":"slider"`) || !documentContains(generator.Document, `"value":72`) {
+		t.Fatalf("generator after wrong controller = %#v, want mounted wrong-valued slider", generator)
+	}
+	if mounted.SolvedFlags[GeneratorPoweredFlag] || !strings.Contains(mounted.Message, "regulator value is wrong") {
+		t.Fatalf("mounted snapshot = %#v, want unpowered failure with mounted slider", mounted)
+	}
+
+	powered := mustResult(t, func() (Snapshot, error) {
+		return session.ApplyWorldComponentControl("generator-panel", "regulator-output-slider", slider.Kind, "value", json.RawMessage("73"))
+	})
+	generator = findCard(powered.WorldDeck, "generator-panel")
+	if generator == nil ||
+		!powered.SolvedFlags[GeneratorPoweredFlag] ||
+		!documentContains(generator.Document, "GENERATOR ONLINE") ||
+		!documentContains(generator.Document, `"componentKind":"slider"`) ||
+		!documentContains(generator.Document, `"value":73`) {
+		t.Fatalf("powered generator = %#v snapshot=%#v, want online generator with tuned mounted slider", generator, powered)
 	}
 }
 
@@ -390,6 +509,54 @@ func TestSessionEditCancelLeavesLibraryUnchanged(t *testing.T) {
 	controller := findCard(canceled.Library, BlankControllerCardID)
 	if controller == nil || controller.Name != "Blank Controller" || documentContains(controller.Document, `"componentKind":"slider"`) {
 		t.Fatalf("controller = %#v, want unchanged blank controller", controller)
+	}
+}
+
+func TestSessionActiveWorldComponentControlsMoveText(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	snapshot := mustResult(t, func() (Snapshot, error) {
+		return session.ApplyWorldComponentControl("rusted-cell-door", "door-title", "textarea", "position", json.RawMessage(`{"x":23,"y":31}`))
+	})
+	if snapshot.ActiveEditingComponentID != "door-title" {
+		t.Fatalf("active editing component = %q, want door-title", snapshot.ActiveEditingComponentID)
+	}
+	if snapshot.ActiveWorldCard.ID != "rusted-cell-door" {
+		t.Fatalf("active card = %q, want rusted-cell-door", snapshot.ActiveWorldCard.ID)
+	}
+	if !documentContains(snapshot.ActiveWorldCard.Document, `"x":23`) || !documentContains(snapshot.ActiveWorldCard.Document, `"y":31`) {
+		t.Fatalf("door title was not moved in active document: %#v", snapshot.ActiveWorldCard.Document)
+	}
+}
+
+func TestSessionActiveWorldBorderRequiresCollectedComponentCard(t *testing.T) {
+	t.Parallel()
+
+	session := NewSession()
+	if _, err := session.SelectWorldComponent("rusted-cell-door", "", border.Kind); err == nil || !strings.Contains(err.Error(), "require finding") {
+		t.Fatalf("SelectWorldComponent(border) error = %v, want missing component card error", err)
+	}
+
+	loadGeneratorRoom(t, session)
+	mustResult(t, func() (Snapshot, error) {
+		return session.Collect("border-component")
+	})
+	selected := mustResult(t, func() (Snapshot, error) {
+		return session.SelectWorldComponent("generator-panel", "", border.Kind)
+	})
+	if selected.ActiveEditingComponentID != "generator-panel-border" {
+		t.Fatalf("active editing component = %q, want generator-panel-border", selected.ActiveEditingComponentID)
+	}
+	updated := mustResult(t, func() (Snapshot, error) {
+		return session.ApplyWorldComponentControl("generator-panel", "generator-panel-border", border.Kind, "border_color", json.RawMessage(`"#f43f5e"`))
+	})
+	generator := findCard(updated.WorldDeck, "generator-panel")
+	if generator == nil {
+		t.Fatal("world deck missing generator-panel")
+	}
+	if !documentContains(generator.Document, `"border_color":"#f43f5e"`) || !documentContains(generator.Document, `border: 2px solid #f43f5e`) {
+		t.Fatalf("generator border did not update: %#v", generator.Document)
 	}
 }
 

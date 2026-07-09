@@ -39,14 +39,15 @@ type Card struct {
 }
 
 type Snapshot struct {
-	WorldDeck         []Card          `json:"worldDeck"`
-	ActiveWorldCard   Card            `json:"activeWorldCard"`
-	ActiveWorldCardID string          `json:"activeWorldCardId"`
-	ActiveIndex       int             `json:"activeIndex"`
-	Library           []Card          `json:"library"`
-	EditSession       *EditSession    `json:"editSession,omitempty"`
-	SolvedFlags       map[string]bool `json:"solvedFlags"`
-	Message           string          `json:"message,omitempty"`
+	WorldDeck                []Card          `json:"worldDeck"`
+	ActiveWorldCard          Card            `json:"activeWorldCard"`
+	ActiveWorldCardID        string          `json:"activeWorldCardId"`
+	ActiveIndex              int             `json:"activeIndex"`
+	ActiveEditingComponentID string          `json:"activeEditingComponentId,omitempty"`
+	Library                  []Card          `json:"library"`
+	EditSession              *EditSession    `json:"editSession,omitempty"`
+	SolvedFlags              map[string]bool `json:"solvedFlags"`
+	Message                  string          `json:"message,omitempty"`
 }
 
 type EditSession struct {
@@ -57,18 +58,19 @@ type EditSession struct {
 }
 
 type Session struct {
-	mu               sync.Mutex
-	deckDefinition   DeckDefinition
-	cardDefinitions  map[string]CardDefinition
-	documentVariants map[string]map[string]cardcomponent.Document
-	loadedDecks      map[string]bool
-	useRules         []UseRuleDefinition
-	worldDeck        []Card
-	activeIndex      int
-	library          []Card
-	editSession      *EditSession
-	solvedFlags      map[string]bool
-	lastMessage      string
+	mu                       sync.Mutex
+	deckDefinition           DeckDefinition
+	cardDefinitions          map[string]CardDefinition
+	documentVariants         map[string]map[string]cardcomponent.Document
+	loadedDecks              map[string]bool
+	useRules                 []UseRuleDefinition
+	worldDeck                []Card
+	activeIndex              int
+	activeEditingComponentID string
+	library                  []Card
+	editSession              *EditSession
+	solvedFlags              map[string]bool
+	lastMessage              string
 }
 
 func NewSession() *Session {
@@ -131,6 +133,7 @@ func (s *Session) Reset() (Snapshot, error) {
 	s.useRules = next.useRules
 	s.worldDeck = next.worldDeck
 	s.activeIndex = next.activeIndex
+	s.activeEditingComponentID = next.activeEditingComponentID
 	s.library = next.library
 	s.editSession = next.editSession
 	s.solvedFlags = next.solvedFlags
@@ -159,6 +162,7 @@ func (s *Session) Cycle(direction string) (Snapshot, error) {
 	if s.activeIndex >= len(s.worldDeck) {
 		s.activeIndex = 0
 	}
+	s.activeEditingComponentID = ""
 	s.lastMessage = "The next card slides into view."
 	return s.snapshotLocked()
 }
@@ -190,6 +194,7 @@ func (s *Session) Collect(cardID string) (Snapshot, error) {
 	libraryCard.Collectible = false
 	libraryCard.Collected = true
 	s.library = append(s.library, libraryCard)
+	s.activeEditingComponentID = ""
 	s.lastMessage = card.Name + " moved into your library."
 	return s.snapshotLocked()
 }
@@ -217,18 +222,65 @@ func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
 			continue
 		}
 		if !sourceComponentConditionsMatch(rule.SourceComponentConditions, source.Document) {
+			if err := s.applyRuleFailureEffects(rule, *source, target); err != nil {
+				return Snapshot{}, err
+			}
 			if strings.TrimSpace(rule.FailureMessage) != "" {
 				s.lastMessage = rule.FailureMessage
 				return s.snapshotLocked()
 			}
 			continue
 		}
-		if err := s.applyRuleEffects(rule, target); err != nil {
+		if err := s.applyRuleEffects(rule, *source, target); err != nil {
 			return Snapshot{}, err
 		}
+		s.activeEditingComponentID = ""
 		return s.snapshotLocked()
 	}
 	s.lastMessage = "Nothing on this card responds to " + source.Name + "."
+	return s.snapshotLocked()
+}
+
+func (s *Session) SelectWorldComponent(cardID, componentID, componentKind string) (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	index, node, err := s.worldComponentNode(cardID, componentID, componentKind)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	if err := s.requireWorldComponentEditable(node.ComponentKind); err != nil {
+		return Snapshot{}, err
+	}
+	s.activeIndex = index
+	s.activeEditingComponentID = node.ID
+	s.lastMessage = componentEditLabel(node.ComponentKind) + " edit controls opened."
+	return s.snapshotLocked()
+}
+
+func (s *Session) ApplyWorldComponentControl(cardID, componentID, componentKind, control string, value json.RawMessage) (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	index, node, err := s.worldComponentNode(cardID, componentID, componentKind)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	if err := s.requireWorldComponentEditable(node.ComponentKind); err != nil {
+		return Snapshot{}, err
+	}
+	if err := applyGameComponentControl(node, strings.TrimSpace(control), value); err != nil {
+		return Snapshot{}, err
+	}
+	s.activeIndex = index
+	s.activeEditingComponentID = node.ID
+	powered, err := s.powerGeneratorIfTuned(index, node.ID)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	if !powered {
+		s.lastMessage = componentEditLabel(node.ComponentKind) + " updated."
+	}
 	return s.snapshotLocked()
 }
 
@@ -249,6 +301,7 @@ func (s *Session) StartEdit(cardID string) (Snapshot, error) {
 		TargetCardID: card.ID,
 		DraftCard:    cloneValue(card),
 	}
+	s.activeEditingComponentID = ""
 	s.lastMessage = "Editing " + card.Name + "."
 	return s.snapshotLocked()
 }
@@ -317,149 +370,57 @@ func (s *Session) InstallEditComponent(componentCardID string) (Snapshot, error)
 	return s.snapshotLocked()
 }
 
+func (s *Session) SelectEditComponent(componentID, componentKind string) (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	node, err := s.editComponentNode(componentID, componentKind)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	s.editSession.SelectedComponentID = node.ID
+	s.lastMessage = componentEditLabel(node.ComponentKind) + " edit controls opened."
+	return s.snapshotLocked()
+}
+
 func (s *Session) ApplyEditControl(componentID, control string, value json.RawMessage) (Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.editSession == nil {
-		return Snapshot{}, fmt.Errorf("start editing a card first")
-	}
-	componentID = strings.TrimSpace(componentID)
-	if componentID == "" {
-		componentID = strings.TrimSpace(s.editSession.SelectedComponentID)
-	}
-	if componentID == "" {
-		if node := findNodeByKind(s.editSession.DraftCard.Document.Root, slider.Kind); node != nil {
-			componentID = node.ID
-		} else if node := findNodeByKind(s.editSession.DraftCard.Document.Root, border.Kind); node != nil {
-			componentID = node.ID
-		}
-	}
-	node := findNodeByIDPtr(&s.editSession.DraftCard.Document.Root, componentID)
-	if node == nil {
-		return Snapshot{}, fmt.Errorf("component %q is not on the draft card", componentID)
+	node, err := s.editComponentNode(componentID, "")
+	if err != nil {
+		return Snapshot{}, err
 	}
 	control = strings.TrimSpace(control)
-	switch node.ComponentKind {
-	case slider.Kind:
-		part, err := decodeSliderNode(*node)
-		if err != nil {
-			return Snapshot{}, err
-		}
-		switch control {
-		case "label":
-			next, err := readJSONString(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.Label = next
-		case "value":
-			next, err := readJSONInt(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.Value = next
-		case "min":
-			next, err := readJSONInt(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.Min = next
-		case "max":
-			next, err := readJSONInt(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.Max = next
-		case "step":
-			next, err := readJSONInt(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.Step = next
-		case "x":
-			next, err := readJSONInt(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.X = next
-		case "y":
-			next, err := readJSONInt(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.Y = next
-		case "width":
-			next, err := readJSONInt(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.Width = next
-		case "track_color":
-			next, err := readJSONString(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.TrackColor = next
-		case "accent_color":
-			next, err := readJSONString(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.AccentColor = next
-		default:
-			return Snapshot{}, fmt.Errorf("control %q is not supported for slider", control)
-		}
-		part = slider.NormalizeConfig(part)
-		if issues := slider.ValidateConfig(part); len(issues) > 0 {
-			return Snapshot{}, fmt.Errorf("invalid slider config at %s: %s", issues[0].Path, issues[0].Message)
-		}
-		node.Config = mustRaw(part)
-		s.editSession.SelectedComponentID = node.ID
-		s.lastMessage = fmt.Sprintf("%s %s updated.", s.editSession.DraftCard.Name, control)
-	case border.Kind:
-		part, err := decodeBorderNode(*node)
-		if err != nil {
-			return Snapshot{}, err
-		}
-		switch control {
-		case "border_color":
-			next, err := readJSONString(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.BorderColor = next
-		case "border_width_px":
-			next, err := readJSONInt(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.BorderWidthPX = next
-		case "border_radius_px":
-			next, err := readJSONInt(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.BorderRadiusPX = next
-		case "border_style":
-			next, err := readJSONString(value)
-			if err != nil {
-				return Snapshot{}, err
-			}
-			part.BorderStyle = next
-		default:
-			return Snapshot{}, fmt.Errorf("control %q is not supported for border", control)
-		}
-		part = normalizeBorderConfig(part)
-		if issues := validateBorderConfig(part); len(issues) > 0 {
-			return Snapshot{}, fmt.Errorf("invalid border config at %s: %s", issues[0].Path, issues[0].Message)
-		}
-		node.Config = mustRaw(part)
-		s.editSession.SelectedComponentID = node.ID
-		s.lastMessage = fmt.Sprintf("%s %s updated.", s.editSession.DraftCard.Name, control)
-	default:
-		return Snapshot{}, fmt.Errorf("component kind %q does not support edit controls", node.ComponentKind)
+	if err := applyGameComponentControl(node, control, value); err != nil {
+		return Snapshot{}, err
 	}
+	s.editSession.SelectedComponentID = node.ID
+	s.lastMessage = fmt.Sprintf("%s %s updated.", s.editSession.DraftCard.Name, control)
+	return s.snapshotLocked()
+}
+
+func (s *Session) ApplyLibraryComponentControl(cardID, componentID, componentKind, control string, value json.RawMessage) (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cardID = strings.TrimSpace(cardID)
+	index := s.libraryCardIndex(cardID)
+	if index < 0 {
+		return Snapshot{}, fmt.Errorf("card %q is not in your library", cardID)
+	}
+	root := &s.library[index].Document.Root
+	node, err := componentNode(root, componentID, componentKind, s.library[index].Name)
+	if err != nil {
+		return Snapshot{}, err
+	}
+	if strings.TrimSpace(node.ComponentKind) != slider.Kind {
+		return Snapshot{}, fmt.Errorf("component kind %q does not support library controls", node.ComponentKind)
+	}
+	if err := applyGameComponentControl(node, strings.TrimSpace(control), value); err != nil {
+		return Snapshot{}, err
+	}
+	s.lastMessage = componentEditLabel(node.ComponentKind) + " updated in " + s.library[index].Name + "."
 	return s.snapshotLocked()
 }
 
@@ -594,15 +555,110 @@ func (s *Session) snapshotLocked() (Snapshot, error) {
 		editSession = &edit
 	}
 	return Snapshot{
-		WorldDeck:         worldDeck,
-		ActiveWorldCard:   cloneValue(s.worldDeck[s.activeIndex]),
-		ActiveWorldCardID: s.worldDeck[s.activeIndex].ID,
-		ActiveIndex:       s.activeIndex,
-		Library:           library,
-		EditSession:       editSession,
-		SolvedFlags:       cloneValue(s.solvedFlags),
-		Message:           s.lastMessage,
+		WorldDeck:                worldDeck,
+		ActiveWorldCard:          cloneValue(s.worldDeck[s.activeIndex]),
+		ActiveWorldCardID:        s.worldDeck[s.activeIndex].ID,
+		ActiveIndex:              s.activeIndex,
+		ActiveEditingComponentID: s.activeEditingComponentID,
+		Library:                  library,
+		EditSession:              editSession,
+		SolvedFlags:              cloneValue(s.solvedFlags),
+		Message:                  s.lastMessage,
 	}, nil
+}
+
+func (s *Session) editComponentNode(componentID, componentKind string) (*cardcomponent.Node, error) {
+	if s.editSession == nil {
+		return nil, fmt.Errorf("start editing a card first")
+	}
+	componentID = strings.TrimSpace(componentID)
+	componentKind = strings.TrimSpace(componentKind)
+	if componentID == "" && componentKind == "" {
+		componentID = strings.TrimSpace(s.editSession.SelectedComponentID)
+	}
+	if componentID == "" && componentKind == "" {
+		if node := findNodeByKind(s.editSession.DraftCard.Document.Root, slider.Kind); node != nil {
+			componentID = node.ID
+		} else if node := findNodeByKind(s.editSession.DraftCard.Document.Root, border.Kind); node != nil {
+			componentID = node.ID
+		}
+	}
+	node, err := componentNode(&s.editSession.DraftCard.Document.Root, componentID, componentKind, s.editSession.DraftCard.Name)
+	if err != nil {
+		return nil, err
+	}
+	switch node.ComponentKind {
+	case slider.Kind, border.Kind:
+		return node, nil
+	default:
+		return nil, fmt.Errorf("component kind %q does not support edit controls", node.ComponentKind)
+	}
+}
+
+func (s *Session) worldComponentNode(cardID, componentID, componentKind string) (int, *cardcomponent.Node, error) {
+	cardID = strings.TrimSpace(cardID)
+	componentID = strings.TrimSpace(componentID)
+	componentKind = strings.TrimSpace(componentKind)
+	if cardID == "" {
+		if len(s.worldDeck) == 0 {
+			return -1, nil, fmt.Errorf("world deck is empty")
+		}
+		cardID = s.worldDeck[s.activeIndex].ID
+	}
+	index := s.worldCardIndex(cardID)
+	if index < 0 {
+		return -1, nil, fmt.Errorf("card %q is not in the world deck", cardID)
+	}
+	node, err := componentNode(&s.worldDeck[index].Document.Root, componentID, componentKind, s.worldDeck[index].Name)
+	if err != nil {
+		return -1, nil, err
+	}
+	return index, node, nil
+}
+
+func componentNode(root *cardcomponent.Node, componentID, componentKind, cardName string) (*cardcomponent.Node, error) {
+	componentID = strings.TrimSpace(componentID)
+	componentKind = strings.TrimSpace(componentKind)
+	var node *cardcomponent.Node
+	if componentID != "" {
+		node = findNodeByIDPtr(root, componentID)
+	} else if componentKind != "" {
+		node = findNodeByKindPtr(root, componentKind)
+	}
+	if node == nil {
+		if componentID != "" {
+			return nil, fmt.Errorf("component %q is not on %s", componentID, cardName)
+		}
+		return nil, fmt.Errorf("%s has no %s component", cardName, componentKind)
+	}
+	if componentKind != "" && node.ComponentKind != componentKind {
+		return nil, fmt.Errorf("component %q is %s, not %s", node.ID, node.ComponentKind, componentKind)
+	}
+	return node, nil
+}
+
+func (s *Session) requireWorldComponentEditable(componentKind string) error {
+	componentKind = strings.TrimSpace(componentKind)
+	if !worldComponentKindEditable(componentKind) {
+		return fmt.Errorf("component kind %q does not support active card editing", componentKind)
+	}
+	switch componentKind {
+	case background.Kind, border.Kind:
+		if !s.libraryHasComponentKind(componentKind) {
+			return fmt.Errorf("%s controls require finding a %s component card", componentEditLabel(componentKind), componentKind)
+		}
+	}
+	return nil
+}
+
+func (s *Session) libraryHasComponentKind(componentKind string) bool {
+	componentKind = strings.TrimSpace(componentKind)
+	for _, card := range s.library {
+		if stateString(card.State, "componentKind") == componentKind {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Session) worldCardIndex(cardID string) int {
@@ -822,7 +878,7 @@ func cardMatches(card Card, matcher CardMatcherDefinition) bool {
 	return true
 }
 
-func (s *Session) applyRuleEffects(rule UseRuleDefinition, target Card) error {
+func (s *Session) applyRuleEffects(rule UseRuleDefinition, source Card, target Card) error {
 	for _, effect := range rule.Effects {
 		switch effect.EffectKind {
 		case EffectSetFlag:
@@ -871,11 +927,94 @@ func (s *Session) applyRuleEffects(rule UseRuleDefinition, target Card) error {
 			if err := s.loadDeck(effect.DeckID); err != nil {
 				return err
 			}
+		case EffectCopySourceComponent:
+			if err := s.copySourceComponentToEffectCard(effect, source, target); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unsupported effect kind %q", effect.EffectKind)
 		}
 	}
 	return nil
+}
+
+func (s *Session) applyRuleFailureEffects(rule UseRuleDefinition, source Card, target Card) error {
+	for _, effect := range rule.Effects {
+		if effect.EffectKind != EffectCopySourceComponent {
+			continue
+		}
+		if err := s.copySourceComponentToEffectCard(effect, source, target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Session) copySourceComponentToEffectCard(effect RuleEffectDefinition, source Card, target Card) error {
+	componentKind := strings.TrimSpace(effect.ComponentKind)
+	if componentKind != slider.Kind {
+		return fmt.Errorf("%s effect currently supports componentKind %q", EffectCopySourceComponent, slider.Kind)
+	}
+	sourceNode := findNodeByKind(source.Document.Root, componentKind)
+	if sourceNode == nil {
+		return fmt.Errorf("%s source card %q has no %s component", EffectCopySourceComponent, source.ID, componentKind)
+	}
+	targetNode := cloneValue(*sourceNode)
+	if componentID := strings.TrimSpace(effect.ComponentID); componentID != "" {
+		targetNode.ID = componentID
+	}
+	return s.updateEffectCard(effect, target, func(card *Card) error {
+		appendOrReplaceRootChild(&card.Document.Root, targetNode)
+		return nil
+	})
+}
+
+func (s *Session) powerGeneratorIfTuned(cardIndex int, selectedComponentID string) (bool, error) {
+	if cardIndex < 0 || cardIndex >= len(s.worldDeck) {
+		return false, nil
+	}
+	card := &s.worldDeck[cardIndex]
+	if card.ID != "generator-panel" || s.solvedFlags[GeneratorPoweredFlag] {
+		return false, nil
+	}
+	targetValue, ok := stateInt(card.State, "targetValue")
+	if !ok {
+		return false, nil
+	}
+	sliderNode := findNodeByKind(card.Document.Root, slider.Kind)
+	if sliderNode == nil {
+		return false, nil
+	}
+	part, err := decodeSliderNode(*sliderNode)
+	if err != nil {
+		return false, err
+	}
+	if part.Value != targetValue {
+		return false, nil
+	}
+	mountedSlider := cloneValue(*sliderNode)
+	variants := s.documentVariants[card.ID]
+	activeDocument, ok := variants["active"]
+	if !ok {
+		return false, fmt.Errorf("card %q document variant %q does not exist", card.ID, "active")
+	}
+	card.Document = cloneValue(activeDocument)
+	appendOrReplaceRootChild(&card.Document.Root, mountedSlider)
+	if card.State == nil {
+		card.State = map[string]any{}
+	}
+	card.State["powered"] = true
+	card.State["useful"] = true
+	card.Tags = removeString(card.Tags, "inactive")
+	if s.solvedFlags == nil {
+		s.solvedFlags = map[string]bool{}
+	}
+	s.solvedFlags[GeneratorPoweredFlag] = true
+	if strings.TrimSpace(selectedComponentID) != "" {
+		s.activeEditingComponentID = selectedComponentID
+	}
+	s.lastMessage = "The regulator locks at 73. The generator comes fully online."
+	return true, nil
 }
 
 func (s *Session) loadDeck(deckID string) error {

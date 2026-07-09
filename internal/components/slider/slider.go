@@ -209,16 +209,19 @@ func RenderLayerWithContext(componentID string, part Config, renderContext card.
 		godom.Div(
 			godom.Class("flex items-center justify-between gap-2 text-xs font-bold uppercase"),
 			godom.Span(godom.T(part.Label)),
-			godom.Span(godom.T(fmt.Sprintf("%d", part.Value))),
+			godom.Span(
+				godom.Attr("data-slider-value", ""),
+				godom.T(fmt.Sprintf("%d", part.Value)),
+			),
 		),
 		godom.Input(
 			godom.Type("range"),
+			godom.Attr("data-slider-input", ""),
 			godom.Attr("min", fmt.Sprintf("%d", part.Min)),
 			godom.Attr("max", fmt.Sprintf("%d", part.Max)),
 			godom.Attr("step", fmt.Sprintf("%d", part.Step)),
 			godom.Value(fmt.Sprintf("%d", part.Value)),
 			godom.Attr("aria-label", part.Label),
-			godom.Attr("disabled", "disabled"),
 			godom.Attr("style", "accent-color: "+part.AccentColor+";"),
 			godom.Class("w-full"),
 		),

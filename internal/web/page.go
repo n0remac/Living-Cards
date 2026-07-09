@@ -390,6 +390,42 @@ func pageCSS() string {
   width: 100%;
   max-width: none;
   color: var(--app-fg);
+  touch-action: none;
+}
+
+.game-world-card [data-component-kind="textarea"],
+.game-world-card [data-component-kind="shape"],
+.game-world-card [data-component-kind="image"],
+.game-world-card [data-component-kind="slider"] {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.game-edit-card [data-component-kind="slider"] {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.game-world-card input[data-slider-input],
+.game-edit-card input[data-slider-input],
+.game-card-thumbnail input[data-slider-input] {
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: pan-x;
+  user-select: auto;
+}
+
+.game-world-card [data-component-kind="textarea"][data-dragging="true"],
+.game-world-card [data-component-kind="shape"][data-dragging="true"],
+.game-world-card [data-component-kind="image"][data-dragging="true"],
+.game-world-card [data-component-kind="slider"][data-dragging="true"] {
+  cursor: grabbing;
+}
+
+.game-edit-card [data-component-kind="slider"][data-dragging="true"] {
+  cursor: grabbing;
 }
 
 .game-loading-card {
@@ -554,12 +590,6 @@ func pageCSS() string {
   cursor: grabbing;
 }
 
-.game-edit-component-card [data-card-id] {
-  width: 8rem;
-  max-width: none;
-  pointer-events: none;
-}
-
 .game-library-panel {
   display: grid;
   gap: 0.65rem;
@@ -614,7 +644,7 @@ func pageCSS() string {
   opacity: 0.72;
 }
 
-.game-library-card[data-on-field="true"] [data-card-id] {
+.game-library-card[data-on-field="true"] .game-card-thumbnail > [data-card-id] {
   outline: 2px solid rgba(52,211,153,0.74);
   outline-offset: 2px;
 }
@@ -623,10 +653,25 @@ func pageCSS() string {
   cursor: grabbing;
 }
 
-.game-library-card [data-card-id] {
-  width: 8rem;
+.game-card-thumbnail {
+  --game-card-thumbnail-width: 8rem;
+  --game-card-field-width: 27rem;
+  --game-card-thumbnail-scale: 0.296296;
+  position: relative;
+  width: var(--game-card-thumbnail-width);
+  aspect-ratio: 5 / 7;
+  overflow: visible;
+}
+
+.game-card-thumbnail > [data-card-id] {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: var(--game-card-field-width);
   max-width: none;
+  color: var(--app-fg);
   pointer-events: none;
+  transform: scale(var(--game-card-thumbnail-scale));
+  transform-origin: top left;
 }
 
 .game-library-card-name {

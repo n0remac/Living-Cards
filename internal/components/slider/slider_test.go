@@ -54,6 +54,8 @@ func TestRenderLayerIncludesSliderValue(t *testing.T) {
 	for _, marker := range []string{
 		`data-component-id="regulator-slider"`,
 		`data-component-kind="slider"`,
+		`data-slider-input`,
+		`data-slider-value`,
 		`type="range"`,
 		`value="73"`,
 		`Output`,
@@ -61,5 +63,8 @@ func TestRenderLayerIncludesSliderValue(t *testing.T) {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("render missing %q:\n%s", marker, body)
 		}
+	}
+	if strings.Contains(body, `disabled`) {
+		t.Fatalf("render should keep slider input enabled:\n%s", body)
 	}
 }

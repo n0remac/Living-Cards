@@ -123,6 +123,28 @@ async function playGameCard(sourceCardId, targetCardId) {
   }
   return await response.json();
 }
+async function selectGameCardComponent(cardId, componentId, componentKind) {
+  const response = await fetch("/api/game/component/select", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cardId, componentId, componentKind })
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to select component."));
+  }
+  return await response.json();
+}
+async function applyGameCardComponentControl(cardId, componentId, componentKind, control, value) {
+  const response = await fetch("/api/game/component/control-change", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cardId, componentId, componentKind, control, value })
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to update active card."));
+  }
+  return await response.json();
+}
 async function startGameEdit(cardId) {
   const response = await fetch("/api/game/edit/start", {
     method: "POST",
@@ -145,6 +167,17 @@ async function installGameEditComponent(componentCardId) {
   }
   return await response.json();
 }
+async function selectGameEditComponent(componentId, componentKind) {
+  const response = await fetch("/api/game/edit/component/select", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ componentId, componentKind })
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to select draft component."));
+  }
+  return await response.json();
+}
 async function applyGameEditControl(componentId, control, value) {
   const response = await fetch("/api/game/edit/control-change", {
     method: "POST",
@@ -153,6 +186,17 @@ async function applyGameEditControl(componentId, control, value) {
   });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to update draft card."));
+  }
+  return await response.json();
+}
+async function applyGameLibraryComponentControl(cardId, componentId, componentKind, control, value) {
+  const response = await fetch("/api/game/library/component/control-change", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cardId, componentId, componentKind, control, value })
+  });
+  if (!response.ok) {
+    throw new Error(await readError(response, "Failed to update library card."));
   }
   return await response.json();
 }
@@ -858,6 +902,10 @@ function hexOrFallback(value) {
 var latestSession = null;
 var busy = false;
 var controlBusy = false;
+var activePressState = null;
+var editPressState = null;
+var longPressDelayMS = 560;
+var dragThresholdPX = 6;
 function initGameStage() {
   bindControls();
   void loadSession();
@@ -897,6 +945,16 @@ function bindControls() {
       void play(sourceCardId, targetCardId);
     }
   });
+  worldTarget?.addEventListener("pointerdown", onActivePointerDown);
+  worldTarget?.addEventListener("pointermove", onActivePointerMove);
+  worldTarget?.addEventListener("pointerup", onActivePointerUp);
+  worldTarget?.addEventListener("pointercancel", onActivePointerCancel);
+  worldTarget?.addEventListener("contextmenu", (event) => {
+    if (activeComponentHit(event)) {
+      event.preventDefault();
+    }
+  });
+  bindSliderInputEvents(worldTarget, "world");
   const editCanvas = byID("game-edit-canvas");
   editCanvas?.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -914,11 +972,412 @@ function bindControls() {
       void installEditComponent(sourceCardId);
     }
   });
+  const editCard = byID("game-edit-card");
+  editCard?.addEventListener("pointerdown", onEditPointerDown);
+  editCard?.addEventListener("pointermove", onEditPointerMove);
+  editCard?.addEventListener("pointerup", onEditPointerUp);
+  editCard?.addEventListener("pointercancel", onEditPointerCancel);
+  editCard?.addEventListener("contextmenu", (event) => {
+    if (editComponentHit(event)) {
+      event.preventDefault();
+    }
+  });
+  bindSliderInputEvents(editCard, "edit");
+  bindSliderInputEvents(byID("game-library-list"), "library");
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeComponentOverlay(overlayRoot());
     }
   });
+}
+function bindSliderInputEvents(root, scope) {
+  root?.addEventListener("pointerdown", stopSliderInputEvent);
+  root?.addEventListener("click", stopSliderInputEvent);
+  root?.addEventListener("input", (event) => {
+    const input = sliderInputFromEvent(event);
+    if (!input) return;
+    updateSliderValueDisplay(input);
+    event.stopPropagation();
+  });
+  root?.addEventListener("change", (event) => {
+    const input = sliderInputFromEvent(event);
+    if (!input) return;
+    updateSliderValueDisplay(input);
+    event.stopPropagation();
+    void commitSliderInputValue(scope, input);
+  });
+}
+function stopSliderInputEvent(event) {
+  if (sliderInputFromEvent(event)) {
+    event.stopPropagation();
+  }
+}
+function sliderInputFromEvent(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  const input = target.closest("input[data-slider-input]");
+  return input && input.type === "range" ? input : null;
+}
+function isSliderInputTarget(event) {
+  return Boolean(sliderInputFromEvent(event));
+}
+function updateSliderValueDisplay(input) {
+  const component = input.closest("[data-component-id][data-component-kind='slider']");
+  const value = component?.querySelector("[data-slider-value]");
+  if (value) value.textContent = input.value;
+}
+async function commitSliderInputValue(scope, input) {
+  if (controlBusy) return;
+  const component = input.closest("[data-component-id][data-component-kind='slider']");
+  const componentId = component?.dataset.componentId || "";
+  const value = Number(input.value);
+  if (!componentId || !Number.isFinite(value)) return;
+  controlBusy = true;
+  try {
+    if (scope === "edit") {
+      if (!latestSession?.editSession) return;
+      renderSession(await applyGameEditControl(componentId, "value", value));
+      return;
+    }
+    if (scope === "library") {
+      const cardId2 = input.closest(".game-library-card")?.dataset.cardId || input.closest("[data-card-id]")?.dataset.cardId || "";
+      if (!cardId2) return;
+      renderSession(await applyGameLibraryComponentControl(cardId2, componentId, "slider", "value", value));
+      return;
+    }
+    const cardId = latestSession?.activeWorldCardId || activeCardPreview()?.dataset.cardId || "";
+    if (!cardId) return;
+    renderSession(await applyGameCardComponentControl(cardId, componentId, "slider", "value", value));
+  } catch (error) {
+    if (scope === "edit") {
+      setEditStatus(errorMessage(error), true);
+    } else {
+      setStatus(errorMessage(error), true);
+    }
+  } finally {
+    controlBusy = false;
+  }
+}
+function onActivePointerDown(event) {
+  if (busy || latestSession?.editSession) return;
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  if (isSliderInputTarget(event)) return;
+  const hit = activeComponentHit(event);
+  if (!hit) return;
+  const position = componentPercentPosition(hit.element, hit.preview, hit.componentKind);
+  const longPressTimer = window.setTimeout(() => {
+    const state = activePressState;
+    if (!state || state.pointerId !== event.pointerId || state.dragging) return;
+    state.longPressFired = true;
+    void selectActiveComponent(state.hit);
+  }, longPressDelayMS);
+  activePressState = {
+    hit,
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    startX: position.x,
+    startY: position.y,
+    nextX: position.x,
+    nextY: position.y,
+    dragging: false,
+    longPressFired: false,
+    longPressTimer
+  };
+  try {
+    event.currentTarget.setPointerCapture(event.pointerId);
+  } catch {
+  }
+  event.preventDefault();
+  event.stopPropagation();
+}
+function onActivePointerMove(event) {
+  const state = activePressState;
+  if (!state || state.pointerId !== event.pointerId) return;
+  const dx = event.clientX - state.startClientX;
+  const dy = event.clientY - state.startClientY;
+  const distance = Math.hypot(dx, dy);
+  if (distance > dragThresholdPX && !state.longPressFired) {
+    window.clearTimeout(state.longPressTimer);
+  }
+  if (state.longPressFired) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (!canDragActiveComponent(state.hit.componentKind)) return;
+  if (!state.dragging && distance >= dragThresholdPX) {
+    state.dragging = true;
+    closeComponentOverlay(overlayRoot());
+    state.hit.element.dataset.dragging = "true";
+    setStatus("Release to place " + componentTitle(state.hit.componentKind).toLowerCase() + ".");
+  }
+  if (!state.dragging) return;
+  const rect = state.hit.preview.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  state.nextX = clampDragPercent(state.startX + dx / rect.width * 100);
+  state.nextY = clampDragPercent(state.startY + dy / rect.height * 100);
+  state.hit.element.style.left = `${state.nextX.toFixed(2)}%`;
+  state.hit.element.style.top = `${state.nextY.toFixed(2)}%`;
+  event.preventDefault();
+  event.stopPropagation();
+}
+function onActivePointerUp(event) {
+  const state = activePressState;
+  if (!state || state.pointerId !== event.pointerId) return;
+  const shouldCommit = state.dragging;
+  const hit = state.hit;
+  const x = Math.round(state.nextX);
+  const y = Math.round(state.nextY);
+  cleanupActivePressState(event.currentTarget);
+  if (shouldCommit) {
+    void applyActivePosition(hit, x, y);
+  }
+  event.preventDefault();
+  event.stopPropagation();
+}
+function onActivePointerCancel(event) {
+  const state = activePressState;
+  if (!state || state.pointerId !== event.pointerId) return;
+  cleanupActivePressState(event.currentTarget);
+  if (latestSession) {
+    renderSession(latestSession);
+  }
+}
+function cleanupActivePressState(target) {
+  const state = activePressState;
+  if (!state) return;
+  window.clearTimeout(state.longPressTimer);
+  delete state.hit.element.dataset.dragging;
+  if (target) {
+    try {
+      target.releasePointerCapture(state.pointerId);
+    } catch {
+    }
+  }
+  activePressState = null;
+}
+function onEditPointerDown(event) {
+  if (busy || !latestSession?.editSession) return;
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+  if (isSliderInputTarget(event)) return;
+  const hit = editComponentHit(event);
+  if (!hit) return;
+  const position = componentPercentPosition(hit.element, hit.preview, hit.componentKind);
+  editPressState = {
+    hit,
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    startX: position.x,
+    startY: position.y,
+    nextX: position.x,
+    nextY: position.y,
+    dragging: false,
+    longPressFired: false,
+    longPressTimer: 0
+  };
+  try {
+    event.currentTarget.setPointerCapture(event.pointerId);
+  } catch {
+  }
+  event.preventDefault();
+  event.stopPropagation();
+}
+function onEditPointerMove(event) {
+  const state = editPressState;
+  if (!state || state.pointerId !== event.pointerId) return;
+  const dx = event.clientX - state.startClientX;
+  const dy = event.clientY - state.startClientY;
+  const distance = Math.hypot(dx, dy);
+  if (!canDragEditComponent(state.hit.componentKind)) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
+  if (!state.dragging && distance >= dragThresholdPX) {
+    state.dragging = true;
+    closeComponentOverlay(overlayRoot());
+    state.hit.element.dataset.dragging = "true";
+    setEditStatus("Release to place " + componentTitle(state.hit.componentKind).toLowerCase() + ".");
+  }
+  if (!state.dragging) return;
+  const rect = state.hit.preview.getBoundingClientRect();
+  if (!rect.width || !rect.height) return;
+  state.nextX = clampDragPercent(state.startX + dx / rect.width * 100);
+  state.nextY = clampDragPercent(state.startY + dy / rect.height * 100);
+  state.hit.element.style.left = `${state.nextX.toFixed(2)}%`;
+  state.hit.element.style.top = `${state.nextY.toFixed(2)}%`;
+  event.preventDefault();
+  event.stopPropagation();
+}
+function onEditPointerUp(event) {
+  const state = editPressState;
+  if (!state || state.pointerId !== event.pointerId) return;
+  const shouldCommit = state.dragging;
+  const hit = state.hit;
+  const x = Math.round(state.nextX);
+  const y = Math.round(state.nextY);
+  cleanupEditPressState(event.currentTarget);
+  if (shouldCommit) {
+    void applyEditPosition(hit, x, y);
+  } else {
+    void selectEditComponent(hit);
+  }
+  event.preventDefault();
+  event.stopPropagation();
+}
+function onEditPointerCancel(event) {
+  const state = editPressState;
+  if (!state || state.pointerId !== event.pointerId) return;
+  cleanupEditPressState(event.currentTarget);
+  if (latestSession) {
+    renderSession(latestSession);
+  }
+}
+function cleanupEditPressState(target) {
+  const state = editPressState;
+  if (!state) return;
+  delete state.hit.element.dataset.dragging;
+  if (target) {
+    try {
+      target.releasePointerCapture(state.pointerId);
+    } catch {
+    }
+  }
+  editPressState = null;
+}
+function activeComponentHit(event) {
+  const preview = activeCardPreview();
+  const target = event.target;
+  if (!preview || !(target instanceof Node) || !preview.contains(target)) return null;
+  const cardId = preview.dataset.cardId || latestSession?.activeWorldCardId || "";
+  if (!cardId) return null;
+  const elementTarget = target instanceof Element ? target : null;
+  const component = elementTarget?.closest("[data-component-id][data-component-kind]");
+  if (component && preview.contains(component)) {
+    const componentKind2 = component.dataset.componentKind || "";
+    if (componentKind2 && componentKind2 !== "card") {
+      return {
+        cardId,
+        componentId: component.dataset.componentId || "",
+        componentKind: componentKind2,
+        element: component,
+        preview
+      };
+    }
+  }
+  const rect = preview.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const band = Math.max(12, Math.min(24, Math.min(rect.width, rect.height) * 0.08));
+  const componentKind = x <= band || y <= band || rect.width - x <= band || rect.height - y <= band ? "border" : "background";
+  return {
+    cardId,
+    componentId: "",
+    componentKind,
+    element: preview,
+    preview
+  };
+}
+function activeCardPreview() {
+  const root = byID("game-world-card");
+  const preview = root?.firstElementChild;
+  return preview instanceof HTMLElement ? preview : null;
+}
+function editComponentHit(event) {
+  const preview = editCardPreview();
+  const target = event.target;
+  if (!preview || !(target instanceof Node) || !preview.contains(target)) return null;
+  if (isSliderInputTarget(event)) return null;
+  const cardId = latestSession?.editSession?.draftCard.id || preview.dataset.cardId || "";
+  if (!cardId) return null;
+  const elementTarget = target instanceof Element ? target : null;
+  const component = elementTarget?.closest("[data-component-id][data-component-kind]");
+  if (component && preview.contains(component)) {
+    const componentKind = component.dataset.componentKind || "";
+    if (componentKind === "slider") {
+      return {
+        cardId,
+        componentId: component.dataset.componentId || "",
+        componentKind,
+        element: component,
+        preview
+      };
+    }
+  }
+  const rect = preview.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const band = Math.max(12, Math.min(24, Math.min(rect.width, rect.height) * 0.08));
+  if (x <= band || y <= band || rect.width - x <= band || rect.height - y <= band) {
+    return {
+      cardId,
+      componentId: "",
+      componentKind: "border",
+      element: preview,
+      preview
+    };
+  }
+  return null;
+}
+function editCardPreview() {
+  const root = byID("game-edit-card");
+  const preview = root?.firstElementChild;
+  return preview instanceof HTMLElement ? preview : null;
+}
+function componentPercentPosition(element, preview, componentKind) {
+  const styleX = parsePercent(element.style.left) ?? parsePercent(getComputedStyle(element).left);
+  const styleY = parsePercent(element.style.top) ?? parsePercent(getComputedStyle(element).top);
+  if (styleX !== null && styleY !== null) {
+    return { x: styleX, y: styleY };
+  }
+  const elementRect = element.getBoundingClientRect();
+  const previewRect = preview.getBoundingClientRect();
+  if (!previewRect.width || !previewRect.height) {
+    return { x: 50, y: 50 };
+  }
+  const anchorX = componentKind === "shape" ? elementRect.left : elementRect.left + elementRect.width / 2;
+  const anchorY = componentKind === "shape" ? elementRect.top : elementRect.top + elementRect.height / 2;
+  return {
+    x: (anchorX - previewRect.left) / previewRect.width * 100,
+    y: (anchorY - previewRect.top) / previewRect.height * 100
+  };
+}
+function parsePercent(value) {
+  const match = String(value || "").trim().match(/^(-?\d+(?:\.\d+)?)%$/);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+function canDragActiveComponent(componentKind) {
+  return componentKind === "textarea" || componentKind === "shape" || componentKind === "image" || componentKind === "slider";
+}
+function canDragEditComponent(componentKind) {
+  return componentKind === "slider";
+}
+function componentTitle(componentKind) {
+  switch (componentKind) {
+    case "background":
+      return "Background";
+    case "border":
+      return "Border";
+    case "textarea":
+      return "Text";
+    case "shape":
+      return "Shape";
+    case "image":
+      return "Image";
+    case "slider":
+      return "Slider";
+    default:
+      return "Component";
+  }
+}
+function clampDragPercent(value) {
+  if (value < 1) return 1;
+  if (value > 99) return 99;
+  return value;
 }
 async function loadSession() {
   setStatus("Loading scene...");
@@ -944,6 +1403,7 @@ async function reset() {
 async function cycle(direction) {
   if (busy) return;
   busy = true;
+  closeComponentOverlay(overlayRoot());
   try {
     renderSession(await cycleGameCard(direction));
   } catch (error) {
@@ -955,6 +1415,7 @@ async function cycle(direction) {
 async function collect(cardId) {
   if (busy) return;
   busy = true;
+  closeComponentOverlay(overlayRoot());
   try {
     renderSession(await collectGameCard(cardId));
   } catch (error) {
@@ -966,10 +1427,61 @@ async function collect(cardId) {
 async function play(sourceCardId, targetCardId) {
   if (busy) return;
   busy = true;
+  closeComponentOverlay(overlayRoot());
   try {
     renderSession(await playGameCard(sourceCardId, targetCardId));
   } catch (error) {
     setStatus(errorMessage(error), true);
+  } finally {
+    busy = false;
+  }
+}
+async function selectActiveComponent(hit) {
+  if (busy || latestSession?.editSession) return;
+  busy = true;
+  try {
+    renderSession(await selectGameCardComponent(hit.cardId, hit.componentId, hit.componentKind), { openActiveOverlay: true });
+  } catch (error) {
+    setStatus(errorMessage(error), true);
+  } finally {
+    busy = false;
+  }
+}
+async function applyActivePosition(hit, x, y) {
+  if (busy || latestSession?.editSession) return;
+  busy = true;
+  try {
+    renderSession(await applyGameCardComponentControl(hit.cardId, hit.componentId, hit.componentKind, "position", { x, y }));
+  } catch (error) {
+    if (latestSession) {
+      renderSession(latestSession);
+    }
+    setStatus(errorMessage(error), true);
+  } finally {
+    busy = false;
+  }
+}
+async function selectEditComponent(hit) {
+  if (busy || !latestSession?.editSession) return;
+  busy = true;
+  try {
+    renderSession(await selectGameEditComponent(hit.componentId, hit.componentKind), { openOverlay: true });
+  } catch (error) {
+    setEditStatus(errorMessage(error), true);
+  } finally {
+    busy = false;
+  }
+}
+async function applyEditPosition(hit, x, y) {
+  if (busy || !latestSession?.editSession) return;
+  busy = true;
+  try {
+    renderSession(await applyGameEditControl(hit.componentId, "position", { x, y }));
+  } catch (error) {
+    if (latestSession) {
+      renderSession(latestSession);
+    }
+    setEditStatus(errorMessage(error), true);
   } finally {
     busy = false;
   }
@@ -1037,6 +1549,10 @@ function renderSession(session, options = {}) {
   const count = byID("game-library-count");
   if (count) {
     count.textContent = session.library.length ? `${session.library.length} card${session.library.length === 1 ? "" : "s"}` : "Empty";
+  }
+  if (options.openActiveOverlay) {
+    openActiveEditingOverlay(session.activeEditingOverlay);
+    return;
   }
   if (!session.editSession) {
     closeComponentOverlay(overlayRoot());
@@ -1108,7 +1624,9 @@ function renderLibrary(cards) {
       }
     });
     const preview = document.createElement("div");
+    preview.className = "game-card-thumbnail";
     preview.innerHTML = card.preview_html;
+    stopSliderInputEventsInPreview(preview);
     const label = document.createElement("div");
     label.className = "game-library-card-name";
     label.textContent = card.name;
@@ -1136,6 +1654,15 @@ function libraryAction(card) {
     void startEdit(card.id);
   });
   return action;
+}
+function stopSliderInputEventsInPreview(preview) {
+  for (const eventName of ["pointerdown", "click"]) {
+    preview.addEventListener(eventName, (event) => {
+      if (sliderInputFromEvent(event)) {
+        event.stopPropagation();
+      }
+    });
+  }
 }
 function renderComponentTray(cards) {
   const root = byID("game-edit-component-tray");
@@ -1170,6 +1697,7 @@ function renderComponentTray(cards) {
       if (!disabled) void installEditComponent(card.id);
     });
     const preview = document.createElement("div");
+    preview.className = "game-card-thumbnail";
     preview.innerHTML = card.preview_html;
     const label = document.createElement("div");
     label.className = "game-library-card-name";
@@ -1184,6 +1712,21 @@ async function handleLibraryClick(card) {
     return;
   }
   setStatus("Drag this card onto the active world card to use it.");
+}
+function openActiveEditingOverlay(overlay = latestSession?.activeEditingOverlay) {
+  if (!overlay) {
+    closeComponentOverlay(overlayRoot());
+    setStatus("Long press a card component to edit it.", true);
+    return;
+  }
+  openComponentOverlay({
+    root: overlayRoot(),
+    overlay,
+    onClose: () => void 0,
+    onControl: (control, value) => {
+      void applyActiveControl(overlay, control, value);
+    }
+  });
 }
 function openEditingOverlay(overlay = latestSession?.editSession?.editingOverlay) {
   if (!latestSession?.editSession) {
@@ -1202,6 +1745,20 @@ function openEditingOverlay(overlay = latestSession?.editSession?.editingOverlay
       void applyEditControl(overlay, control, value);
     }
   });
+}
+async function applyActiveControl(overlay, control, value) {
+  if (controlBusy) return;
+  const cardId = latestSession?.activeWorldCardId || "";
+  if (!cardId) return;
+  controlBusy = true;
+  try {
+    const snapshot = await applyGameCardComponentControl(cardId, overlay.componentId, overlay.componentKind, control.control, value);
+    renderSession(snapshot, { openActiveOverlay: true });
+  } catch (error) {
+    setStatus(errorMessage(error), true);
+  } finally {
+    controlBusy = false;
+  }
 }
 async function applyEditControl(overlay, control, value) {
   if (controlBusy) return;
