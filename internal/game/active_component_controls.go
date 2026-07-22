@@ -8,11 +8,13 @@ import (
 
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
+	"github.com/n0remac/Living-Card/internal/components/button"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
 	"github.com/n0remac/Living-Card/internal/components/shape"
 	"github.com/n0remac/Living-Card/internal/components/slider"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
+	"github.com/n0remac/Living-Card/internal/components/textinput"
 	"github.com/n0remac/Living-Card/internal/design"
 )
 
@@ -23,7 +25,7 @@ type componentPositionValue struct {
 
 func worldComponentKindEditable(componentKind string) bool {
 	switch componentKind {
-	case background.Kind, border.Kind, textarea.Kind, shape.Kind, imagecomponent.Kind, slider.Kind:
+	case background.Kind, border.Kind, textarea.Kind, shape.Kind, imagecomponent.Kind, slider.Kind, textinput.Kind, button.Kind:
 		return true
 	default:
 		return false
@@ -44,6 +46,10 @@ func componentEditLabel(componentKind string) string {
 		return "Image"
 	case slider.Kind:
 		return "Slider"
+	case textinput.Kind:
+		return "Text form"
+	case button.Kind:
+		return "Button"
 	default:
 		return "Component"
 	}
@@ -66,6 +72,10 @@ func applyGameComponentControl(node *cardcomponent.Node, control string, value j
 		return applyImageControl(node, control, value)
 	case slider.Kind:
 		return applySliderControl(node, control, value)
+	case textinput.Kind:
+		return applyTextInputControl(node, control, value)
+	case button.Kind:
+		return applyButtonControl(node, control, value)
 	default:
 		return fmt.Errorf("component kind %q does not support active card controls", node.ComponentKind)
 	}
@@ -500,6 +510,80 @@ func applySliderControl(node *cardcomponent.Node, control string, value json.Raw
 	part = slider.NormalizeConfig(part)
 	if issues := slider.ValidateConfig(part); len(issues) > 0 {
 		return fmt.Errorf("invalid slider config at %s: %s", issues[0].Path, issues[0].Message)
+	}
+	node.Config = mustRaw(part)
+	return nil
+}
+
+func applyTextInputControl(node *cardcomponent.Node, control string, value json.RawMessage) error {
+	part, err := decodeNodeConfig(*node, textinput.DefaultConfig(), "textinput")
+	if err != nil {
+		return err
+	}
+	switch control {
+	case "form_id":
+		part.FormID, err = readJSONString(value)
+	case "name":
+		part.Name, err = readJSONString(value)
+	case "label":
+		part.Label, err = readJSONString(value)
+	case "placeholder":
+		part.Placeholder, err = readJSONString(value)
+	case "input_type":
+		part.InputType, err = readJSONString(value)
+	case "position":
+		var next componentPositionValue
+		next, err = readJSONPosition(value)
+		part.X, part.Y = next.X, next.Y
+	case "x":
+		part.X, err = readJSONInt(value)
+	case "y":
+		part.Y, err = readJSONInt(value)
+	case "width":
+		part.Width, err = readJSONInt(value)
+	default:
+		return fmt.Errorf("control %q is not supported for text form", control)
+	}
+	if err != nil {
+		return err
+	}
+	part = textinput.NormalizeConfig(part)
+	if issues := textinput.ValidateConfig(part); len(issues) > 0 {
+		return fmt.Errorf("invalid textinput config at %s: %s", issues[0].Path, issues[0].Message)
+	}
+	node.Config = mustRaw(part)
+	return nil
+}
+
+func applyButtonControl(node *cardcomponent.Node, control string, value json.RawMessage) error {
+	part, err := decodeNodeConfig(*node, button.DefaultConfig(), "button")
+	if err != nil {
+		return err
+	}
+	switch control {
+	case "form_id":
+		part.FormID, err = readJSONString(value)
+	case "label":
+		part.Label, err = readJSONString(value)
+	case "position":
+		var next componentPositionValue
+		next, err = readJSONPosition(value)
+		part.X, part.Y = next.X, next.Y
+	case "x":
+		part.X, err = readJSONInt(value)
+	case "y":
+		part.Y, err = readJSONInt(value)
+	case "width":
+		part.Width, err = readJSONInt(value)
+	default:
+		return fmt.Errorf("control %q is not supported for button", control)
+	}
+	if err != nil {
+		return err
+	}
+	part = button.NormalizeConfig(part)
+	if issues := button.ValidateConfig(part); len(issues) > 0 {
+		return fmt.Errorf("invalid button config at %s: %s", issues[0].Path, issues[0].Message)
 	}
 	node.Config = mustRaw(part)
 	return nil

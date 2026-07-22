@@ -626,11 +626,16 @@
         {
           "effectKind": "copySourceComponentToTarget",
           "cardId": "generator-panel",
-          "componentKind": "slider"
+          "componentKind": "slider",
+          "applyOnFailure": true
+        },
+        {
+          "effectKind": "loadDeck",
+          "deckId": "archive_terminal"
         },
         {
           "effectKind": "setMessage",
-          "message": "The regulator locks at 73. The generator comes fully online."
+          "message": "The regulator locks at 73. The generator comes fully online, revealing an archive terminal."
         }
       ]
     }

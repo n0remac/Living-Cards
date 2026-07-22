@@ -6,11 +6,13 @@ import (
 
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
+	"github.com/n0remac/Living-Card/internal/components/button"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
 	"github.com/n0remac/Living-Card/internal/components/shape"
 	"github.com/n0remac/Living-Card/internal/components/slider"
 	"github.com/n0remac/Living-Card/internal/components/textarea"
+	"github.com/n0remac/Living-Card/internal/components/textinput"
 	"github.com/n0remac/Living-Card/internal/design"
 	"github.com/n0remac/Living-Card/internal/game"
 )
@@ -57,6 +59,10 @@ func gameEditingOverlayForNode(node cardcomponent.Node) *ComponentOverlay {
 		return shapeEditingOverlay(node)
 	case imagecomponent.Kind:
 		return imageEditingOverlay(node)
+	case textinput.Kind:
+		return textInputEditingOverlay(node)
+	case button.Kind:
+		return buttonEditingOverlay(node)
 	default:
 		return nil
 	}
@@ -250,6 +256,54 @@ func imageEditingOverlay(node cardcomponent.Node) *ComponentOverlay {
 			colorEditControl("style", "border_color", "Border color", "border-color", part.BorderColor),
 			rangeEditControl("style", "border_width_px", "Border width", "border-width", part.BorderWidthPX, 0, 12, 1),
 			rangeEditControl("style", "border_radius_px", "Border radius", "border-radius", part.BorderRadiusPX, 0, 48, 1),
+		},
+	}
+}
+
+func textInputEditingOverlay(node cardcomponent.Node) *ComponentOverlay {
+	part := textinput.DefaultConfig()
+	if len(node.Config) > 0 {
+		_ = json.Unmarshal(node.Config, &part)
+	}
+	part = textinput.NormalizeConfig(part)
+	return &ComponentOverlay{
+		ComponentID:      node.ID,
+		ComponentKind:    textinput.Kind,
+		Title:            "Text Form",
+		RandomizeEnabled: false,
+		Controls: []ControlDescriptor{
+			textEditControl("form", "form_id", "Form ID", "form", part.FormID),
+			textEditControl("form", "name", "Field name", "name", part.Name),
+			textEditControl("content", "label", "Label", "label", part.Label),
+			textEditControl("content", "placeholder", "Placeholder", "placeholder", part.Placeholder),
+			{
+				Trait: "content", Control: "input_type", Kind: "select", Label: "Input type", Property: "type", Value: part.InputType,
+				Options: []ControlOption{{Label: "Text", Value: "text"}, {Label: "Password", Value: "password"}},
+			},
+			rangeEditControl("layout", "x", "X position", "left", part.X, 0, 100, 1),
+			rangeEditControl("layout", "y", "Y position", "top", part.Y, 0, 100, 1),
+			rangeEditControl("layout", "width", "Width", "width", part.Width, 12, 100, 1),
+		},
+	}
+}
+
+func buttonEditingOverlay(node cardcomponent.Node) *ComponentOverlay {
+	part := button.DefaultConfig()
+	if len(node.Config) > 0 {
+		_ = json.Unmarshal(node.Config, &part)
+	}
+	part = button.NormalizeConfig(part)
+	return &ComponentOverlay{
+		ComponentID:      node.ID,
+		ComponentKind:    button.Kind,
+		Title:            "Button",
+		RandomizeEnabled: false,
+		Controls: []ControlDescriptor{
+			textEditControl("form", "form_id", "Form ID", "form", part.FormID),
+			textEditControl("content", "label", "Label", "text-content", part.Label),
+			rangeEditControl("layout", "x", "X position", "left", part.X, 0, 100, 1),
+			rangeEditControl("layout", "y", "Y position", "top", part.Y, 0, 100, 1),
+			rangeEditControl("layout", "width", "Width", "width", part.Width, 12, 100, 1),
 		},
 	}
 }

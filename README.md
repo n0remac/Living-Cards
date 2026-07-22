@@ -7,10 +7,10 @@ The current game content is pure JSON under `internal/game/decks/`. Runtime code
 ## What Is In The App
 
 - A visible world-deck game served at `/`.
-- Server-rendered card previews built from `card.Document` JSON, including background, border, textarea, shape, image, and slider components.
-- Data-driven deck packs with document variants, declarative use rules, slider-value source conditions, and chained `loadDeck` effects.
-- A seeded puzzle path where opening the door loads the fuse room, using the fuse on the switch loads the generator room, and a tuned regulator controller powers the generator.
-- A full-screen draft edit workflow where editable library cards can accept consumed component cards, expose HTML/CSS-style controls, and save back into the library.
+- Server-rendered card previews built from `card.Document` JSON, including background, border, textarea, shape, image, slider, text-input, and button components.
+- Data-driven deck packs with document variants, declarative use and form-submission rules, component-presence conditions, and chained `loadDeck` effects.
+- A seeded puzzle path where opening the door loads the fuse room, using the fuse on the switch loads the generator room, and powering the generator reveals an Archive Terminal password puzzle.
+- A reusable Blank Controller that accumulates separately collected components through the full-screen edit workflow. Component cards remain pending until save and are retained on cancel.
 - A retained draft-card designer API for generating and applying background, border, textarea, shape, and image configs.
 - In-memory state only; restarting the server resets the game and draft card state.
 
@@ -61,12 +61,12 @@ World deck:
 - `POST /api/game/cycle`
 - `POST /api/game/collect`
 - `POST /api/game/play-card`
+- `POST /api/game/submit-form`
 - `POST /api/game/edit/start`
 - `POST /api/game/edit/install-component`
 - `POST /api/game/edit/control-change`
 - `POST /api/game/edit/save`
 - `POST /api/game/edit/cancel`
-- `POST /api/game/save-controller`
 
 Draft card/designer:
 

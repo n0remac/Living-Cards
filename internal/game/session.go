@@ -3,15 +3,16 @@ package game
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
+	"github.com/n0remac/Living-Card/internal/components/button"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/slider"
-	"github.com/n0remac/Living-Card/internal/components/textarea"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/textinput"
 )
 
 const (
@@ -21,10 +22,9 @@ const (
 
 	DoorUnlockedFlag = "doorUnlocked"
 
-	BlankControllerCardID     = "blank-controller"
-	SliderComponentCardID     = "slider-component"
-	RegulatorControllerCardID = "generator-regulator-controller"
-	GeneratorPoweredFlag      = "generatorPowered"
+	BlankControllerCardID = "blank-controller"
+	SliderComponentCardID = "slider-component"
+	GeneratorPoweredFlag  = "generatorPowered"
 )
 
 type Card struct {
@@ -64,6 +64,7 @@ type Session struct {
 	documentVariants         map[string]map[string]cardcomponent.Document
 	loadedDecks              map[string]bool
 	useRules                 []UseRuleDefinition
+	formSubmitRules          []FormSubmitRuleDefinition
 	worldDeck                []Card
 	activeIndex              int
 	activeEditingComponentID string
@@ -104,6 +105,7 @@ func NewSessionFromDeck(definition DeckDefinition) (*Session, error) {
 		documentVariants: documentVariants,
 		loadedDecks:      map[string]bool{definition.ID: true},
 		useRules:         cloneValue(definition.UseRules),
+		formSubmitRules:  cloneValue(definition.FormSubmitRules),
 		worldDeck:        worldDeck,
 		activeIndex:      activeIndex,
 		library:          nil,
@@ -131,6 +133,7 @@ func (s *Session) Reset() (Snapshot, error) {
 	s.documentVariants = next.documentVariants
 	s.loadedDecks = next.loadedDecks
 	s.useRules = next.useRules
+	s.formSubmitRules = next.formSubmitRules
 	s.worldDeck = next.worldDeck
 	s.activeIndex = next.activeIndex
 	s.activeEditingComponentID = next.activeEditingComponentID
@@ -241,6 +244,55 @@ func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
 	return s.snapshotLocked()
 }
 
+func (s *Session) SubmitForm(cardID, formID string, fields map[string]string) (Snapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cardID = strings.TrimSpace(cardID)
+	formID = strings.TrimSpace(formID)
+	if cardID == "" || formID == "" {
+		return Snapshot{}, fmt.Errorf("cardId and formId are required")
+	}
+	if len(fields) > 16 {
+		return Snapshot{}, fmt.Errorf("form may contain at most 16 fields")
+	}
+	for name, value := range fields {
+		if !safeComponentID(name) {
+			return Snapshot{}, fmt.Errorf("form field name %q is invalid", name)
+		}
+		if len([]rune(value)) > 128 {
+			return Snapshot{}, fmt.Errorf("form field %q must be at most 128 characters", name)
+		}
+	}
+	targetIndex := s.worldCardIndex(cardID)
+	if targetIndex < 0 {
+		return Snapshot{}, fmt.Errorf("card %q is not in the world deck", cardID)
+	}
+	target := s.worldDeck[targetIndex]
+	for _, rule := range s.formSubmitRules {
+		if strings.TrimSpace(rule.FormID) != formID || !s.formSubmitRuleBaseMatches(rule, target) {
+			continue
+		}
+		if !documentHasSubmitButton(target.Document, formID) || !documentHasFormFields(target.Document, formID, rule.FieldConditions) {
+			return Snapshot{}, fmt.Errorf("form %q is not mounted on %s", formID, target.Name)
+		}
+		if !submittedFieldsMatch(rule.FieldConditions, fields) {
+			if strings.TrimSpace(rule.FailureMessage) != "" {
+				s.lastMessage = rule.FailureMessage
+			}
+			s.activeIndex = targetIndex
+			return s.snapshotLocked()
+		}
+		if err := s.applyRuleEffects(UseRuleDefinition{Effects: rule.Effects}, Card{}, target); err != nil {
+			return Snapshot{}, err
+		}
+		s.activeIndex = targetIndex
+		s.activeEditingComponentID = ""
+		return s.snapshotLocked()
+	}
+	return Snapshot{}, fmt.Errorf("form %q does not accept submissions for %s", formID, target.Name)
+}
+
 func (s *Session) SelectWorldComponent(cardID, componentID, componentKind string) (Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -327,43 +379,17 @@ func (s *Session) InstallEditComponent(componentCardID string) (Snapshot, error)
 
 	component := s.library[componentIndex]
 	componentKind := stateString(component.State, "componentKind")
-	switch componentKind {
-	case slider.Kind:
-		part, err := sliderConfigFromComponentCard(component)
-		if err != nil {
-			return Snapshot{}, err
-		}
-		nodeID := nextComponentNodeID(s.editSession.DraftCard.Document, preferredSliderNodeID(s.editSession.TargetCardID))
-		s.editSession.DraftCard.Document.Root.Children = append(s.editSession.DraftCard.Document.Root.Children, cardcomponent.Node{
-			ID:            nodeID,
-			ComponentKind: slider.Kind,
-			Config:        mustRaw(part),
-		})
-		s.editSession.SelectedComponentID = nodeID
-	case border.Kind:
-		part, err := borderConfigFromComponentCard(component)
-		if err != nil {
-			return Snapshot{}, err
-		}
-		node := findNodeByKindPtr(&s.editSession.DraftCard.Document.Root, border.Kind)
-		if node == nil {
-			nodeID := nextComponentNodeID(s.editSession.DraftCard.Document, s.editSession.TargetCardID+"-border")
-			s.editSession.DraftCard.Document.Root.Children = append(s.editSession.DraftCard.Document.Root.Children, cardcomponent.Node{
-				ID:            nodeID,
-				ComponentKind: border.Kind,
-				Config:        mustRaw(part),
-			})
-			s.editSession.SelectedComponentID = nodeID
-		} else {
-			node.Config = mustRaw(part)
-			s.editSession.SelectedComponentID = node.ID
-		}
-	default:
-		if componentKind == "" {
-			return Snapshot{}, fmt.Errorf("%s is not a component card", component.Name)
-		}
-		return Snapshot{}, fmt.Errorf("component kind %q is not supported yet", componentKind)
+	node, mergePolicy, err := componentNodeFromCard(component, s.editSession.DraftCard.Document)
+	if err != nil {
+		return Snapshot{}, err
 	}
+	installComponentNode(&s.editSession.DraftCard.Document, node, mergePolicy)
+	if mergePolicy == componentMergeReplace {
+		if installed := findNodeByKind(s.editSession.DraftCard.Document.Root, componentKind); installed != nil {
+			node.ID = installed.ID
+		}
+	}
+	s.editSession.SelectedComponentID = node.ID
 
 	s.editSession.PendingConsumedComponentIDs = append(s.editSession.PendingConsumedComponentIDs, componentCardID)
 	s.lastMessage = component.Name + " added to the draft."
@@ -447,21 +473,32 @@ func (s *Session) SaveEdit() (Snapshot, error) {
 	card.State["editable"] = true
 
 	installedKinds := map[string]bool{}
-	if findNodeByKind(card.Document.Root, slider.Kind) != nil {
-		installedKinds[slider.Kind] = true
-		card.Tags = appendStringOnce(card.Tags, "controller")
-		card.Tags = appendStringOnce(card.Tags, "slider-controller")
-		card.State["built"] = true
-		if card.ID == BlankControllerCardID {
-			card.Name = "Regulator Controller"
-			card.Document.Name = "Regulator Controller"
+	for _, value := range appendStateStringOnce(card.State["installedComponents"], "") {
+		installedKinds[value] = true
+	}
+	for _, componentCardID := range s.editSession.PendingConsumedComponentIDs {
+		if componentCard := s.libraryCard(componentCardID); componentCard != nil {
+			if kind := stateString(componentCard.State, "componentKind"); kind != "" {
+				installedKinds[kind] = true
+			}
 		}
 	}
-	if findNodeByKind(card.Document.Root, border.Kind) != nil {
-		installedKinds[border.Kind] = true
-	}
+	kinds := make([]string, 0, len(installedKinds))
 	for kind := range installedKinds {
+		kinds = append(kinds, kind)
+	}
+	sort.Strings(kinds)
+	for _, kind := range kinds {
 		card.State["installedComponents"] = appendStateStringOnce(card.State["installedComponents"], kind)
+		card.Tags = appendStringOnce(card.Tags, kind+"-controller")
+	}
+	if len(installedKinds) > 0 {
+		card.Tags = appendStringOnce(card.Tags, "controller")
+		card.State["built"] = true
+	}
+	if card.ID == BlankControllerCardID {
+		card.Name = "Blank Controller"
+		card.Document.Name = "Blank Controller"
 	}
 
 	s.library[targetIndex] = card
@@ -494,49 +531,6 @@ func (s *Session) CancelEdit() (Snapshot, error) {
 	cardName := s.editSession.DraftCard.Name
 	s.editSession = nil
 	s.lastMessage = "Canceled editing " + cardName + "."
-	return s.snapshotLocked()
-}
-
-func (s *Session) SaveController(templateCardID string, document cardcomponent.Document) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	templateCardID = strings.TrimSpace(templateCardID)
-	if templateCardID != BlankControllerCardID {
-		return Snapshot{}, fmt.Errorf("templateCardId must be %q", BlankControllerCardID)
-	}
-	if s.libraryCard(BlankControllerCardID) == nil {
-		return Snapshot{}, fmt.Errorf("blank controller must be in your library")
-	}
-	if s.libraryCard(SliderComponentCardID) == nil {
-		return Snapshot{}, fmt.Errorf("slider component must be in your library")
-	}
-	sliderPart, err := validatedSliderFromDocument(document)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	controller := Card{
-		ID:          RegulatorControllerCardID,
-		Name:        "Regulator Controller",
-		Kind:        KindItem,
-		Tags:        []string{"item", "controller", "slider-controller"},
-		Collectible: false,
-		Collected:   true,
-		State: map[string]any{
-			"created":  true,
-			"template": BlankControllerCardID,
-		},
-		Document: regulatorControllerDocument(sliderPart),
-	}
-	for index := range s.library {
-		if s.library[index].ID == RegulatorControllerCardID {
-			s.library[index] = controller
-			s.lastMessage = "Regulator Controller updated in your library."
-			return s.snapshotLocked()
-		}
-	}
-	s.library = append(s.library, controller)
-	s.lastMessage = "Regulator Controller saved to your library."
 	return s.snapshotLocked()
 }
 
@@ -587,12 +581,10 @@ func (s *Session) editComponentNode(componentID, componentKind string) (*cardcom
 	if err != nil {
 		return nil, err
 	}
-	switch node.ComponentKind {
-	case slider.Kind, border.Kind:
+	if _, ok := installableComponentDefinitionForKind(node.ComponentKind); ok {
 		return node, nil
-	default:
-		return nil, fmt.Errorf("component kind %q does not support edit controls", node.ComponentKind)
 	}
+	return nil, fmt.Errorf("component kind %q does not support edit controls", node.ComponentKind)
 }
 
 func (s *Session) worldComponentNode(cardID, componentID, componentKind string) (int, *cardcomponent.Node, error) {
@@ -731,139 +723,132 @@ func (s *Session) ruleBaseMatches(rule UseRuleDefinition, source Card, target Ca
 	return true
 }
 
-func sourceComponentConditionsMatch(conditions []ComponentConditionDefinition, document cardcomponent.Document) bool {
-	for _, condition := range conditions {
-		switch strings.TrimSpace(condition.ComponentKind) {
-		case slider.Kind:
-			part, ok := firstSliderConfig(document)
-			if !ok || condition.ValueEquals == nil {
-				return false
-			}
-			if part.Value != *condition.ValueEquals {
-				return false
-			}
-		default:
+func (s *Session) formSubmitRuleBaseMatches(rule FormSubmitRuleDefinition, target Card) bool {
+	if !cardMatches(target, rule.Target) {
+		return false
+	}
+	for flag, value := range rule.FlagConditions {
+		if s.solvedFlags[flag] != value {
 			return false
 		}
 	}
 	return true
 }
 
-func validatedSliderFromDocument(document cardcomponent.Document) (slider.Config, error) {
-	part, ok := firstSliderConfig(document)
-	if !ok {
-		return slider.Config{}, fmt.Errorf("controller document must include a slider component")
-	}
-	return part, nil
-}
-
-func firstSliderConfig(document cardcomponent.Document) (slider.Config, bool) {
-	var out slider.Config
+func documentHasSubmitButton(document cardcomponent.Document, formID string) bool {
 	found := false
-	var visit func(cardcomponent.Node)
-	visit = func(node cardcomponent.Node) {
-		if found {
+	visitNodes(document.Root, func(node cardcomponent.Node) {
+		if found || node.ComponentKind != button.Kind {
 			return
 		}
-		if node.ComponentKind == slider.Kind {
-			var part slider.Config
-			if err := json.Unmarshal(node.Config, &part); err != nil {
-				return
-			}
-			generated := design.GeneratedConfig[slider.Config]{
-				ComponentKind: slider.Kind,
-				Description:   "Controller slider",
-				Config:        part,
-			}
-			slider.NormalizeGenerated(&generated)
-			if issues := slider.ValidateGenerated(generated); len(issues) > 0 {
-				return
-			}
-			out = generated.Config
-			found = true
+		part, err := cardcomponent.DecodeConfig[button.Config](node)
+		if err != nil {
 			return
 		}
-		for _, child := range node.Children {
-			visit(child)
-		}
-	}
-	visit(document.Root)
-	return out, found
+		part = button.NormalizeConfig(part)
+		found = part.FormID == formID && len(button.ValidateConfig(part)) == 0
+	})
+	return found
 }
 
-func regulatorControllerDocument(part slider.Config) cardcomponent.Document {
-	part = slider.NormalizeConfig(part)
-	part.Label = "Output"
-	return cardcomponent.Document{
-		CardID: RegulatorControllerCardID,
-		Name:   "Regulator Controller",
-		Root: cardcomponent.Node{
-			ID:            RegulatorControllerCardID + "-root",
-			ComponentKind: cardcomponent.Kind,
-			Config:        cardcomponent.EncodeRootConfig(cardcomponent.RootConfig{PaddingPX: 18, Shadow: "0 24px 60px rgba(8,47,73,0.34)"}),
-			Children: []cardcomponent.Node{
-				{
-					ID:            RegulatorControllerCardID + "-background",
-					ComponentKind: background.Kind,
-					Config: mustRaw(background.Config{
-						BackgroundColor: "#082f49",
-						CSS:             "background: linear-gradient(160deg, #082f49 0%, #0f172a 100%);",
-					}),
-				},
-				{
-					ID:            RegulatorControllerCardID + "-border",
-					ComponentKind: border.Kind,
-					Config: mustRaw(border.Config{
-						BorderWidthPX:  2,
-						BorderRadiusPX: 22,
-						BorderColor:    "#7dd3fc",
-						CSS:            "border: 2px solid #7dd3fc; border-radius: 22px;",
-					}),
-				},
-				{
-					ID:            RegulatorControllerCardID + "-title",
-					ComponentKind: textarea.Kind,
-					Config: mustRaw(textarea.Config{
-						Content:    "REGULATOR",
-						FontFamily: "system",
-						FontSizePX: 24,
-						FontWeight: 800,
-						FontStyle:  "normal",
-						Color:      "#e0f2fe",
-						Align:      "center",
-						Position:   "center",
-						X:          50,
-						Y:          20,
-						PaddingPX:  4,
-						CSS:        "text-align: center;",
-					}),
-				},
-				{
-					ID:            RegulatorControllerCardID + "-hint",
-					ComponentKind: textarea.Kind,
-					Config: mustRaw(textarea.Config{
-						Content:    "Output setpoint",
-						FontFamily: "system",
-						FontSizePX: 14,
-						FontWeight: 700,
-						FontStyle:  "normal",
-						Color:      "#bae6fd",
-						Align:      "center",
-						Position:   "center",
-						X:          50,
-						Y:          40,
-						PaddingPX:  4,
-						CSS:        "text-align: center;",
-					}),
-				},
-				{
-					ID:            "regulator-output-slider",
-					ComponentKind: slider.Kind,
-					Config:        mustRaw(part),
-				},
-			},
-		},
+func documentHasFormFields(document cardcomponent.Document, formID string, conditions []FormFieldConditionDefinition) bool {
+	available := map[string]bool{}
+	visitNodes(document.Root, func(node cardcomponent.Node) {
+		if node.ComponentKind != textinput.Kind {
+			return
+		}
+		part, err := cardcomponent.DecodeConfig[textinput.Config](node)
+		if err != nil {
+			return
+		}
+		part = textinput.NormalizeConfig(part)
+		if part.FormID == formID && len(textinput.ValidateConfig(part)) == 0 {
+			available[part.Name] = true
+		}
+	})
+	for _, condition := range conditions {
+		if !available[condition.Name] {
+			return false
+		}
 	}
+	return true
+}
+
+func submittedFieldsMatch(conditions []FormFieldConditionDefinition, fields map[string]string) bool {
+	for _, condition := range conditions {
+		actual, ok := fields[condition.Name]
+		if !ok {
+			return false
+		}
+		expected := condition.ValueEquals
+		if condition.TrimSpace {
+			actual = strings.TrimSpace(actual)
+			expected = strings.TrimSpace(expected)
+		}
+		if condition.CaseSensitive {
+			if actual != expected {
+				return false
+			}
+			continue
+		}
+		if !strings.EqualFold(actual, expected) {
+			return false
+		}
+	}
+	return true
+}
+
+func visitNodes(node cardcomponent.Node, visit func(cardcomponent.Node)) {
+	visit(node)
+	for _, child := range node.Children {
+		visitNodes(child, visit)
+	}
+}
+
+func sourceComponentConditionsMatch(conditions []ComponentConditionDefinition, document cardcomponent.Document) bool {
+	for _, condition := range conditions {
+		if !componentConditionMatches(condition, document.Root) {
+			return false
+		}
+	}
+	return true
+}
+
+func componentConditionMatches(condition ComponentConditionDefinition, root cardcomponent.Node) bool {
+	kind := strings.TrimSpace(condition.ComponentKind)
+	componentID := strings.TrimSpace(condition.ComponentID)
+	var candidates []cardcomponent.Node
+	if componentID != "" {
+		if node := findNodeByID(root, componentID); node != nil {
+			candidates = append(candidates, *node)
+		}
+	} else {
+		var visit func(cardcomponent.Node)
+		visit = func(node cardcomponent.Node) {
+			if node.ComponentKind == kind {
+				candidates = append(candidates, node)
+			}
+			for _, child := range node.Children {
+				visit(child)
+			}
+		}
+		visit(root)
+	}
+	for _, node := range candidates {
+		if node.ComponentKind != kind {
+			continue
+		}
+		if condition.ValueEquals == nil {
+			return true
+		}
+		if kind == slider.Kind {
+			part, err := decodeSliderNode(node)
+			if err == nil && part.Value == *condition.ValueEquals {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func cardMatches(card Card, matcher CardMatcherDefinition) bool {
@@ -940,7 +925,7 @@ func (s *Session) applyRuleEffects(rule UseRuleDefinition, source Card, target C
 
 func (s *Session) applyRuleFailureEffects(rule UseRuleDefinition, source Card, target Card) error {
 	for _, effect := range rule.Effects {
-		if effect.EffectKind != EffectCopySourceComponent {
+		if effect.EffectKind != EffectCopySourceComponent || !effect.ApplyOnFailure {
 			continue
 		}
 		if err := s.copySourceComponentToEffectCard(effect, source, target); err != nil {
@@ -952,10 +937,18 @@ func (s *Session) applyRuleFailureEffects(rule UseRuleDefinition, source Card, t
 
 func (s *Session) copySourceComponentToEffectCard(effect RuleEffectDefinition, source Card, target Card) error {
 	componentKind := strings.TrimSpace(effect.ComponentKind)
-	if componentKind != slider.Kind {
-		return fmt.Errorf("%s effect currently supports componentKind %q", EffectCopySourceComponent, slider.Kind)
+	if _, ok := installableComponentDefinitionForKind(componentKind); !ok {
+		return fmt.Errorf("%s effect requires an installable componentKind", EffectCopySourceComponent)
 	}
-	sourceNode := findNodeByKind(source.Document.Root, componentKind)
+	var sourceNode *cardcomponent.Node
+	if sourceComponentID := strings.TrimSpace(effect.SourceComponentID); sourceComponentID != "" {
+		sourceNode = findNodeByID(source.Document.Root, sourceComponentID)
+		if sourceNode != nil && sourceNode.ComponentKind != componentKind {
+			return fmt.Errorf("%s source component %q is %s, not %s", EffectCopySourceComponent, sourceComponentID, sourceNode.ComponentKind, componentKind)
+		}
+	} else {
+		sourceNode = findNodeByKind(source.Document.Root, componentKind)
+	}
 	if sourceNode == nil {
 		return fmt.Errorf("%s source card %q has no %s component", EffectCopySourceComponent, source.ID, componentKind)
 	}
@@ -1056,6 +1049,7 @@ func (s *Session) loadDeck(deckID string) error {
 		s.cardDefinitions[cardID] = card
 	}
 	s.useRules = append(s.useRules, cloneValue(definition.UseRules)...)
+	s.formSubmitRules = append(s.formSubmitRules, cloneValue(definition.FormSubmitRules)...)
 	if s.loadedDecks == nil {
 		s.loadedDecks = map[string]bool{}
 	}

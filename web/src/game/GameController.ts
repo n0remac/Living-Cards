@@ -13,6 +13,7 @@ import {
   selectGameCardComponent,
   selectGameEditComponent,
   startGameEdit,
+  submitGameForm,
 } from "../api";
 import { byID } from "../dom";
 import { closeComponentOverlay, openComponentOverlay } from "../stage/componentControls";
@@ -104,6 +105,13 @@ function bindControls(): void {
       event.preventDefault();
     }
   });
+  worldTarget?.addEventListener("submit", (event) => {
+    const form = cardFormFromEvent(event);
+    if (!form) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void submitActiveForm(form);
+  });
   bindSliderInputEvents(worldTarget, "world");
 
   const editCanvas = byID<HTMLElement>("game-edit-canvas");
@@ -135,7 +143,10 @@ function bindControls(): void {
     }
   });
   bindSliderInputEvents(editCard, "edit");
-  bindSliderInputEvents(byID<HTMLElement>("game-library-list"), "library");
+  bindInactiveFormEvents(editCard);
+  const library = byID<HTMLElement>("game-library-list");
+  bindSliderInputEvents(library, "library");
+  bindInactiveFormEvents(library);
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
@@ -181,6 +192,35 @@ function isSliderInputTarget(event: Event): boolean {
   return Boolean(sliderInputFromEvent(event));
 }
 
+function cardFormFromEvent(event: Event): HTMLFormElement | null {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  return target.closest<HTMLFormElement>("form[data-card-form]");
+}
+
+function cardFormControlFromEvent(event: Event): HTMLElement | null {
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  return target.closest<HTMLElement>("[data-card-form-control]");
+}
+
+function isCardFormControlTarget(event: Event): boolean {
+  return Boolean(cardFormControlFromEvent(event));
+}
+
+function isNativeFormInputTarget(event: Event): boolean {
+  const target = event.target;
+  return target instanceof Element && Boolean(target.closest("input[data-card-form-input]"));
+}
+
+function bindInactiveFormEvents(root: HTMLElement | null): void {
+  root?.addEventListener("submit", (event) => {
+    if (!cardFormFromEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+}
+
 function updateSliderValueDisplay(input: HTMLInputElement): void {
   const component = input.closest<HTMLElement>("[data-component-id][data-component-kind='slider']");
   const value = component?.querySelector<HTMLElement>("[data-slider-value]");
@@ -224,7 +264,7 @@ async function commitSliderInputValue(scope: SliderInputScope, input: HTMLInputE
 function onActivePointerDown(event: PointerEvent): void {
   if (busy || latestSession?.editSession) return;
   if (event.pointerType === "mouse" && event.button !== 0) return;
-  if (isSliderInputTarget(event)) return;
+  if (isSliderInputTarget(event) || isCardFormControlTarget(event)) return;
   const hit = activeComponentHit(event);
   if (!hit) return;
 
@@ -337,7 +377,7 @@ function cleanupActivePressState(target?: HTMLElement): void {
 function onEditPointerDown(event: PointerEvent): void {
   if (busy || !latestSession?.editSession) return;
   if (event.pointerType === "mouse" && event.button !== 0) return;
-  if (isSliderInputTarget(event)) return;
+  if (isSliderInputTarget(event) || isNativeFormInputTarget(event)) return;
   const hit = editComponentHit(event);
   if (!hit) return;
 
@@ -440,6 +480,7 @@ function activeComponentHit(event: MouseEvent | PointerEvent): ActiveComponentHi
   const preview = activeCardPreview();
   const target = event.target;
   if (!preview || !(target instanceof Node) || !preview.contains(target)) return null;
+  if (isCardFormControlTarget(event)) return null;
   const cardId = preview.dataset.cardId || latestSession?.activeWorldCardId || "";
   if (!cardId) return null;
 
@@ -482,7 +523,7 @@ function editComponentHit(event: MouseEvent | PointerEvent): ActiveComponentHit 
   const preview = editCardPreview();
   const target = event.target;
   if (!preview || !(target instanceof Node) || !preview.contains(target)) return null;
-  if (isSliderInputTarget(event)) return null;
+  if (isSliderInputTarget(event) || isNativeFormInputTarget(event)) return null;
   const cardId = latestSession?.editSession?.draftCard.id || preview.dataset.cardId || "";
   if (!cardId) return null;
 
@@ -490,7 +531,7 @@ function editComponentHit(event: MouseEvent | PointerEvent): ActiveComponentHit 
   const component = elementTarget?.closest<HTMLElement>("[data-component-id][data-component-kind]");
   if (component && preview.contains(component)) {
     const componentKind = component.dataset.componentKind || "";
-    if (componentKind === "slider") {
+    if (componentKind && componentKind !== "card" && componentKind !== "background" && componentKind !== "border") {
       return {
         cardId,
         componentId: component.dataset.componentId || "",
@@ -551,11 +592,11 @@ function parsePercent(value: string): number | null {
 }
 
 function canDragActiveComponent(componentKind: string): boolean {
-  return componentKind === "textarea" || componentKind === "shape" || componentKind === "image" || componentKind === "slider";
+  return componentKind === "textarea" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "textinput" || componentKind === "button";
 }
 
 function canDragEditComponent(componentKind: string): boolean {
-  return componentKind === "slider";
+  return componentKind === "textarea" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "textinput" || componentKind === "button";
 }
 
 function componentTitle(componentKind: string): string {
@@ -572,6 +613,10 @@ function componentTitle(componentKind: string): string {
       return "Image";
     case "slider":
       return "Slider";
+    case "textinput":
+      return "Text form";
+    case "button":
+      return "Button";
     default:
       return "Component";
   }
@@ -641,6 +686,35 @@ async function play(sourceCardId: string, targetCardId: string): Promise<void> {
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
+    busy = false;
+  }
+}
+
+async function submitActiveForm(form: HTMLFormElement): Promise<void> {
+  if (busy) return;
+  const cardId = latestSession?.activeWorldCardId || activeCardPreview()?.dataset.cardId || "";
+  const formId = form.dataset.formId || "";
+  if (!cardId || !formId) return;
+
+  const fields: Record<string, string> = {};
+  new FormData(form).forEach((value, name) => {
+    if (typeof value === "string") fields[name] = value;
+  });
+
+  busy = true;
+  const submitButtons = Array.from(byID<HTMLElement>("game-world-card")?.querySelectorAll<HTMLButtonElement>("button[data-card-form-control]") || []);
+  submitButtons.forEach((button) => {
+    button.disabled = true;
+  });
+  setStatus("Submitting...");
+  try {
+    renderSession(await submitGameForm(cardId, formId, fields));
+  } catch (error) {
+    setStatus(errorMessage(error), true);
+  } finally {
+    submitButtons.forEach((button) => {
+      button.disabled = false;
+    });
     busy = false;
   }
 }
@@ -852,7 +926,7 @@ function renderLibrary(cards: RenderedGameCard[]): void {
     const preview = document.createElement("div");
     preview.className = "game-card-thumbnail";
     preview.innerHTML = card.preview_html;
-    stopSliderInputEventsInPreview(preview);
+    stopInteractiveEventsInPreview(preview);
 
     const label = document.createElement("div");
     label.className = "game-library-card-name";
@@ -885,14 +959,19 @@ function libraryAction(card: RenderedGameCard): HTMLButtonElement | null {
   return action;
 }
 
-function stopSliderInputEventsInPreview(preview: HTMLElement): void {
-  for (const eventName of ["pointerdown", "click"]) {
+function stopInteractiveEventsInPreview(preview: HTMLElement): void {
+  for (const eventName of ["pointerdown", "click", "keydown"]) {
     preview.addEventListener(eventName, (event) => {
-      if (sliderInputFromEvent(event)) {
+      if (sliderInputFromEvent(event) || isCardFormControlTarget(event)) {
         event.stopPropagation();
       }
     });
   }
+  preview.addEventListener("dragstart", (event) => {
+    if (!isCardFormControlTarget(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
 }
 
 function renderComponentTray(cards: RenderedGameCard[]): void {

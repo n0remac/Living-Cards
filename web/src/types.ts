@@ -12,9 +12,9 @@ export interface ComponentNode {
 }
 
 export type ConfigKind = "background" | "border" | "textarea" | "shape" | "image";
-export type ComponentKind = "card" | "background" | "border" | "textarea" | "shape" | "image" | "slider";
-export type ComponentTarget = ConfigKind | "slider" | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
-export type CardHitZone = "border" | "background" | "textarea" | "shape" | "image" | "slider";
+export type ComponentKind = "card" | "background" | "border" | "textarea" | "shape" | "image" | "slider" | "textinput" | "button";
+export type ComponentTarget = ConfigKind | "slider" | "textinput" | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
+export type CardHitZone = "border" | "background" | "textarea" | "shape" | "image" | "slider" | "textinput" | "button";
 export type EditMode = "random" | "preset" | "simpleControls" | "advancedControls" | "aiPrompt" | "library";
 
 export type ConfigJSON = Record<string, unknown>;

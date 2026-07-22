@@ -24,6 +24,8 @@ const (
 	KindShape            = "shape"
 	KindImage            = "image"
 	KindSlider           = "slider"
+	KindTextInput        = "textinput"
+	KindButton           = "button"
 	defaultRootRaw       = `{"padding_px":24,"shadow":""}`
 	defaultBackgroundRaw = `{"background_color":"#111827","css":""}`
 	defaultBorderRaw     = `{"border_width_px":1,"border_radius_px":24,"border_color":"rgba(255,255,255,0.16)","css":""}`
@@ -73,12 +75,16 @@ type RenderContext struct {
 
 func (c RenderContext) LayerID(componentID string) string {
 	componentID = strings.TrimSpace(componentID)
-	layerID := componentID + "-layer"
+	return c.DOMID(componentID + "-layer")
+}
+
+func (c RenderContext) DOMID(value string) string {
+	value = strings.TrimSpace(value)
 	prefix := strings.TrimSpace(c.DOMIDPrefix)
 	if prefix == "" {
-		return layerID
+		return value
 	}
-	return prefix + "-" + layerID
+	return prefix + "-" + value
 }
 
 type Definition struct {

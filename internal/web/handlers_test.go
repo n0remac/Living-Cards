@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/components/slider"
 	"github.com/n0remac/Living-Card/internal/design"
 	"github.com/n0remac/Living-Card/internal/ollama"
 )
@@ -283,72 +282,6 @@ func TestGameCycleCollectAndUnlockDoor(t *testing.T) {
 	}
 }
 
-func TestGameSaveControllerRequiresCollectedParts(t *testing.T) {
-	t.Parallel()
-
-	mux := testMux(t, nil)
-	recorder := postJSON(t, mux, "/api/game/save-controller", map[string]any{
-		"templateCardId": "blank-controller",
-		"document":       webControllerDocument(t, 73),
-	})
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
-	}
-	if !strings.Contains(recorder.Body.String(), "blank controller") {
-		t.Fatalf("body = %q, want blank controller error", recorder.Body.String())
-	}
-}
-
-func TestGameSaveControllerRejectsMalformedDocument(t *testing.T) {
-	t.Parallel()
-
-	mux := testMux(t, nil)
-	advanceWebToGeneratorRoom(t, mux)
-	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "blank-controller"})
-	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "slider-component"})
-	recorder := postJSON(t, mux, "/api/game/save-controller", map[string]any{
-		"templateCardId": "blank-controller",
-		"document": cardcomponent.Document{
-			CardID: "bad-controller",
-			Name:   "Bad Controller",
-			Root:   cardcomponent.Node{ID: "bad-controller-root", ComponentKind: cardcomponent.Kind},
-		},
-	})
-	if recorder.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
-	}
-	if !strings.Contains(recorder.Body.String(), "slider component") {
-		t.Fatalf("body = %q, want slider document error", recorder.Body.String())
-	}
-}
-
-func TestGameSaveControllerAddsRenderedLibraryCard(t *testing.T) {
-	t.Parallel()
-
-	mux := testMux(t, nil)
-	advanceWebToGeneratorRoom(t, mux)
-	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "blank-controller"})
-	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "slider-component"})
-	recorder := postJSON(t, mux, "/api/game/save-controller", map[string]any{
-		"templateCardId": "blank-controller",
-		"document":       webControllerDocument(t, 73),
-	})
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
-	}
-	var payload GameSessionSnapshot
-	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
-	}
-	controller := gameCard(payload.Library, "generator-regulator-controller")
-	if controller == nil {
-		t.Fatalf("library = %#v, want regulator controller", payload.Library)
-	}
-	if !strings.Contains(controller.PreviewHTML, `data-component-kind="slider"`) || !strings.Contains(controller.PreviewHTML, `value="73"`) {
-		t.Fatalf("controller preview missing slider: %s", controller.PreviewHTML)
-	}
-}
-
 func TestGameEditWorkflowInstallsTunesAndSavesSlider(t *testing.T) {
 	t.Parallel()
 
@@ -433,6 +366,160 @@ func TestGameEditWorkflowInstallsTunesAndSavesSlider(t *testing.T) {
 	}
 }
 
+func TestArchiveTerminalFormSubmissionEndpoint(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	advanceWebToArchiveTerminal(t, mux)
+
+	for _, cardID := range []string{"archive-password-input-component", "archive-submit-button-component"} {
+		recorder := postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": cardID})
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("collect %s status = %d, want 200 body=%s", cardID, recorder.Code, recorder.Body.String())
+		}
+	}
+	postJSON(t, mux, "/api/game/edit/start", map[string]any{"cardId": "blank-controller"})
+	inputInstallRecorder := postJSON(t, mux, "/api/game/edit/install-component", map[string]any{"componentCardId": "archive-password-input-component"})
+	var inputInstalled GameSessionSnapshot
+	if err := json.Unmarshal(inputInstallRecorder.Body.Bytes(), &inputInstalled); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, inputInstallRecorder.Body.String())
+	}
+	if inputInstalled.EditSession == nil || inputInstalled.EditSession.EditingOverlay == nil ||
+		inputInstalled.EditSession.EditingOverlay.ComponentKind != "textinput" ||
+		!hasControl(inputInstalled.EditSession.EditingOverlay.Controls, "form_id") ||
+		!hasControl(inputInstalled.EditSession.EditingOverlay.Controls, "name") ||
+		!hasControl(inputInstalled.EditSession.EditingOverlay.Controls, "input_type") ||
+		!hasControl(inputInstalled.EditSession.EditingOverlay.Controls, "width") {
+		t.Fatalf("text input overlay = %#v, want form and layout controls", inputInstalled.EditSession)
+	}
+	buttonInstallRecorder := postJSON(t, mux, "/api/game/edit/install-component", map[string]any{"componentCardId": "archive-submit-button-component"})
+	var buttonInstalled GameSessionSnapshot
+	if err := json.Unmarshal(buttonInstallRecorder.Body.Bytes(), &buttonInstalled); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, buttonInstallRecorder.Body.String())
+	}
+	if buttonInstalled.EditSession == nil || buttonInstalled.EditSession.EditingOverlay == nil ||
+		buttonInstalled.EditSession.EditingOverlay.ComponentKind != "button" ||
+		!hasControl(buttonInstalled.EditSession.EditingOverlay.Controls, "form_id") ||
+		!hasControl(buttonInstalled.EditSession.EditingOverlay.Controls, "label") ||
+		!hasControl(buttonInstalled.EditSession.EditingOverlay.Controls, "width") {
+		t.Fatalf("button overlay = %#v, want form and layout controls", buttonInstalled.EditSession)
+	}
+	saveRecorder := postJSON(t, mux, "/api/game/edit/save", map[string]any{})
+	if saveRecorder.Code != http.StatusOK {
+		t.Fatalf("save status = %d, want 200 body=%s", saveRecorder.Code, saveRecorder.Body.String())
+	}
+
+	mountRecorder := postJSON(t, mux, "/api/game/play-card", map[string]any{
+		"sourceCardId": "blank-controller",
+		"targetCardId": "archive-terminal",
+	})
+	if mountRecorder.Code != http.StatusOK {
+		t.Fatalf("mount status = %d, want 200 body=%s", mountRecorder.Code, mountRecorder.Body.String())
+	}
+	var mounted GameSessionSnapshot
+	if err := json.Unmarshal(mountRecorder.Body.Bytes(), &mounted); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, mountRecorder.Body.String())
+	}
+	terminalHTML := gameCardHTML(mounted.WorldDeck, "archive-terminal")
+	for _, marker := range []string{
+		`id="game-world-archive-terminal-archive-login"`,
+		`data-form-id="archive-login"`,
+		`for="game-world-archive-terminal-archive-password-input-input"`,
+		`type="password"`,
+		`name="password"`,
+		`type="submit"`,
+		`form="game-world-archive-terminal-archive-login"`,
+	} {
+		if !strings.Contains(terminalHTML, marker) {
+			t.Fatalf("archive terminal missing rendered form marker %s: %s", marker, terminalHTML)
+		}
+	}
+
+	for label, password := range map[string]string{"empty": "", "wrong": "NIGHTOWL"} {
+		recorder := postJSON(t, mux, "/api/game/submit-form", map[string]any{
+			"cardId": "archive-terminal",
+			"formId": "archive-login",
+			"fields": map[string]string{"password": password},
+		})
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("%s password status = %d, want 200 body=%s", label, recorder.Code, recorder.Body.String())
+		}
+		var rejected GameSessionSnapshot
+		if err := json.Unmarshal(recorder.Body.Bytes(), &rejected); err != nil {
+			t.Fatalf("json.Unmarshal() error = %v body=%s", err, recorder.Body.String())
+		}
+		if rejected.SolvedFlags["archiveUnlocked"] || !strings.Contains(rejected.Message, "ACCESS DENIED") || !strings.Contains(gameCardHTML(rejected.WorldDeck, "archive-terminal"), "ARCHIVE LOGIN") {
+			t.Fatalf("%s password payload = %#v, want terminal to remain locked", label, rejected)
+		}
+	}
+
+	correctRecorder := postJSON(t, mux, "/api/game/submit-form", map[string]any{
+		"cardId": "archive-terminal",
+		"formId": "archive-login",
+		"fields": map[string]string{"password": "  nightjar  "},
+	})
+	if correctRecorder.Code != http.StatusOK {
+		t.Fatalf("correct password status = %d, want 200 body=%s", correctRecorder.Code, correctRecorder.Body.String())
+	}
+	var correct GameSessionSnapshot
+	if err := json.Unmarshal(correctRecorder.Body.Bytes(), &correct); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v body=%s", err, correctRecorder.Body.String())
+	}
+	if !correct.SolvedFlags["archiveUnlocked"] || !strings.Contains(gameCardHTML(correct.WorldDeck, "archive-terminal"), "ARCHIVE OPEN") {
+		t.Fatalf("correct password payload = %#v, want unlocked archive", correct)
+	}
+	if strings.Contains(correctRecorder.Body.String(), "  nightjar  ") {
+		t.Fatal("submission response must not echo the entered password")
+	}
+}
+
+func TestArchiveTerminalFormSubmissionRejectsInvalidRequests(t *testing.T) {
+	t.Parallel()
+
+	mux := testMux(t, nil)
+	advanceWebToArchiveTerminal(t, mux)
+
+	for name, request := range map[string]map[string]any{
+		"unmounted form": {
+			"cardId": "archive-terminal",
+			"formId": "archive-login",
+			"fields": map[string]string{"password": "NIGHTJAR"},
+		},
+		"oversized field": {
+			"cardId": "archive-terminal",
+			"formId": "archive-login",
+			"fields": map[string]string{"password": strings.Repeat("x", 129)},
+		},
+		"malformed field name": {
+			"cardId": "archive-terminal",
+			"formId": "archive-login",
+			"fields": map[string]string{"not valid": "NIGHTJAR"},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := postJSON(t, mux, "/api/game/submit-form", request)
+			if recorder.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+
+	unknownFieldRecorder := postJSON(t, mux, "/api/game/submit-form", map[string]any{
+		"cardId":     "archive-terminal",
+		"formId":     "archive-login",
+		"fields":     map[string]string{"password": "NIGHTJAR"},
+		"unexpected": true,
+	})
+	if unknownFieldRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("unknown request field status = %d, want 400 body=%s", unknownFieldRecorder.Code, unknownFieldRecorder.Body.String())
+	}
+
+	retiredRecorder := postJSON(t, mux, "/api/game/save-controller", map[string]any{})
+	if retiredRecorder.Code != http.StatusNotFound {
+		t.Fatalf("retired save-controller status = %d, want 404 body=%s", retiredRecorder.Code, retiredRecorder.Body.String())
+	}
+}
+
 func TestGameEditComponentSelectEndpointReopensSliderAndBorderOverlays(t *testing.T) {
 	t.Parallel()
 
@@ -485,16 +572,13 @@ func TestGameLibrarySliderControlChangeEndpointRetunesSavedController(t *testing
 	advanceWebToGeneratorRoom(t, mux)
 	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "blank-controller"})
 	postJSON(t, mux, "/api/game/collect", map[string]any{"cardId": "slider-component"})
-	recorder := postJSON(t, mux, "/api/game/save-controller", map[string]any{
-		"templateCardId": "blank-controller",
-		"document":       webControllerDocument(t, 73),
-	})
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("save-controller status = %d, want 200 body=%s", recorder.Code, recorder.Body.String())
-	}
+	postJSON(t, mux, "/api/game/edit/start", map[string]any{"cardId": "blank-controller"})
+	postJSON(t, mux, "/api/game/edit/install-component", map[string]any{"componentCardId": "slider-component"})
+	postJSON(t, mux, "/api/game/edit/control-change", map[string]any{"componentId": "regulator-output-slider", "control": "value", "value": 73})
+	postJSON(t, mux, "/api/game/edit/save", map[string]any{})
 
 	updateRecorder := postJSON(t, mux, "/api/game/library/component/control-change", map[string]any{
-		"cardId":        "generator-regulator-controller",
+		"cardId":        "blank-controller",
 		"componentId":   "regulator-output-slider",
 		"componentKind": "slider",
 		"control":       "value",
@@ -507,7 +591,7 @@ func TestGameLibrarySliderControlChangeEndpointRetunesSavedController(t *testing
 	if err := json.Unmarshal(updateRecorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v body=%s", err, updateRecorder.Body.String())
 	}
-	controller := gameCard(payload.Library, "generator-regulator-controller")
+	controller := gameCard(payload.Library, "blank-controller")
 	if controller == nil || !strings.Contains(controller.PreviewHTML, `value="72"`) {
 		t.Fatalf("controller = %#v, want retuned library slider", controller)
 	}
@@ -2036,31 +2120,26 @@ func advanceWebToGeneratorRoom(t *testing.T, mux *http.ServeMux) {
 	}
 }
 
-func webControllerDocument(t *testing.T, value int) cardcomponent.Document {
+func advanceWebToArchiveTerminal(t *testing.T, mux *http.ServeMux) {
 	t.Helper()
 
-	raw, err := json.Marshal(slider.Config{
-		Label: "Output",
-		Min:   0,
-		Max:   100,
-		Step:  1,
-		Value: value,
-	})
-	if err != nil {
-		t.Fatalf("json.Marshal() error = %v", err)
-	}
-	return cardcomponent.Document{
-		CardID: "generator-regulator-controller",
-		Name:   "Regulator Controller",
-		Root: cardcomponent.Node{
-			ID:            "generator-regulator-controller-root",
-			ComponentKind: cardcomponent.Kind,
-			Children: []cardcomponent.Node{{
-				ID:            "regulator-output-slider",
-				ComponentKind: slider.Kind,
-				Config:        raw,
-			}},
-		},
+	advanceWebToGeneratorRoom(t, mux)
+	for _, request := range []struct {
+		path string
+		body map[string]any
+	}{
+		{path: "/api/game/collect", body: map[string]any{"cardId": "blank-controller"}},
+		{path: "/api/game/collect", body: map[string]any{"cardId": "slider-component"}},
+		{path: "/api/game/edit/start", body: map[string]any{"cardId": "blank-controller"}},
+		{path: "/api/game/edit/install-component", body: map[string]any{"componentCardId": "slider-component"}},
+		{path: "/api/game/edit/control-change", body: map[string]any{"componentId": "regulator-output-slider", "control": "value", "value": 73}},
+		{path: "/api/game/edit/save", body: map[string]any{}},
+		{path: "/api/game/play-card", body: map[string]any{"sourceCardId": "blank-controller", "targetCardId": "generator-panel"}},
+	} {
+		recorder := postJSON(t, mux, request.path, request.body)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want 200 body=%s", request.path, recorder.Code, recorder.Body.String())
+		}
 	}
 }
 

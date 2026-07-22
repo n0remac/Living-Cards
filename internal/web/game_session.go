@@ -106,6 +106,25 @@ func gameResourceHandler(state *game.Session) http.HandlerFunc {
 			}
 			snapshot, err := state.UseCard(request.SourceCardID, request.TargetCardID)
 			writeGameSnapshot(w, snapshot, err)
+		case "submit-form":
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+			var request struct {
+				CardID string            `json:"cardId"`
+				FormID string            `json:"formId"`
+				Fields map[string]string `json:"fields"`
+			}
+			decoder := json.NewDecoder(r.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&request); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
+			}
+			snapshot, err := state.SubmitForm(request.CardID, request.FormID, request.Fields)
+			writeGameSnapshot(w, snapshot, err)
 		case "component/select":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -240,23 +259,6 @@ func gameResourceHandler(state *game.Session) http.HandlerFunc {
 				return
 			}
 			snapshot, err := state.CancelEdit()
-			writeGameSnapshot(w, snapshot, err)
-		case "save-controller":
-			if r.Method != http.MethodPost {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			var request struct {
-				TemplateCardID string                 `json:"templateCardId"`
-				Document       cardcomponent.Document `json:"document"`
-			}
-			decoder := json.NewDecoder(r.Body)
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
-				return
-			}
-			snapshot, err := state.SaveController(request.TemplateCardID, request.Document)
 			writeGameSnapshot(w, snapshot, err)
 		default:
 			http.NotFound(w, r)
