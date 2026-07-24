@@ -2,6 +2,7 @@ package imagecomponent
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"sort"
@@ -10,7 +11,7 @@ import (
 	godom "github.com/n0remac/GoDom/html"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
 const (
@@ -54,56 +55,44 @@ func DefaultConfig() Config {
 	}
 }
 
-func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
+func RandomGenerated(seed int64, level int) schema.GeneratedConfig[Config] {
 	part := DefaultConfig()
 	part.X = pickInt(seed, []int{34, 50, 66})
 	part.Y = pickInt(seed+17, []int{32, 50, 68})
 	if level > 2 {
-		part.Rotation = pickInt(seed+29, []int{-8, 0, 8})
+		part.Rotation = pickInt(seed+29, []int{0, 8, 352})
 	}
-	return design.GeneratedConfig[Config]{
+	return schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "A safe uploaded image layer.",
 		Config:        part,
 	}
 }
 
-func Spec() design.Spec[Config] {
-	return design.Spec[Config]{
-		ComponentKind: Kind,
-		SystemPrompt:  systemPrompt,
-		Example:       exampleJSON,
-		Normalize:     NormalizeGenerated,
-		Validate:      ValidateGenerated,
-	}
-}
-
 func Definition() card.Definition {
-	return card.Definition{
-		ComponentKind: Kind,
-		Contribute: func(node card.Node, renderContext card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeConfig[Config](node)
-			if err != nil {
-				return card.Contribution{}, err
-			}
-			generated := design.GeneratedConfig[Config]{
-				ComponentKind: Kind,
-				Description:   "Rendered image",
-				Config:        part,
-			}
-			NormalizeGenerated(&generated)
-			if issues := ValidateGenerated(generated); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid image config at %s: %s", issues[0].Path, issues[0].Message)
-			}
+	return card.MustDefine(card.TypedDefinition[Config]{
+		Kind: Kind, Label: "Image", Structure: card.StructureLeaf, Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		Render: func(node card.Node, part Config, renderContext card.RenderContext) (card.Contribution, error) {
 			return card.Contribution{
-				Layers: []*godom.Node{RenderLayerWithContext(node.ID, generated.Config, renderContext)},
+				Layers: []*godom.Node{RenderLayerWithContext(node.ID, part, renderContext)},
 			}, nil
 		},
-	}
+		Controls: []card.Control[Config]{
+			card.StringControl("alt", "content", "text", "Alt text", "alt", func(c Config) string { return c.Alt }, func(c *Config, v string) { c.Alt = v }), positionControl(),
+			card.IntControl("x", "layout", "range", "X position", "left", 0, 100, 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
+			card.IntControl("y", "layout", "range", "Y position", "top", 0, 100, 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
+			card.IntControl("width", "layout", "range", "Width", "width", 8, 100, 1, func(c Config) int { return c.Width }, func(c *Config, v int) { c.Width = v }),
+			card.IntControl("height", "layout", "range", "Height", "height", 8, 100, 1, func(c Config) int { return c.Height }, func(c *Config, v int) { c.Height = v }),
+			card.IntControl("rotation", "layout", "range", "Rotation", "transform", 0, 359, 1, func(c Config) int { return c.Rotation }, func(c *Config, v int) { c.Rotation = v }),
+			card.StringControl("border_color", "style", "color", "Border color", "border-color", func(c Config) string { return c.BorderColor }, func(c *Config, v string) { c.BorderColor = v }),
+			card.IntControl("border_width_px", "style", "range", "Border width", "border-width", 0, 12, 1, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
+			card.IntControl("border_radius_px", "style", "range", "Border radius", "border-radius", 0, 48, 1, func(c Config) int { return c.BorderRadiusPX }, func(c *Config, v int) { c.BorderRadiusPX = v }),
+		}, Install: &card.InstallSpec{Policy: card.InstallAppend}, Generation: &card.TypedGenerationDefinition[Config]{SystemPrompt: systemPrompt, Example: exampleJSON, Random: RandomGenerated},
+	})
 }
 
 const exampleJSON = `{
-  "componentKind": "image",
+  "component_kind": "image",
   "description": "A safe uploaded image layer.",
   "config": {
     "src": "data:image/png;base64,iVBORw0KGgo=",
@@ -123,50 +112,32 @@ const systemPrompt = `You generate safe declarative JSON configs for one image c
 Return exactly one JSON object and no markdown, prose, HTML, selectors, braces, or JavaScript.
 The JSON object must match the image component schema.
 Rules:
-- componentKind must be "image".
+- component_kind must be "image".
 - src must be a data URL for PNG, JPEG, WebP, or GIF.
 - SVG, external URLs, HTML, and JavaScript are forbidden.
 - x, y, width, and height are percentage values within the allowed ranges.`
 
-func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
+func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
-	defaults := DefaultConfig()
 	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config.Src = strings.TrimSpace(generated.Config.Src)
-	if generated.Config.Src == "" {
-		generated.Config.Src = defaults.Src
-	}
-	generated.Config.Alt = strings.TrimSpace(generated.Config.Alt)
-	if generated.Config.Alt == "" {
-		generated.Config.Alt = defaults.Alt
-	}
-	generated.Config.BorderColor = strings.TrimSpace(generated.Config.BorderColor)
-	if generated.Config.BorderColor == "" {
-		generated.Config.BorderColor = defaults.BorderColor
-	}
-	if generated.Config.Width == 0 {
-		generated.Config.Width = defaults.Width
-	}
-	if generated.Config.Height == 0 {
-		generated.Config.Height = defaults.Height
-	}
-	if generated.Config.BorderRadiusPX == 0 {
-		generated.Config.BorderRadiusPX = defaults.BorderRadiusPX
-	}
-	generated.Config.X = clamp(generated.Config.X, 0, 100)
-	generated.Config.Y = clamp(generated.Config.Y, 0, 100)
-	generated.Config.Width = clamp(generated.Config.Width, 8, 100)
-	generated.Config.Height = clamp(generated.Config.Height, 8, 100)
-	generated.Config.BorderWidthPX = clamp(generated.Config.BorderWidthPX, 0, 12)
-	generated.Config.BorderRadiusPX = clamp(generated.Config.BorderRadiusPX, 0, 48)
-	generated.Config.Rotation = normalizeRotation(generated.Config.Rotation)
+	generated.Config = NormalizeConfig(generated.Config)
 }
 
-func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
-	var issues []design.Issue
+func NormalizeConfig(config Config) Config {
+	config.Src = strings.TrimSpace(config.Src)
+	config.Alt = strings.TrimSpace(config.Alt)
+	config.BorderColor = strings.TrimSpace(config.BorderColor)
+	return config
+}
+func ValidateConfig(config Config) []schema.Issue {
+	return ValidateGenerated(schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Image config", Config: config})
+}
+
+func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
+	var issues []schema.Issue
 	if issue := validateDataURL("config.src", generated.Config.Src); issue != nil {
 		issues = append(issues, *issue)
 	}
@@ -182,6 +153,9 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 	if generated.Config.Height < 8 || generated.Config.Height > 100 {
 		issues = append(issues, rangeIssue("config.height", "height", generated.Config.Height, 8, 100))
 	}
+	if generated.Config.Rotation < 0 || generated.Config.Rotation > 359 {
+		issues = append(issues, rangeIssue("config.rotation", "rotation", generated.Config.Rotation, 0, 359))
+	}
 	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 12 {
 		issues = append(issues, rangeIssue("config.border_width_px", "border_width_px", generated.Config.BorderWidthPX, 0, 12))
 	}
@@ -189,9 +163,9 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		issues = append(issues, rangeIssue("config.border_radius_px", "border_radius_px", generated.Config.BorderRadiusPX, 0, 48))
 	}
 	if color := strings.TrimSpace(generated.Config.BorderColor); color == "" {
-		issues = append(issues, design.Issue{Path: "config.border_color", Code: "required", Message: "border_color is required"})
-	} else if !design.IsAllowedColor(color) {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{Path: "config.border_color", Code: "required", Message: "border_color is required"})
+	} else if !schema.IsAllowedColor(color) {
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_color",
 			Code:    "invalid_color",
 			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
@@ -243,28 +217,28 @@ func MaxDataURLBytes() int {
 	return maxDataURLBytes
 }
 
-func validateDataURL(path, value string) *design.Issue {
+func validateDataURL(path, value string) *schema.Issue {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return &design.Issue{Path: path, Code: "required", Message: "src is required"}
+		return &schema.Issue{Path: path, Code: "required", Message: "src is required"}
 	}
 	if len(trimmed) > maxDataURLBytes {
-		return &design.Issue{Path: path, Code: "too_large", Message: "src data URL is too large", Actual: len(trimmed)}
+		return &schema.Issue{Path: path, Code: "too_large", Message: "src data URL is too large", Actual: len(trimmed)}
 	}
 	if strings.ContainsAny(trimmed, "<>") || strings.Contains(strings.ToLower(trimmed), "javascript:") {
-		return &design.Issue{Path: path, Code: "unsafe_value", Message: "src contains unsafe content"}
+		return &schema.Issue{Path: path, Code: "unsafe_value", Message: "src contains unsafe content"}
 	}
 	if !strings.HasPrefix(trimmed, "data:") {
-		return &design.Issue{Path: path, Code: "invalid_data_url", Message: "src must be an embedded image data URL", Actual: trimmed}
+		return &schema.Issue{Path: path, Code: "invalid_data_url", Message: "src must be an embedded image data URL", Actual: trimmed}
 	}
 	meta, payload, ok := strings.Cut(trimmed[len("data:"):], ",")
 	if !ok || payload == "" {
-		return &design.Issue{Path: path, Code: "invalid_data_url", Message: "src must include data URL metadata and payload"}
+		return &schema.Issue{Path: path, Code: "invalid_data_url", Message: "src must include data URL metadata and payload"}
 	}
 	metaParts := strings.Split(meta, ";")
 	mimeType := strings.ToLower(strings.TrimSpace(metaParts[0]))
 	if !contains(AllowedMIMETypes(), mimeType) {
-		return &design.Issue{
+		return &schema.Issue{
 			Path:    path,
 			Code:    "invalid_mime_type",
 			Message: "src must be a PNG, JPEG, WebP, or GIF data URL",
@@ -280,22 +254,22 @@ func validateDataURL(path, value string) *design.Issue {
 		}
 	}
 	if !base64Encoded {
-		return &design.Issue{Path: path, Code: "invalid_data_url", Message: "src image data URL must be base64 encoded"}
+		return &schema.Issue{Path: path, Code: "invalid_data_url", Message: "src image data URL must be base64 encoded"}
 	}
 	if _, err := base64.StdEncoding.DecodeString(payload); err != nil {
-		return &design.Issue{Path: path, Code: "invalid_base64", Message: "src payload must be valid base64"}
+		return &schema.Issue{Path: path, Code: "invalid_base64", Message: "src payload must be valid base64"}
 	}
 	return nil
 }
 
 func normalizedConfig(part Config) Config {
-	generated := design.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Current image", Config: part}
+	generated := schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Current image", Config: part}
 	NormalizeGenerated(&generated)
 	return generated.Config
 }
 
-func rangeIssue(path, field string, actual, min, max int) design.Issue {
-	return design.Issue{
+func rangeIssue(path, field string, actual, min, max int) schema.Issue {
+	return schema.Issue{
 		Path:    path,
 		Code:    "out_of_range",
 		Message: fmt.Sprintf("%s must be between %d and %d", field, min, max),
@@ -310,14 +284,6 @@ func contains(values []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func normalizeRotation(rotation int) int {
-	rotation = rotation % 360
-	if rotation < 0 {
-		rotation += 360
-	}
-	return rotation
 }
 
 func pickInt(seed int64, values []int) int {
@@ -351,12 +317,17 @@ func DataURLForTesting() string {
 	return defaultImageSrc
 }
 
-func clamp(value, min, max int) int {
-	if value < min {
-		return min
+func positionControl() card.Control[Config] {
+	type position struct {
+		X int `json:"x"`
+		Y int `json:"y"`
 	}
-	if value > max {
-		return max
-	}
-	return value
+	return card.Control[Config]{ID: "position", Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
+		var value position
+		if err := card.DecodeControlObject(raw, &value); err != nil {
+			return fmt.Errorf("value must include integer x and y: %w", err)
+		}
+		c.X, c.Y = value.X, value.Y
+		return nil
+	}}
 }

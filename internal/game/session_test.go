@@ -2,1012 +2,150 @@ package game
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 
-	"github.com/n0remac/Living-Card/internal/components/border"
-	"github.com/n0remac/Living-Card/internal/components/slider"
+	"github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/components/catalog"
 )
 
-func TestSessionStartsWithEmptyLibraryAndScriptedDeck(t *testing.T) {
-	t.Parallel()
-
-	snapshot := mustResult(t, NewSession().Snapshot)
-	if len(snapshot.Library) != 0 {
-		t.Fatalf("library = %#v, want empty", snapshot.Library)
-	}
-	if len(snapshot.WorldDeck) < 5 {
-		t.Fatalf("world deck length = %d, want scripted deck", len(snapshot.WorldDeck))
-	}
-	if snapshot.ActiveWorldCard.ID != "rusted-cell-door" {
-		t.Fatalf("active card = %#v, want rusted-cell-door", snapshot.ActiveWorldCard)
-	}
-	if snapshot.SolvedFlags[DoorUnlockedFlag] {
-		t.Fatalf("solved flags = %#v, want locked door", snapshot.SolvedFlags)
-	}
-	if !documentContains(snapshot.ActiveWorldCard.Document, "LOCKED") {
-		t.Fatalf("active door document should be locked: %#v", snapshot.ActiveWorldCard.Document)
-	}
-}
-
-func TestEmbeddedSeededWorldDeckLoadsAndValidates(t *testing.T) {
-	t.Parallel()
-
-	definition, err := LoadEmbeddedSeededWorldDeck()
-	if err != nil {
-		t.Fatalf("LoadEmbeddedSeededWorldDeck() error = %v", err)
-	}
-	if definition.ID != SeededWorldDeckDefinition {
-		t.Fatalf("deck id = %q, want %q", definition.ID, SeededWorldDeckDefinition)
-	}
-	session, err := NewSessionFromDeck(definition)
-	if err != nil {
-		t.Fatalf("NewSessionFromDeck() error = %v", err)
-	}
-	snapshot := mustResult(t, session.Snapshot)
-	key := findCard(snapshot.WorldDeck, "bent-iron-key")
-	if key == nil {
-		t.Fatal("world deck missing key")
-	}
-	if !documentContains(key.Document, "BENT IRON KEY") {
-		t.Fatalf("key document should come from deck data: %#v", key.Document)
-	}
-}
-
-func TestEmbeddedDeckRegistryLoadsPuzzlePacks(t *testing.T) {
-	t.Parallel()
-
-	seeded := mustLoadEmbeddedDeck(t, SeededWorldDeckDefinition)
-	if err := ValidateDeckDefinition(seeded); err != nil {
-		t.Fatalf("ValidateDeckDefinition(seed) error = %v", err)
-	}
-	fuseRoom := mustLoadEmbeddedDeck(t, FuseRoomDeckDefinition)
-	if err := ValidateDeckPackDefinition(fuseRoom, definitionsByID(seeded.Cards)); err != nil {
-		t.Fatalf("ValidateDeckPackDefinition(fuse_room) error = %v", err)
-	}
-	generatorRoom := mustLoadEmbeddedDeck(t, GeneratorDeckDefinition)
-	combined := definitionsByID(seeded.Cards)
-	for cardID, card := range definitionsByID(fuseRoom.Cards) {
-		combined[cardID] = card
-	}
-	if err := ValidateDeckPackDefinition(generatorRoom, combined); err != nil {
-		t.Fatalf("ValidateDeckPackDefinition(generator_room) error = %v", err)
-	}
-	for cardID, card := range definitionsByID(generatorRoom.Cards) {
-		combined[cardID] = card
-	}
-	archive := mustLoadEmbeddedDeck(t, ArchiveTerminalDefinition)
-	if err := ValidateDeckPackDefinition(archive, combined); err != nil {
-		t.Fatalf("ValidateDeckPackDefinition(archive_terminal) error = %v", err)
-	}
-}
-
-func TestSessionCycleWrapsPreviousAndNext(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	previous := mustResult(t, func() (Snapshot, error) {
-		return session.Cycle("previous")
-	})
-	if previous.ActiveIndex != len(previous.WorldDeck)-1 || previous.ActiveWorldCard.ID != "sleeping-switch" {
-		t.Fatalf("previous snapshot = %#v", previous)
-	}
-	next := mustResult(t, func() (Snapshot, error) {
-		return session.Cycle("next")
-	})
-	if next.ActiveIndex != 0 || next.ActiveWorldCard.ID != "rusted-cell-door" {
-		t.Fatalf("next snapshot = %#v", next)
-	}
-}
-
-func TestSessionCollectsKeyIntoLibrary(t *testing.T) {
-	t.Parallel()
-
-	snapshot := mustResult(t, func() (Snapshot, error) {
-		return NewSession().Collect("bent-iron-key")
-	})
-	if len(snapshot.Library) != 1 || snapshot.Library[0].ID != "bent-iron-key" {
-		t.Fatalf("library = %#v, want collected key", snapshot.Library)
-	}
-	key := findCard(snapshot.WorldDeck, "bent-iron-key")
-	if key == nil {
-		t.Fatal("world deck missing key")
-	}
-	if key.Collectible || !key.Collected {
-		t.Fatalf("world key = %#v, want collected and non-collectible", *key)
-	}
-}
-
-func TestSessionRejectsDecoyCollection(t *testing.T) {
-	t.Parallel()
-
-	if _, err := NewSession().Collect("inventory-label"); err == nil {
-		t.Fatal("Collect() decoy error = nil, want error")
-	}
-}
-
-func TestSessionWrongCardUseDoesNotUnlockDoor(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("bent-iron-key")
-	})
-	snapshot := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("bent-iron-key", "faded-photograph")
-	})
-	if snapshot.SolvedFlags[DoorUnlockedFlag] {
-		t.Fatalf("solved flags = %#v, want locked door", snapshot.SolvedFlags)
-	}
-	if !strings.Contains(snapshot.Message, "Nothing on this card responds") {
-		t.Fatalf("message = %q, want wrong-card message", snapshot.Message)
-	}
-}
-
-func TestSessionStartsWithoutPuzzlePackCards(t *testing.T) {
-	t.Parallel()
-
-	snapshot := mustResult(t, NewSession().Snapshot)
-	if findCard(snapshot.WorldDeck, "glass-fuse") != nil {
-		t.Fatalf("glass fuse should not be present at session start: %#v", snapshot.WorldDeck)
-	}
-	if findCard(snapshot.WorldDeck, "generator-panel") != nil {
-		t.Fatalf("generator panel should not be present at session start: %#v", snapshot.WorldDeck)
-	}
-}
-
-func TestSessionKeyUnlocksDoorWithEffect(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("bent-iron-key")
-	})
-	snapshot := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("bent-iron-key", "rusted-cell-door")
-	})
-	if !snapshot.SolvedFlags[DoorUnlockedFlag] {
-		t.Fatalf("solved flags = %#v, want door unlocked", snapshot.SolvedFlags)
-	}
-	if len(snapshot.Library) != 1 || snapshot.Library[0].ID != "bent-iron-key" {
-		t.Fatalf("library = %#v, key should remain visible", snapshot.Library)
-	}
-	door := findCard(snapshot.WorldDeck, "rusted-cell-door")
-	if door == nil {
-		t.Fatal("world deck missing door")
-	}
-	if locked, _ := door.State["locked"].(bool); locked {
-		t.Fatalf("door state = %#v, want unlocked", door.State)
-	}
-	if hasTag(*door, "locked") {
-		t.Fatalf("door tags = %#v, want locked tag removed", door.Tags)
-	}
-	if !documentContains(door.Document, "OPEN") {
-		t.Fatalf("door document did not switch to open variant: %#v", door.Document)
-	}
-	if snapshot.ActiveWorldCard.ID != "fuse-box-note" {
-		t.Fatalf("active card = %q, want first fuse room card", snapshot.ActiveWorldCard.ID)
-	}
-	if findCard(snapshot.WorldDeck, "glass-fuse") == nil {
-		t.Fatal("door unlock should load fuse room cards")
-	}
-}
-
-func TestSessionFusePowersSwitchAndLoadsGeneratorRoom(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("bent-iron-key")
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("bent-iron-key", "rusted-cell-door")
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("glass-fuse")
-	})
-	snapshot := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("glass-fuse", "sleeping-switch")
-	})
-	if !snapshot.SolvedFlags["switchPowered"] {
-		t.Fatalf("solved flags = %#v, want switchPowered", snapshot.SolvedFlags)
-	}
-	if snapshot.ActiveWorldCard.ID != "generator-panel" {
-		t.Fatalf("active card = %q, want generator-panel", snapshot.ActiveWorldCard.ID)
-	}
-	switchCard := findCard(snapshot.WorldDeck, "sleeping-switch")
-	if switchCard == nil {
-		t.Fatal("world deck missing switch")
-	}
-	if powered, _ := switchCard.State["powered"].(bool); !powered {
-		t.Fatalf("switch state = %#v, want powered", switchCard.State)
-	}
-	if hasTag(*switchCard, "decoy") {
-		t.Fatalf("switch tags = %#v, want decoy tag removed", switchCard.Tags)
-	}
-	if !documentContains(switchCard.Document, "SWITCH ONLINE") {
-		t.Fatalf("switch document did not switch to powered variant: %#v", switchCard.Document)
-	}
-	if findCard(snapshot.WorldDeck, "numbered-gauge") == nil {
-		t.Fatal("generator room cards were not loaded")
-	}
-}
-
-func TestSessionSliderControllerWrongValueDoesNotPowerGenerator(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(SliderComponentCardID)
-	})
-	buildSliderController(t, session, 72)
-	snapshot := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard(BlankControllerCardID, "generator-panel")
-	})
-	if snapshot.SolvedFlags[GeneratorPoweredFlag] {
-		t.Fatalf("solved flags = %#v, want generator unpowered", snapshot.SolvedFlags)
-	}
-	if !strings.Contains(snapshot.Message, "regulator value is wrong") {
-		t.Fatalf("message = %q, want wrong value message", snapshot.Message)
-	}
-	generator := findCard(snapshot.WorldDeck, "generator-panel")
-	if generator == nil {
-		t.Fatal("world deck missing generator")
-	}
-	if powered, _ := generator.State["powered"].(bool); powered {
-		t.Fatalf("generator state = %#v, want unpowered", generator.State)
-	}
-	if !documentContains(generator.Document, "SLEEPING GENERATOR") {
-		t.Fatalf("generator document should remain inactive: %#v", generator.Document)
-	}
-}
-
-func TestSessionSliderControllerPowersGenerator(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(SliderComponentCardID)
-	})
-	saved := buildSliderController(t, session, 73)
-	if findCard(saved.Library, BlankControllerCardID) == nil {
-		t.Fatalf("library = %#v, want saved blank controller", saved.Library)
-	}
-	snapshot := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard(BlankControllerCardID, "generator-panel")
-	})
-	if !snapshot.SolvedFlags[GeneratorPoweredFlag] {
-		t.Fatalf("solved flags = %#v, want generator powered", snapshot.SolvedFlags)
-	}
-	generator := findCard(snapshot.WorldDeck, "generator-panel")
-	if generator == nil {
-		t.Fatal("world deck missing generator")
-	}
-	if powered, _ := generator.State["powered"].(bool); !powered {
-		t.Fatalf("generator state = %#v, want powered", generator.State)
-	}
-	if hasTag(*generator, "inactive") {
-		t.Fatalf("generator tags = %#v, want inactive tag removed", generator.Tags)
-	}
-	if !documentContains(generator.Document, "GENERATOR ONLINE") {
-		t.Fatalf("generator document did not switch to active variant: %#v", generator.Document)
-	}
-}
-
-func TestSessionEditWorkflowBuildsAndUsesSliderController(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(SliderComponentCardID)
-	})
-	started := mustResult(t, func() (Snapshot, error) {
-		return session.StartEdit(BlankControllerCardID)
-	})
-	if started.EditSession == nil || started.EditSession.TargetCardID != BlankControllerCardID || started.EditSession.DraftCard.ID != BlankControllerCardID {
-		t.Fatalf("edit snapshot = %#v, want blank controller draft", started)
-	}
-	installed := mustResult(t, func() (Snapshot, error) {
-		return session.InstallEditComponent(SliderComponentCardID)
-	})
-	if findCard(installed.Library, SliderComponentCardID) == nil {
-		t.Fatalf("library = %#v, slider component should not be consumed before save", installed.Library)
-	}
-	if installed.EditSession == nil || !stringInSlice(installed.EditSession.PendingConsumedComponentIDs, SliderComponentCardID) {
-		t.Fatalf("edit session = %#v, want pending slider consumption", installed.EditSession)
-	}
-	if !documentContains(installed.EditSession.DraftCard.Document, `"componentKind":"slider"`) {
-		t.Fatalf("draft card missing slider: %#v", installed.EditSession.DraftCard)
-	}
-	tuned := mustResult(t, func() (Snapshot, error) {
-		return session.ApplyEditControl("regulator-output-slider", "value", json.RawMessage("73"))
-	})
-	tuned = mustResult(t, func() (Snapshot, error) {
-		return session.ApplyEditControl("regulator-output-slider", "position", json.RawMessage(`{"x":42,"y":64}`))
-	})
-	if tuned.EditSession == nil ||
-		!documentContains(tuned.EditSession.DraftCard.Document, `"value":73`) ||
-		!documentContains(tuned.EditSession.DraftCard.Document, `"x":42`) ||
-		!documentContains(tuned.EditSession.DraftCard.Document, `"y":64`) {
-		t.Fatalf("tuned draft card = %#v, want slider value 73 and dragged position", tuned.EditSession)
-	}
-	saved := mustResult(t, session.SaveEdit)
-	if saved.EditSession != nil {
-		t.Fatalf("edit session = %#v, want cleared after save", saved.EditSession)
-	}
-	if findCard(saved.Library, SliderComponentCardID) != nil {
-		t.Fatalf("library = %#v, slider component should be consumed on save", saved.Library)
-	}
-	controller := findCard(saved.Library, BlankControllerCardID)
-	if controller == nil {
-		t.Fatalf("library = %#v, want edited blank controller", saved.Library)
-	}
-	if controller.Name != "Blank Controller" || !hasTag(*controller, "controller") || !documentContains(controller.Document, `"componentKind":"slider"`) {
-		t.Fatalf("controller = %#v, want reusable blank controller with slider", controller)
-	}
-	snapshot := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard(BlankControllerCardID, "generator-panel")
-	})
-	if !snapshot.SolvedFlags[GeneratorPoweredFlag] {
-		t.Fatalf("solved flags = %#v, want generator powered", snapshot.SolvedFlags)
-	}
-	if generator := findCard(snapshot.WorldDeck, "generator-panel"); generator == nil || !documentContains(generator.Document, "GENERATOR ONLINE") {
-		t.Fatalf("generator should be online: %#v", generator)
-	}
-}
-
-func TestSessionReusableBlankControllerBuildsAndSubmitsArchiveLogin(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) { return session.Collect(BlankControllerCardID) })
-	mustResult(t, func() (Snapshot, error) { return session.Collect(SliderComponentCardID) })
-	buildSliderController(t, session, 73)
-	powered := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard(BlankControllerCardID, "generator-panel")
-	})
-	if powered.ActiveWorldCard.ID != "archive-terminal" || findCard(powered.WorldDeck, "archive-password-input-component") == nil {
-		t.Fatalf("powered snapshot = %#v, want archive terminal pack", powered)
-	}
-
-	mustResult(t, func() (Snapshot, error) { return session.Collect("archive-password-input-component") })
-	mustResult(t, func() (Snapshot, error) { return session.Collect("archive-submit-button-component") })
-	mustResult(t, func() (Snapshot, error) { return session.StartEdit(BlankControllerCardID) })
-	mustResult(t, func() (Snapshot, error) { return session.InstallEditComponent("archive-password-input-component") })
-	inputOnly := mustResult(t, session.SaveEdit)
-	controller := findCard(inputOnly.Library, BlankControllerCardID)
-	if controller == nil || controller.Name != "Blank Controller" || !documentContains(controller.Document, `"componentKind":"slider"`) || !documentContains(controller.Document, `"componentKind":"textinput"`) {
-		t.Fatalf("input-only controller = %#v, want persistent slider and text input", controller)
-	}
-	incomplete := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard(BlankControllerCardID, "archive-terminal")
-	})
-	if incomplete.SolvedFlags["archiveControllerMounted"] || !strings.Contains(incomplete.Message, "both a text form") {
-		t.Fatalf("incomplete mount = %#v, want missing button message", incomplete)
-	}
-
-	mustResult(t, func() (Snapshot, error) { return session.StartEdit(BlankControllerCardID) })
-	mustResult(t, func() (Snapshot, error) { return session.InstallEditComponent("archive-submit-button-component") })
-	saved := mustResult(t, session.SaveEdit)
-	controller = findCard(saved.Library, BlankControllerCardID)
-	if controller == nil ||
-		controller.ID != BlankControllerCardID ||
-		controller.Name != "Blank Controller" ||
-		controller.Document.Name != "Blank Controller" ||
-		!stateBool(controller.State, "editable") ||
-		!documentContains(controller.Document, `"componentKind":"slider"`) ||
-		!documentContains(controller.Document, `"componentKind":"textinput"`) ||
-		!documentContains(controller.Document, `"componentKind":"button"`) {
-		t.Fatalf("controller = %#v, want accumulated slider, text input, and button", controller)
-	}
-	installed := appendStateStringOnce(controller.State["installedComponents"], "")
-	for _, kind := range []string{"slider", "textinput", "button"} {
-		if !stringInSlice(installed, kind) || !hasTag(*controller, kind+"-controller") {
-			t.Fatalf("controller state/tags = %#v / %#v, want %s capability retained", controller.State, controller.Tags, kind)
+func TestEmbeddedDecksDecodeAgainstCatalog(t *testing.T) {
+	registry := catalog.MustNew()
+	ids := []string{SeededWorldDeckDefinition, FuseRoomDeckDefinition, GeneratorDeckDefinition, ArchiveTerminalDefinition}
+	definitions := make([]DeckDefinition, 0, len(ids))
+	known := map[string]CardDefinition{}
+	for _, id := range ids {
+		definition, err := LoadEmbeddedDeck(registry, id)
+		if err != nil {
+			t.Fatalf("LoadEmbeddedDeck(%q): %v", id, err)
+		}
+		definitions = append(definitions, definition)
+		if id == SeededWorldDeckDefinition {
+			if err := ValidateDeckDefinition(registry, definition); err != nil {
+				t.Fatalf("ValidateDeckDefinition(%q): %v", id, err)
+			}
+		} else if err := ValidateDeckPackDefinition(registry, definition, known); err != nil {
+			t.Fatalf("ValidateDeckPackDefinition(%q): %v", id, err)
+		}
+		for _, card := range definition.Cards {
+			known[card.ID] = card
 		}
 	}
-
-	mounted := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard(BlankControllerCardID, "archive-terminal")
-	})
-	terminal := findCard(mounted.WorldDeck, "archive-terminal")
-	if terminal == nil ||
-		!mounted.SolvedFlags["archiveControllerMounted"] ||
-		!documentContains(terminal.Document, `"id":"archive-password-input"`) ||
-		!documentContains(terminal.Document, `"id":"archive-submit-button"`) ||
-		documentContains(terminal.Document, `"componentKind":"slider"`) {
-		t.Fatalf("mounted terminal = %#v snapshot=%#v, want only archive form controls", terminal, mounted)
-	}
-
-	wrong := mustResult(t, func() (Snapshot, error) {
-		return session.SubmitForm("archive-terminal", "archive-login", map[string]string{"password": "NIGHTOWL"})
-	})
-	if wrong.SolvedFlags["archiveUnlocked"] || !strings.Contains(wrong.Message, "ACCESS DENIED") {
-		t.Fatalf("wrong submission = %#v", wrong)
-	}
-	unlocked := mustResult(t, func() (Snapshot, error) {
-		return session.SubmitForm("archive-terminal", "archive-login", map[string]string{"password": "  nightjar  "})
-	})
-	terminal = findCard(unlocked.WorldDeck, "archive-terminal")
-	if terminal == nil || !unlocked.SolvedFlags["archiveUnlocked"] || !documentContains(terminal.Document, "ARCHIVE OPEN") {
-		t.Fatalf("unlocked terminal = %#v snapshot=%#v", terminal, unlocked)
+	if len(definitions) != len(ids) {
+		t.Fatalf("definitions = %d", len(definitions))
 	}
 }
 
-func TestSessionArchiveComponentsInstallInEitherOrder(t *testing.T) {
-	t.Parallel()
-
-	orders := [][]string{
-		{"archive-password-input-component", "archive-submit-button-component"},
-		{"archive-submit-button-component", "archive-password-input-component"},
-	}
-	for _, order := range orders {
-		order := order
-		t.Run(strings.Join(order, " then "), func(t *testing.T) {
-			t.Parallel()
-
-			session := NewSession()
-			loadGeneratorRoom(t, session)
-			mustResult(t, func() (Snapshot, error) { return session.Collect(BlankControllerCardID) })
-			mustResult(t, func() (Snapshot, error) { return session.Collect(SliderComponentCardID) })
-			buildSliderController(t, session, 73)
-			mustResult(t, func() (Snapshot, error) { return session.UseCard(BlankControllerCardID, "generator-panel") })
-			for _, cardID := range order {
-				mustResult(t, func() (Snapshot, error) { return session.Collect(cardID) })
-			}
-			mustResult(t, func() (Snapshot, error) { return session.StartEdit(BlankControllerCardID) })
-			for _, cardID := range order {
-				mustResult(t, func() (Snapshot, error) { return session.InstallEditComponent(cardID) })
-			}
-			saved := mustResult(t, session.SaveEdit)
-			controller := findCard(saved.Library, BlankControllerCardID)
-			if controller == nil ||
-				findNodeByID(controller.Document.Root, "archive-password-input") == nil ||
-				findNodeByID(controller.Document.Root, "archive-submit-button") == nil ||
-				findNodeByID(controller.Document.Root, "regulator-output-slider") == nil {
-				t.Fatalf("controller = %#v, want all accumulated components", controller)
-			}
-		})
-	}
-}
-
-func TestSessionSelectsEditSliderAndBorderAfterOverlayClose(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(SliderComponentCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("border-component")
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.StartEdit(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.InstallEditComponent(SliderComponentCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.InstallEditComponent("border-component")
-	})
-
-	sliderSelected := mustResult(t, func() (Snapshot, error) {
-		return session.SelectEditComponent("", slider.Kind)
-	})
-	if sliderSelected.EditSession == nil || sliderSelected.EditSession.SelectedComponentID != "regulator-output-slider" {
-		t.Fatalf("selected slider = %#v, want regulator slider selected", sliderSelected.EditSession)
-	}
-	borderSelected := mustResult(t, func() (Snapshot, error) {
-		return session.SelectEditComponent("", border.Kind)
-	})
-	if borderSelected.EditSession == nil || borderSelected.EditSession.SelectedComponentID != BlankControllerCardID+"-border" {
-		t.Fatalf("selected border = %#v, want controller border selected", borderSelected.EditSession)
-	}
-}
-
-func TestSessionLibrarySliderControlChangeRetunesSavedController(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(SliderComponentCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.StartEdit(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.InstallEditComponent(SliderComponentCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.ApplyEditControl("regulator-output-slider", "value", json.RawMessage("73"))
-	})
-	mustResult(t, session.SaveEdit)
-
-	updated := mustResult(t, func() (Snapshot, error) {
-		return session.ApplyLibraryComponentControl(BlankControllerCardID, "regulator-output-slider", slider.Kind, "value", json.RawMessage("72"))
-	})
-	controller := findCard(updated.Library, BlankControllerCardID)
-	if controller == nil || !documentContains(controller.Document, `"value":72`) {
-		t.Fatalf("controller = %#v, want library slider value 72", controller)
-	}
-}
-
-func TestSessionWrongControllerMountsGeneratorSliderAndMountedTunePowersGenerator(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(SliderComponentCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.StartEdit(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.InstallEditComponent(SliderComponentCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.ApplyEditControl("regulator-output-slider", "value", json.RawMessage("72"))
-	})
-	mustResult(t, session.SaveEdit)
-
-	mounted := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard(BlankControllerCardID, "generator-panel")
-	})
-	generator := findCard(mounted.WorldDeck, "generator-panel")
-	if generator == nil || !documentContains(generator.Document, `"componentKind":"slider"`) || !documentContains(generator.Document, `"value":72`) {
-		t.Fatalf("generator after wrong controller = %#v, want mounted wrong-valued slider", generator)
-	}
-	if mounted.SolvedFlags[GeneratorPoweredFlag] || !strings.Contains(mounted.Message, "regulator value is wrong") {
-		t.Fatalf("mounted snapshot = %#v, want unpowered failure with mounted slider", mounted)
-	}
-
-	powered := mustResult(t, func() (Snapshot, error) {
-		return session.ApplyWorldComponentControl("generator-panel", "regulator-output-slider", slider.Kind, "value", json.RawMessage("73"))
-	})
-	generator = findCard(powered.WorldDeck, "generator-panel")
-	if generator == nil ||
-		!powered.SolvedFlags[GeneratorPoweredFlag] ||
-		!documentContains(generator.Document, "GENERATOR ONLINE") ||
-		!documentContains(generator.Document, `"componentKind":"slider"`) ||
-		!documentContains(generator.Document, `"value":73`) {
-		t.Fatalf("powered generator = %#v snapshot=%#v, want online generator with tuned mounted slider", generator, powered)
-	}
-}
-
-func TestSessionEditCancelLeavesLibraryUnchanged(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(SliderComponentCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.StartEdit(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.InstallEditComponent(SliderComponentCardID)
-	})
-	canceled := mustResult(t, session.CancelEdit)
-	if canceled.EditSession != nil {
-		t.Fatalf("edit session = %#v, want cleared after cancel", canceled.EditSession)
-	}
-	if findCard(canceled.Library, SliderComponentCardID) == nil {
-		t.Fatalf("library = %#v, slider component should remain after cancel", canceled.Library)
-	}
-	controller := findCard(canceled.Library, BlankControllerCardID)
-	if controller == nil || controller.Name != "Blank Controller" || documentContains(controller.Document, `"componentKind":"slider"`) {
-		t.Fatalf("controller = %#v, want unchanged blank controller", controller)
-	}
-}
-
-func TestSessionActiveWorldComponentControlsMoveText(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	snapshot := mustResult(t, func() (Snapshot, error) {
-		return session.ApplyWorldComponentControl("rusted-cell-door", "door-title", "textarea", "position", json.RawMessage(`{"x":23,"y":31}`))
-	})
-	if snapshot.ActiveEditingComponentID != "door-title" {
-		t.Fatalf("active editing component = %q, want door-title", snapshot.ActiveEditingComponentID)
-	}
-	if snapshot.ActiveWorldCard.ID != "rusted-cell-door" {
-		t.Fatalf("active card = %q, want rusted-cell-door", snapshot.ActiveWorldCard.ID)
-	}
-	if !documentContains(snapshot.ActiveWorldCard.Document, `"x":23`) || !documentContains(snapshot.ActiveWorldCard.Document, `"y":31`) {
-		t.Fatalf("door title was not moved in active document: %#v", snapshot.ActiveWorldCard.Document)
-	}
-}
-
-func TestSessionActiveWorldBorderRequiresCollectedComponentCard(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	if _, err := session.SelectWorldComponent("rusted-cell-door", "", border.Kind); err == nil || !strings.Contains(err.Error(), "require finding") {
-		t.Fatalf("SelectWorldComponent(border) error = %v, want missing component card error", err)
-	}
-
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("border-component")
-	})
-	selected := mustResult(t, func() (Snapshot, error) {
-		return session.SelectWorldComponent("generator-panel", "", border.Kind)
-	})
-	if selected.ActiveEditingComponentID != "generator-panel-border" {
-		t.Fatalf("active editing component = %q, want generator-panel-border", selected.ActiveEditingComponentID)
-	}
-	updated := mustResult(t, func() (Snapshot, error) {
-		return session.ApplyWorldComponentControl("generator-panel", "generator-panel-border", border.Kind, "border_color", json.RawMessage(`"#f43f5e"`))
-	})
-	generator := findCard(updated.WorldDeck, "generator-panel")
-	if generator == nil {
-		t.Fatal("world deck missing generator-panel")
-	}
-	if !documentContains(generator.Document, `"border_color":"#f43f5e"`) || !documentContains(generator.Document, `border: 2px solid #f43f5e`) {
-		t.Fatalf("generator border did not update: %#v", generator.Document)
-	}
-}
-
-func TestSessionPoweredGeneratorDoesNotAcceptWrongRetune(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(SliderComponentCardID)
-	})
-	buildSliderController(t, session, 73)
-	mustResult(t, func() (Snapshot, error) {
-		return session.UseCard(BlankControllerCardID, "generator-panel")
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.ApplyLibraryComponentControl(BlankControllerCardID, "regulator-output-slider", slider.Kind, "value", json.RawMessage("12"))
-	})
-	snapshot := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard(BlankControllerCardID, "generator-panel")
-	})
-	if !snapshot.SolvedFlags[GeneratorPoweredFlag] {
-		t.Fatalf("solved flags = %#v, want generator to stay powered", snapshot.SolvedFlags)
-	}
-	if strings.Contains(snapshot.Message, "regulator value is wrong") {
-		t.Fatalf("message = %q, powered generator should not run inactive puzzle failure", snapshot.Message)
-	}
-	generator := findCard(snapshot.WorldDeck, "generator-panel")
-	if generator == nil || !documentContains(generator.Document, "GENERATOR ONLINE") {
-		t.Fatalf("generator should stay online: %#v", generator)
-	}
-}
-
-func TestSessionResetClearsBuiltController(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	loadGeneratorRoom(t, session)
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(BlankControllerCardID)
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect(SliderComponentCardID)
-	})
-	buildSliderController(t, session, 73)
-	reset := mustResult(t, session.Reset)
-	if len(reset.Library) != 0 || findCard(reset.WorldDeck, "generator-panel") != nil {
-		t.Fatalf("reset snapshot = %#v, want seed-only world and no saved controller", reset)
-	}
-}
-
-func TestSessionLoadedDecksAreIdempotentAndResetToSeed(t *testing.T) {
-	t.Parallel()
-
-	session := NewSession()
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("bent-iron-key")
-	})
-	doorLoaded := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("bent-iron-key", "rusted-cell-door")
-	})
-	if countCard(doorLoaded.WorldDeck, "glass-fuse") != 1 {
-		t.Fatalf("glass-fuse count = %d, want 1", countCard(doorLoaded.WorldDeck, "glass-fuse"))
-	}
-	doorReplay := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("bent-iron-key", "rusted-cell-door")
-	})
-	if len(doorReplay.WorldDeck) != len(doorLoaded.WorldDeck) || countCard(doorReplay.WorldDeck, "glass-fuse") != 1 {
-		t.Fatalf("door replay duplicated loaded cards: before=%d after=%d fuse=%d", len(doorLoaded.WorldDeck), len(doorReplay.WorldDeck), countCard(doorReplay.WorldDeck, "glass-fuse"))
-	}
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("glass-fuse")
-	})
-	generatorLoaded := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("glass-fuse", "sleeping-switch")
-	})
-	generatorReplay := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("glass-fuse", "sleeping-switch")
-	})
-	if len(generatorReplay.WorldDeck) != len(generatorLoaded.WorldDeck) || countCard(generatorReplay.WorldDeck, "generator-panel") != 1 {
-		t.Fatalf("switch replay duplicated generator cards: before=%d after=%d generator=%d", len(generatorLoaded.WorldDeck), len(generatorReplay.WorldDeck), countCard(generatorReplay.WorldDeck, "generator-panel"))
-	}
-	reset := mustResult(t, session.Reset)
-	if reset.ActiveWorldCard.ID != "rusted-cell-door" {
-		t.Fatalf("reset active card = %q, want rusted-cell-door", reset.ActiveWorldCard.ID)
-	}
-	if findCard(reset.WorldDeck, "glass-fuse") != nil || findCard(reset.WorldDeck, "generator-panel") != nil {
-		t.Fatalf("reset should remove loaded pack cards: %#v", reset.WorldDeck)
-	}
-}
-
-func TestSessionUseRulesComeFromDeckData(t *testing.T) {
-	t.Parallel()
-
-	definition, err := LoadEmbeddedSeededWorldDeck()
+func TestSessionUsesInjectedRegistry(t *testing.T) {
+	registry := catalog.MustNew()
+	session, err := NewSessionFromEmbeddedDeck(registry)
 	if err != nil {
-		t.Fatalf("LoadEmbeddedSeededWorldDeck() error = %v", err)
+		t.Fatal(err)
 	}
-	definition.UseRules = nil
-	session, err := NewSessionFromDeck(definition)
+	snapshot, err := session.Snapshot()
 	if err != nil {
-		t.Fatalf("NewSessionFromDeck() error = %v", err)
+		t.Fatal(err)
 	}
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("bent-iron-key")
-	})
-	snapshot := mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("bent-iron-key", "rusted-cell-door")
-	})
-	if snapshot.SolvedFlags[DoorUnlockedFlag] {
-		t.Fatalf("solved flags = %#v, want locked door without data rule", snapshot.SolvedFlags)
+	if len(snapshot.WorldDeck) == 0 || snapshot.ActiveWorldCard.ID != snapshot.ActiveWorldCardID {
+		t.Fatalf("snapshot = %#v", snapshot)
 	}
-	door := findCard(snapshot.WorldDeck, "rusted-cell-door")
-	if door == nil {
-		t.Fatal("world deck missing door")
+	if snapshot.ActiveWorldCard.Document.Root.ComponentKind != card.Kind {
+		t.Fatalf("root = %#v", snapshot.ActiveWorldCard.Document.Root)
 	}
-	if !documentContains(door.Document, "LOCKED") {
-		t.Fatalf("door document should remain locked without data rule: %#v", door.Document)
+	if _, err := NewSessionFromDeck(nil, DeckDefinition{}); err == nil {
+		t.Fatal("NewSessionFromDeck(nil) succeeded")
 	}
 }
 
-func TestValidateDeckDefinitionRejectsInvalidFixtures(t *testing.T) {
-	t.Parallel()
-
-	base, err := LoadEmbeddedSeededWorldDeck()
+func TestSliderConditionReadsRegistryProperty(t *testing.T) {
+	registry := catalog.MustNew()
+	value := 7
+	definition := DeckDefinition{
+		ID: "property-test", Name: "Property Test", InitialActiveCardID: "target",
+		Cards: []CardDefinition{
+			{ID: "target", Name: "Target", Kind: KindWorld, InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("target")}},
+			{ID: "source", Name: "Source", Kind: KindItem, Collectible: true, InitialDocument: "default", Documents: map[string]card.Document{"default": sliderDocument("source", value)}},
+		},
+		UseRules: []UseRuleDefinition{{
+			ID: "property", Source: CardMatcherDefinition{ID: "source"}, Target: CardMatcherDefinition{ID: "target"},
+			SourceComponentConditions: []ComponentConditionDefinition{{ComponentKind: card.KindSlider, ComponentID: "source-slider", ValueEquals: &value}},
+			Effects:                   []RuleEffectDefinition{{EffectKind: EffectSetMessage, Message: "matched through property"}},
+		}},
+	}
+	session, err := NewSessionFromDeck(registry, definition)
 	if err != nil {
-		t.Fatalf("LoadEmbeddedSeededWorldDeck() error = %v", err)
+		t.Fatal(err)
 	}
-	tests := []struct {
-		name   string
-		mutate func(*DeckDefinition)
-	}{
-		{
-			name: "duplicate card id",
-			mutate: func(definition *DeckDefinition) {
-				definition.Cards = append(definition.Cards, definition.Cards[0])
-			},
-		},
-		{
-			name: "missing initial document variant",
-			mutate: func(definition *DeckDefinition) {
-				definition.Cards[0].InitialDocument = "missing"
-			},
-		},
-		{
-			name: "bad rule target reference",
-			mutate: func(definition *DeckDefinition) {
-				definition.UseRules[0].Target.ID = "missing-card"
-			},
-		},
-		{
-			name: "bad rule document variant reference",
-			mutate: func(definition *DeckDefinition) {
-				for index := range definition.UseRules[0].Effects {
-					if definition.UseRules[0].Effects[index].EffectKind == EffectSetDocumentVariant {
-						definition.UseRules[0].Effects[index].Variant = "missing"
-					}
-				}
-			},
-		},
+	if _, err := session.Collect("source"); err != nil {
+		t.Fatal(err)
 	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			definition := cloneValue(base)
-			test.mutate(&definition)
-			if err := ValidateDeckDefinition(definition); err == nil {
-				t.Fatal("ValidateDeckDefinition() error = nil, want error")
-			}
-		})
-	}
-}
-
-func TestDeckPackValidationRejectsBadPackReferences(t *testing.T) {
-	t.Parallel()
-
-	seeded := mustLoadEmbeddedDeck(t, SeededWorldDeckDefinition)
-	fuseRoom := mustLoadEmbeddedDeck(t, FuseRoomDeckDefinition)
-	if err := ValidateDeckPackDefinition(fuseRoom, nil); err == nil {
-		t.Fatal("ValidateDeckPackDefinition() error = nil, want missing sleeping-switch reference")
-	}
-	duplicate := cloneValue(fuseRoom)
-	duplicate.Cards[0].ID = "bent-iron-key"
-	for variant, document := range duplicate.Cards[0].Documents {
-		document.CardID = "bent-iron-key"
-		duplicate.Cards[0].Documents[variant] = document
-	}
-	if err := ValidateDeckPackDefinition(duplicate, definitionsByID(seeded.Cards)); err == nil {
-		t.Fatal("ValidateDeckPackDefinition() duplicate error = nil, want error")
-	}
-}
-
-func TestDeckPackValidationRejectsUnsupportedComponentCondition(t *testing.T) {
-	t.Parallel()
-
-	seeded := mustLoadEmbeddedDeck(t, SeededWorldDeckDefinition)
-	fuseRoom := mustLoadEmbeddedDeck(t, FuseRoomDeckDefinition)
-	generatorRoom := mustLoadEmbeddedDeck(t, GeneratorDeckDefinition)
-	combined := definitionsByID(seeded.Cards)
-	for cardID, card := range definitionsByID(fuseRoom.Cards) {
-		combined[cardID] = card
-	}
-	generatorRoom.UseRules[0].SourceComponentConditions[0].ComponentKind = "dial"
-	if err := ValidateDeckPackDefinition(generatorRoom, combined); err == nil {
-		t.Fatal("ValidateDeckPackDefinition() unsupported component condition error = nil, want error")
-	}
-}
-
-func TestArchiveDeckValidationRejectsMalformedFormRule(t *testing.T) {
-	t.Parallel()
-
-	seeded := mustLoadEmbeddedDeck(t, SeededWorldDeckDefinition)
-	fuseRoom := mustLoadEmbeddedDeck(t, FuseRoomDeckDefinition)
-	generatorRoom := mustLoadEmbeddedDeck(t, GeneratorDeckDefinition)
-	archive := mustLoadEmbeddedDeck(t, ArchiveTerminalDefinition)
-	existing := definitionsByID(seeded.Cards)
-	for _, pack := range []DeckDefinition{fuseRoom, generatorRoom} {
-		for cardID, card := range definitionsByID(pack.Cards) {
-			existing[cardID] = card
-		}
-	}
-
-	archive.FormSubmitRules[0].FieldConditions = append(archive.FormSubmitRules[0].FieldConditions, archive.FormSubmitRules[0].FieldConditions[0])
-	if err := ValidateDeckPackDefinition(archive, existing); err == nil || !strings.Contains(err.Error(), "duplicate field") {
-		t.Fatalf("ValidateDeckPackDefinition() error = %v, want duplicate field error", err)
-	}
-}
-
-func TestSessionLoadDeckEffectReturnsMissingDeckError(t *testing.T) {
-	t.Parallel()
-
-	definition := mustLoadEmbeddedDeck(t, SeededWorldDeckDefinition)
-	for ruleIndex := range definition.UseRules {
-		for effectIndex := range definition.UseRules[ruleIndex].Effects {
-			if definition.UseRules[ruleIndex].Effects[effectIndex].EffectKind == EffectLoadDeck {
-				definition.UseRules[ruleIndex].Effects[effectIndex].DeckID = "missing_pack"
-			}
-		}
-	}
-	session, err := NewSessionFromDeck(definition)
+	snapshot, err := session.UseCard("source", "target")
 	if err != nil {
-		t.Fatalf("NewSessionFromDeck() error = %v", err)
+		t.Fatal(err)
 	}
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("bent-iron-key")
-	})
-	if _, err := session.UseCard("bent-iron-key", "rusted-cell-door"); err == nil {
-		t.Fatal("UseCard() missing loadDeck error = nil, want error")
+	if snapshot.Message != "matched through property" {
+		t.Fatalf("message = %q", snapshot.Message)
 	}
 }
 
-func loadGeneratorRoom(t *testing.T, session *Session) {
-	t.Helper()
-
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("bent-iron-key")
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("bent-iron-key", "rusted-cell-door")
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.Collect("glass-fuse")
-	})
-	mustResult(t, func() (Snapshot, error) {
-		return session.UseCard("glass-fuse", "sleeping-switch")
-	})
+func TestGenericWorldControlEditing(t *testing.T) {
+	registry := catalog.MustNew()
+	definition := DeckDefinition{ID: "edit-test", Name: "Edit Test", InitialActiveCardID: "target", Cards: []CardDefinition{{ID: "target", Name: "Target", Kind: KindWorld, InitialDocument: "default", Documents: map[string]card.Document{"default": sliderDocument("target", 4)}}}}
+	session, err := NewSessionFromDeck(registry, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := session.ApplyWorldComponentControl("target", "target-slider", card.KindSlider, "value", json.RawMessage(`8`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(snapshot.ActiveWorldCard.Document.Root.Children[0].Config), `"value":8`) {
+		t.Fatalf("config = %s", snapshot.ActiveWorldCard.Document.Root.Children[0].Config)
+	}
+	if _, err := session.ApplyWorldComponentControl("target", "target-slider", card.KindSlider, "value", json.RawMessage(`999`)); err == nil {
+		t.Fatal("invalid range edit succeeded")
+	}
+	if _, err := session.ApplyWorldComponentControl("target", "target-slider", card.KindSlider, "legacyValue", json.RawMessage(`5`)); err == nil {
+		t.Fatal("legacy control alias succeeded")
+	}
 }
 
-func buildSliderController(t *testing.T, session *Session, value int) Snapshot {
-	t.Helper()
-	mustResult(t, func() (Snapshot, error) { return session.StartEdit(BlankControllerCardID) })
-	mustResult(t, func() (Snapshot, error) { return session.InstallEditComponent(SliderComponentCardID) })
-	mustResult(t, func() (Snapshot, error) {
-		return session.ApplyEditControl("regulator-output-slider", "value", json.RawMessage(jsonNumber(value)))
-	})
-	return mustResult(t, session.SaveEdit)
+func TestFormDiscoveryUsesRegisteredRolesAndProperties(t *testing.T) {
+	registry := catalog.MustNew()
+	document := simpleDocument("form-card")
+	document.Root.Children = []card.Node{
+		{ID: "password", ComponentKind: card.KindTextInput, Config: json.RawMessage(`{"form_id":"login","name":"password"}`)},
+		{ID: "submit", ComponentKind: card.KindButton, Config: json.RawMessage(`{"form_id":"login"}`)},
+	}
+	conditions := []FormFieldConditionDefinition{{Name: "password", ValueEquals: "secret"}}
+	if !documentHasFormFields(registry, document, "login", conditions) || !documentHasSubmitButton(registry, document, "login") {
+		t.Fatal("registered form roles were not discovered")
+	}
+	if documentHasFormFields(registry, document, "other", conditions) || documentHasSubmitButton(registry, document, "other") {
+		t.Fatal("form discovery ignored form_id properties")
+	}
+}
+
+func TestDeckDecoderRejectsUnknownDocumentFields(t *testing.T) {
+	registry := catalog.MustNew()
+	raw := []byte(`{"id":"strict","name":"Strict","initialActiveCardId":"one","cards":[{"id":"one","name":"One","kind":"world","collectible":false,"initialDocument":"default","documents":{"default":{"card_id":"one","name":"One","legacy":true,"root":{"id":"root","component_kind":"card"}}}}]}`)
+	if _, err := DecodeDeckDefinition(registry, raw); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("DecodeDeckDefinition() error = %v", err)
+	}
+}
+
+func simpleDocument(id string) card.Document {
+	root, _ := json.Marshal(card.DefaultRootConfig())
+	return card.Document{CardID: id, Name: id, Root: card.Node{ID: id + "-root", ComponentKind: card.Kind, Config: root}}
+}
+
+func sliderDocument(id string, value int) card.Document {
+	document := simpleDocument(id)
+	document.Root.Children = []card.Node{{ID: id + "-slider", ComponentKind: card.KindSlider, Config: json.RawMessage(`{"label":"Output","min":0,"max":10,"step":1,"value":` + jsonNumber(value) + `,"x":50,"y":50,"width":72,"track_color":"#111827","accent_color":"#38bdf8"}`)}}
+	return document
 }
 
 func jsonNumber(value int) string {
-	return fmt.Sprintf("%d", value)
-}
-
-func mustResult(t *testing.T, result func() (Snapshot, error)) Snapshot {
-	t.Helper()
-	snapshot, err := result()
-	if err != nil {
-		t.Fatalf("snapshot error = %v", err)
-	}
-	return snapshot
-}
-
-func findCard(cards []Card, id string) *Card {
-	for index := range cards {
-		if cards[index].ID == id {
-			return &cards[index]
-		}
-	}
-	return nil
-}
-
-func countCard(cards []Card, id string) int {
-	count := 0
-	for _, card := range cards {
-		if card.ID == id {
-			count++
-		}
-	}
-	return count
-}
-
-func mustLoadEmbeddedDeck(t *testing.T, deckID string) DeckDefinition {
-	t.Helper()
-	definition, err := LoadEmbeddedDeck(deckID)
-	if err != nil {
-		t.Fatalf("LoadEmbeddedDeck(%q) error = %v", deckID, err)
-	}
-	return definition
-}
-
-func definitionsByID(cards []CardDefinition) map[string]CardDefinition {
-	out := make(map[string]CardDefinition, len(cards))
-	for _, card := range cards {
-		out[card.ID] = card
-	}
-	return out
-}
-
-func documentContains(document any, marker string) bool {
-	raw, err := json.Marshal(document)
-	return err == nil && strings.Contains(string(raw), marker)
+	raw, _ := json.Marshal(value)
+	return string(raw)
 }

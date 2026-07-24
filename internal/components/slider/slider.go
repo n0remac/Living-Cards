@@ -1,6 +1,7 @@
 package slider
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -8,7 +9,7 @@ import (
 	godom "github.com/n0remac/GoDom/html"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
 const Kind = "slider"
@@ -42,72 +43,48 @@ func DefaultConfig() Config {
 }
 
 func Definition() card.Definition {
-	return card.Definition{
-		ComponentKind: Kind,
-		Contribute: func(node card.Node, renderContext card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeConfig[Config](node)
-			if err != nil {
-				return card.Contribution{}, err
-			}
-			part = NormalizeConfig(part)
-			if issues := ValidateConfig(part); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid slider config at %s: %s", issues[0].Path, issues[0].Message)
-			}
+	return card.MustDefine(card.TypedDefinition[Config]{
+		Kind: Kind, Label: "Slider", Structure: card.StructureLeaf,
+		Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		Render: func(node card.Node, part Config, renderContext card.RenderContext) (card.Contribution, error) {
 			return card.Contribution{
 				Layers: []*godom.Node{RenderLayerWithContext(node.ID, part, renderContext)},
 			}, nil
 		},
-	}
+		Controls: []card.Control[Config]{
+			card.StringControl("label", "content", "text", "Label", "label", func(c Config) string { return c.Label }, func(c *Config, v string) { c.Label = v }),
+			card.IntControl("value", "value", "range", "Value", "value", 0, 100, 1, func(c Config) int { return c.Value }, func(c *Config, v int) { c.Value = v }),
+			card.IntControl("min", "value", "range", "Minimum", "min", 0, 100, 1, func(c Config) int { return c.Min }, func(c *Config, v int) { c.Min = v }),
+			card.IntControl("max", "value", "range", "Maximum", "max", 0, 100, 1, func(c Config) int { return c.Max }, func(c *Config, v int) { c.Max = v }),
+			card.IntControl("step", "value", "range", "Step", "step", 1, 100, 1, func(c Config) int { return c.Step }, func(c *Config, v int) { c.Step = v }),
+			positionControl(),
+			card.IntControl("x", "layout", "range", "X position", "left", 0, 100, 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
+			card.IntControl("y", "layout", "range", "Y position", "top", 0, 100, 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
+			card.IntControl("width", "layout", "range", "Width", "width", 12, 100, 1, func(c Config) int { return c.Width }, func(c *Config, v int) { c.Width = v }),
+			card.StringControl("track_color", "style", "color", "Track color", "background", func(c Config) string { return c.TrackColor }, func(c *Config, v string) { c.TrackColor = v }),
+			card.StringControl("accent_color", "style", "color", "Accent color", "accent-color", func(c Config) string { return c.AccentColor }, func(c *Config, v string) { c.AccentColor = v }),
+		},
+		Properties: []card.Property[Config]{{ID: "value", Kind: schema.PropertyNumber, Read: func(c Config) (schema.PropertyValue, bool) { return schema.NumberValue(float64(c.Value)), true }}},
+		Install:    &card.InstallSpec{Policy: card.InstallAppend},
+	})
 }
 
 func NormalizeConfig(part Config) Config {
-	defaults := DefaultConfig()
 	part.Label = strings.TrimSpace(part.Label)
-	if part.Label == "" {
-		part.Label = defaults.Label
-	}
-	part.Min = clamp(part.Min, 0, 100)
-	part.Max = clamp(part.Max, 0, 100)
-	if part.Max < part.Min {
-		part.Max = part.Min
-	}
-	if part.Step <= 0 {
-		part.Step = defaults.Step
-	}
-	part.Step = clamp(part.Step, 1, 100)
-	part.Value = clamp(part.Value, part.Min, part.Max)
-	if part.X == 0 {
-		part.X = defaults.X
-	}
-	if part.Y == 0 {
-		part.Y = defaults.Y
-	}
-	if part.Width == 0 {
-		part.Width = defaults.Width
-	}
-	part.X = clamp(part.X, 0, 100)
-	part.Y = clamp(part.Y, 0, 100)
-	part.Width = clamp(part.Width, 12, 100)
 	part.TrackColor = strings.TrimSpace(part.TrackColor)
-	if part.TrackColor == "" {
-		part.TrackColor = defaults.TrackColor
-	}
 	part.AccentColor = strings.TrimSpace(part.AccentColor)
-	if part.AccentColor == "" {
-		part.AccentColor = defaults.AccentColor
-	}
 	return part
 }
 
-func ValidateConfig(part Config) []design.Issue {
-	return ValidateGenerated(design.GeneratedConfig[Config]{
+func ValidateConfig(part Config) []schema.Issue {
+	return ValidateGenerated(schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Slider config",
 		Config:        part,
 	})
 }
 
-func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
+func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
@@ -116,10 +93,10 @@ func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
 	generated.Config = NormalizeConfig(generated.Config)
 }
 
-func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
-	var issues []design.Issue
+func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
+	var issues []schema.Issue
 	if strings.TrimSpace(generated.Config.Label) == "" {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.label",
 			Code:    "required",
 			Message: "label is required",
@@ -132,7 +109,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		issues = append(issues, rangeIssue("config.max", "max", generated.Config.Max, 0, 100))
 	}
 	if generated.Config.Max < generated.Config.Min {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.max",
 			Code:    "out_of_range",
 			Message: "max must be greater than or equal to min",
@@ -143,7 +120,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		issues = append(issues, rangeIssue("config.step", "step", generated.Config.Step, 1, 100))
 	}
 	if generated.Config.Value < generated.Config.Min || generated.Config.Value > generated.Config.Max {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.value",
 			Code:    "out_of_range",
 			Message: "value must be between min and max",
@@ -159,16 +136,16 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 	if generated.Config.Width < 12 || generated.Config.Width > 100 {
 		issues = append(issues, rangeIssue("config.width", "width", generated.Config.Width, 12, 100))
 	}
-	if !design.IsAllowedColor(generated.Config.TrackColor) {
-		issues = append(issues, design.Issue{
+	if !schema.IsAllowedColor(generated.Config.TrackColor) {
+		issues = append(issues, schema.Issue{
 			Path:    "config.track_color",
 			Code:    "invalid_color",
 			Message: "track_color must be a hex, rgb, rgba, hsl, or hsla color",
 			Actual:  generated.Config.TrackColor,
 		})
 	}
-	if !design.IsAllowedColor(generated.Config.AccentColor) {
-		issues = append(issues, design.Issue{
+	if !schema.IsAllowedColor(generated.Config.AccentColor) {
+		issues = append(issues, schema.Issue{
 			Path:    "config.accent_color",
 			Code:    "invalid_color",
 			Message: "accent_color must be a hex, rgb, rgba, hsl, or hsla color",
@@ -228,8 +205,8 @@ func RenderLayerWithContext(componentID string, part Config, renderContext card.
 	)
 }
 
-func rangeIssue(path, field string, actual, min, max int) design.Issue {
-	return design.Issue{
+func rangeIssue(path, field string, actual, min, max int) schema.Issue {
+	return schema.Issue{
 		Path:    path,
 		Code:    "out_of_range",
 		Message: fmt.Sprintf("%s must be between %d and %d", field, min, max),
@@ -257,12 +234,17 @@ func styleString(styles map[string]string) string {
 	return strings.TrimSpace(out.String())
 }
 
-func clamp(value, min, max int) int {
-	if value < min {
-		return min
+func positionControl() card.Control[Config] {
+	type position struct {
+		X int `json:"x"`
+		Y int `json:"y"`
 	}
-	if value > max {
-		return max
-	}
-	return value
+	return card.Control[Config]{ID: "position", Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
+		var value position
+		if err := card.DecodeControlObject(raw, &value); err != nil {
+			return fmt.Errorf("value must include integer x and y: %w", err)
+		}
+		c.X, c.Y = value.X, value.Y
+		return nil
+	}}
 }

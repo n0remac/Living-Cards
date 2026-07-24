@@ -1,4 +1,4 @@
-package textarea
+package text
 
 import (
 	"encoding/json"
@@ -10,10 +10,10 @@ import (
 	godom "github.com/n0remac/GoDom/html"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
-const Kind = "textarea"
+const Kind = "text"
 
 type Config struct {
 	Content         string `json:"content"`
@@ -56,8 +56,12 @@ func DefaultConfig() Config {
 }
 
 func Presets() []card.LibraryItem {
-	return []card.LibraryItem{
-		preset("seed-textarea-bold-statement", "Bold Statement", "Large centered display text", Config{
+	return Definition().Presets()
+}
+
+func typedPresets() []card.TypedPreset[Config] {
+	return []card.TypedPreset[Config]{
+		typedPreset("seed-text-bold-statement", "Bold Statement", "Large centered display text", Config{
 			Content:    "Signal Bloom",
 			FontFamily: "display",
 			FontSizePX: 42,
@@ -70,7 +74,7 @@ func Presets() []card.LibraryItem {
 			Y:          50,
 			CSS:        "font-size: 42px; font-weight: 800; text-align: center; letter-spacing: 0.04em; text-transform: uppercase;",
 		}),
-		preset("seed-textarea-elegant-serif", "Elegant Serif", "Refined serif text treatment", Config{
+		typedPreset("seed-text-elegant-serif", "Elegant Serif", "Refined serif text treatment", Config{
 			Content:    "A quiet note from the edge of the map.",
 			FontFamily: "serif",
 			FontSizePX: 18,
@@ -83,7 +87,7 @@ func Presets() []card.LibraryItem {
 			Y:          50,
 			CSS:        "font-family: Georgia, serif; font-style: italic; line-height: 1.5; text-align: center;",
 		}),
-		preset("seed-textarea-bottom-caption", "Bottom Caption", "Small readable note near the bottom", Config{
+		typedPreset("seed-text-bottom-caption", "Bottom Caption", "Small readable note near the bottom", Config{
 			Content:    "Generated configs become reviewable card design data.",
 			FontFamily: "system",
 			FontSizePX: 15,
@@ -99,7 +103,7 @@ func Presets() []card.LibraryItem {
 	}
 }
 
-func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
+func RandomGenerated(seed int64, level int) schema.GeneratedConfig[Config] {
 	options := []struct {
 		description string
 		part        Config
@@ -195,45 +199,39 @@ func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
 		})
 	}
 	pick := options[rand.New(rand.NewSource(seed)).Intn(len(options))]
-	return design.GeneratedConfig[Config]{
+	return schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   pick.description,
 		Config:        pick.part,
 	}
 }
 
-func Spec() design.Spec[Config] {
-	return design.Spec[Config]{
-		ComponentKind: Kind,
-		SystemPrompt:  systemPrompt,
-		Example:       exampleJSON,
-		Normalize:     NormalizeGenerated,
-		Validate:      ValidateGenerated,
-	}
-}
-
 func Definition() card.Definition {
-	return card.Definition{
-		ComponentKind: Kind,
-		Contribute: func(node card.Node, renderContext card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeConfig[Config](node)
-			if err != nil {
-				return card.Contribution{}, err
-			}
-			generated := design.GeneratedConfig[Config]{
-				ComponentKind: Kind,
-				Description:   "Rendered textarea",
-				Config:        part,
-			}
-			NormalizeGenerated(&generated)
-			if issues := ValidateGenerated(generated); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid textarea config at %s: %s", issues[0].Path, issues[0].Message)
-			}
+	return card.MustDefine(card.TypedDefinition[Config]{
+		Kind: Kind, Label: "Text", Structure: card.StructureLeaf, Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		Render: func(node card.Node, part Config, renderContext card.RenderContext) (card.Contribution, error) {
 			return card.Contribution{
-				Layers: []*godom.Node{RenderLayerWithContext(node.ID, generated.Config, renderContext)},
+				Layers: []*godom.Node{RenderLayerWithContext(node.ID, part, renderContext)},
 			}, nil
 		},
-	}
+		Controls: []card.Control[Config]{
+			textStringControl("content", "content", "text", "Text", "content", func(c Config) string { return c.Content }, func(c *Config, v string) { c.Content = v }),
+			textStringControl("font_family", "type", "select", "Font family", "font-family", func(c Config) string { return c.FontFamily }, func(c *Config, v string) { c.FontFamily = v }, options(AllowedFontFamilies())...),
+			textIntControl("font_size_px", "type", "Font size", "font-size", 10, 72, func(c Config) int { return c.FontSizePX }, func(c *Config, v int) { c.FontSizePX = v }),
+			textIntControl("font_weight", "type", "Font weight", "font-weight", 400, 800, func(c Config) int { return c.FontWeight }, func(c *Config, v int) { c.FontWeight = v }),
+			textStringControl("font_style", "type", "select", "Font style", "font-style", func(c Config) string { return c.FontStyle }, func(c *Config, v string) { c.FontStyle = v }, options(AllowedFontStyles())...),
+			textStringControl("color", "style", "color", "Text color", "color", func(c Config) string { return c.Color }, func(c *Config, v string) { c.Color = v }),
+			textStringControl("align", "type", "select", "Alignment", "text-align", func(c Config) string { return c.Align }, func(c *Config, v string) { c.Align = v }, options(AllowedAlignments())...),
+			positionControl(),
+			card.IntControl("x", "layout", "range", "X position", "left", 0, 100, 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
+			card.IntControl("y", "layout", "range", "Y position", "top", 0, 100, 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
+			textStringControl("background_color", "style", "color", "Fill color", "background-color", func(c Config) string { return c.BackgroundColor }, func(c *Config, v string) { c.BackgroundColor = v }),
+			textStringControl("border_color", "style", "color", "Border color", "border-color", func(c Config) string { return c.BorderColor }, func(c *Config, v string) { c.BorderColor = v }),
+			textIntControl("border_width_px", "style", "Border width", "border-width", 0, 12, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
+			textIntControl("border_radius_px", "style", "Border radius", "border-radius", 0, 40, func(c Config) int { return c.BorderRadiusPX }, func(c *Config, v int) { c.BorderRadiusPX = v }),
+			textIntControl("padding_px", "layout", "Padding", "padding", 0, 32, func(c Config) int { return c.PaddingPX }, func(c *Config, v int) { c.PaddingPX = v }),
+		}, Install: &card.InstallSpec{Policy: card.InstallAppend}, Presets: typedPresets(), Generation: &card.TypedGenerationDefinition[Config]{SystemPrompt: systemPrompt, Example: exampleJSON, Random: RandomGenerated},
+	})
 }
 
 func RenderLayer(componentID string, part Config) *godom.Node {
@@ -269,7 +267,7 @@ func RenderLayerWithContext(componentID string, part Config, renderContext card.
 		style["border-width"] = fmt.Sprintf("%dpx", part.BorderWidthPX)
 	}
 	style["border-radius"] = fmt.Sprintf("%dpx", part.BorderRadiusPX)
-	for property, value := range design.CSSDeclarations(part.CSS, AllowedCSS()) {
+	for property, value := range schema.CSSDeclarations(part.CSS, AllowedCSS()) {
 		style[property] = value
 	}
 	return godom.Div(
@@ -282,74 +280,42 @@ func RenderLayerWithContext(componentID string, part Config, renderContext card.
 	)
 }
 
-func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
+func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
 	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config.Content = strings.TrimSpace(generated.Config.Content)
-	generated.Config.FontFamily = strings.TrimSpace(generated.Config.FontFamily)
-	generated.Config.FontStyle = strings.TrimSpace(generated.Config.FontStyle)
-	generated.Config.Color = strings.TrimSpace(generated.Config.Color)
-	generated.Config.Align = strings.TrimSpace(generated.Config.Align)
-	generated.Config.Position = strings.TrimSpace(generated.Config.Position)
-	generated.Config.BackgroundColor = strings.TrimSpace(generated.Config.BackgroundColor)
-	generated.Config.BorderColor = strings.TrimSpace(generated.Config.BorderColor)
-	generated.Config.CSS = strings.TrimSpace(generated.Config.CSS)
-	defaults := DefaultConfig()
-	if generated.Config.FontFamily == "" {
-		generated.Config.FontFamily = defaults.FontFamily
-	}
-	if generated.Config.FontSizePX == 0 {
-		generated.Config.FontSizePX = defaults.FontSizePX
-	}
-	if generated.Config.FontWeight == 0 {
-		generated.Config.FontWeight = defaults.FontWeight
-	}
-	if generated.Config.FontStyle == "" {
-		generated.Config.FontStyle = defaults.FontStyle
-	}
-	if generated.Config.Color == "" {
-		generated.Config.Color = defaults.Color
-	}
-	if generated.Config.Align == "" {
-		generated.Config.Align = defaults.Align
-	}
-	if generated.Config.Position == "" {
-		generated.Config.Position = defaults.Position
-	}
-	if generated.Config.X == 0 && generated.Config.Y == 0 {
-		generated.Config.X, generated.Config.Y = positionDefaults(generated.Config.Position)
-	}
-	if generated.Config.BackgroundColor == "" {
-		generated.Config.BackgroundColor = defaults.BackgroundColor
-	}
-	if generated.Config.BorderColor == "" {
-		generated.Config.BorderColor = defaults.BorderColor
-	}
-	if generated.Config.BorderRadiusPX == 0 {
-		generated.Config.BorderRadiusPX = defaults.BorderRadiusPX
-	}
-	generated.Config.FontSizePX = clamp(generated.Config.FontSizePX, 10, 72)
-	generated.Config.X = clamp(generated.Config.X, 0, 100)
-	generated.Config.Y = clamp(generated.Config.Y, 0, 100)
-	generated.Config.BorderWidthPX = clamp(generated.Config.BorderWidthPX, 0, 12)
-	generated.Config.BorderRadiusPX = clamp(generated.Config.BorderRadiusPX, 0, 40)
-	generated.Config.PaddingPX = clamp(generated.Config.PaddingPX, 0, 32)
+	generated.Config = NormalizeConfig(generated.Config)
 }
 
-func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
-	var issues []design.Issue
+func NormalizeConfig(config Config) Config {
+	config.Content = strings.TrimSpace(config.Content)
+	config.FontFamily = strings.TrimSpace(config.FontFamily)
+	config.FontStyle = strings.TrimSpace(config.FontStyle)
+	config.Color = strings.TrimSpace(config.Color)
+	config.Align = strings.TrimSpace(config.Align)
+	config.Position = strings.TrimSpace(config.Position)
+	config.BackgroundColor = strings.TrimSpace(config.BackgroundColor)
+	config.BorderColor = strings.TrimSpace(config.BorderColor)
+	config.CSS = strings.TrimSpace(config.CSS)
+	return config
+}
+func ValidateConfig(config Config) []schema.Issue {
+	return ValidateGenerated(schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Text config", Config: config})
+}
+
+func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
+	var issues []schema.Issue
 	if strings.TrimSpace(generated.Config.Content) == "" {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.content",
 			Code:    "required",
 			Message: "content is required",
 		})
 	}
 	if !contains(AllowedFontFamilies(), generated.Config.FontFamily) {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.font_family",
 			Code:    "invalid_value",
 			Message: "font_family is not allowed",
@@ -358,7 +324,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if generated.Config.FontSizePX < 10 || generated.Config.FontSizePX > 72 {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.font_size_px",
 			Code:    "out_of_range",
 			Message: "font_size_px must be between 10 and 72",
@@ -366,7 +332,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if !containsInt(AllowedWeights(), generated.Config.FontWeight) {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.font_weight",
 			Code:    "invalid_value",
 			Message: "font_weight is not allowed",
@@ -375,7 +341,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if !contains(AllowedFontStyles(), generated.Config.FontStyle) {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.font_style",
 			Code:    "invalid_value",
 			Message: "font_style is not allowed",
@@ -384,13 +350,13 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if color := strings.TrimSpace(generated.Config.Color); color == "" {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.color",
 			Code:    "required",
 			Message: "color is required",
 		})
-	} else if !design.IsAllowedColor(color) {
-		issues = append(issues, design.Issue{
+	} else if !schema.IsAllowedColor(color) {
+		issues = append(issues, schema.Issue{
 			Path:    "config.color",
 			Code:    "invalid_color",
 			Message: "color must be a hex, rgb, rgba, hsl, or hsla color",
@@ -398,7 +364,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if !contains(AllowedAlignments(), generated.Config.Align) {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.align",
 			Code:    "invalid_value",
 			Message: "align is not allowed",
@@ -407,7 +373,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if !contains(AllowedPositions(), generated.Config.Position) {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.position",
 			Code:    "invalid_value",
 			Message: "position is not allowed",
@@ -416,7 +382,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if generated.Config.X < 0 || generated.Config.X > 100 {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.x",
 			Code:    "out_of_range",
 			Message: "x must be between 0 and 100",
@@ -424,23 +390,23 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if generated.Config.Y < 0 || generated.Config.Y > 100 {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.y",
 			Code:    "out_of_range",
 			Message: "y must be between 0 and 100",
 			Actual:  generated.Config.Y,
 		})
 	}
-	if color := strings.TrimSpace(generated.Config.BackgroundColor); color != "" && !design.IsAllowedColor(color) {
-		issues = append(issues, design.Issue{
+	if color := strings.TrimSpace(generated.Config.BackgroundColor); color != "" && !schema.IsAllowedColor(color) {
+		issues = append(issues, schema.Issue{
 			Path:    "config.background_color",
 			Code:    "invalid_color",
 			Message: "background_color must be a hex, rgb, rgba, hsl, or hsla color",
 			Actual:  color,
 		})
 	}
-	if color := strings.TrimSpace(generated.Config.BorderColor); color != "" && !design.IsAllowedColor(color) {
-		issues = append(issues, design.Issue{
+	if color := strings.TrimSpace(generated.Config.BorderColor); color != "" && !schema.IsAllowedColor(color) {
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_color",
 			Code:    "invalid_color",
 			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
@@ -448,7 +414,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 12 {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_width_px",
 			Code:    "out_of_range",
 			Message: "border_width_px must be between 0 and 12",
@@ -456,7 +422,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if generated.Config.BorderRadiusPX < 0 || generated.Config.BorderRadiusPX > 40 {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_radius_px",
 			Code:    "out_of_range",
 			Message: "border_radius_px must be between 0 and 40",
@@ -464,14 +430,14 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if generated.Config.PaddingPX < 0 || generated.Config.PaddingPX > 32 {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.padding_px",
 			Code:    "out_of_range",
 			Message: "padding_px must be between 0 and 32",
 			Actual:  generated.Config.PaddingPX,
 		})
 	}
-	issues = append(issues, design.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
+	issues = append(issues, schema.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
 	return issues
 }
 
@@ -518,9 +484,9 @@ func AllowedPositions() []string {
 }
 
 func normalizedConfig(part Config) Config {
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
-		Description:   "Rendered textarea",
+		Description:   "Rendered text",
 		Config:        part,
 	}
 	NormalizeGenerated(&generated)
@@ -593,18 +559,110 @@ func containsInt(values []int, target int) bool {
 	return false
 }
 
-func preset(id, name, description string, part Config) card.LibraryItem {
-	raw, err := json.Marshal(part)
-	if err != nil {
-		panic(err)
+func typedPreset(id, name, description string, part Config) card.TypedPreset[Config] {
+	defaults := DefaultConfig()
+	if part.BackgroundColor == "" {
+		part.BackgroundColor = defaults.BackgroundColor
 	}
-	return card.LibraryItem{
-		ID:            id,
-		Name:          name,
-		ComponentKind: Kind,
-		Description:   description,
-		Config:        raw,
+	if part.BorderColor == "" {
+		part.BorderColor = defaults.BorderColor
 	}
+	if part.BorderRadiusPX == 0 {
+		part.BorderRadiusPX = defaults.BorderRadiusPX
+	}
+	return card.TypedPreset[Config]{ID: id, Name: name, Description: description, Config: part}
+}
+
+func textStringControl(id, trait, kind, label, property string, get func(Config) string, set func(*Config, string), values ...card.ControlOption) card.Control[Config] {
+	control := card.StringControl(id, trait, kind, label, property, get, set, values...)
+	base := control.Apply
+	control.Apply = func(c *Config, raw json.RawMessage) error {
+		if err := base(c, raw); err != nil {
+			return err
+		}
+		syncTextCSS(c, id)
+		return nil
+	}
+	return control
+}
+func textIntControl(id, trait, label, property string, min, max int, get func(Config) int, set func(*Config, int)) card.Control[Config] {
+	control := card.IntControl(id, trait, "range", label, property, min, max, 1, get, set)
+	base := control.Apply
+	control.Apply = func(c *Config, raw json.RawMessage) error {
+		if err := base(c, raw); err != nil {
+			return err
+		}
+		syncTextCSS(c, id)
+		return nil
+	}
+	return control
+}
+func positionControl() card.Control[Config] {
+	type position struct {
+		X int `json:"x"`
+		Y int `json:"y"`
+	}
+	return card.Control[Config]{ID: "position", Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
+		var value position
+		if err := card.DecodeControlObject(raw, &value); err != nil {
+			return fmt.Errorf("value must include integer x and y: %w", err)
+		}
+		c.Position = "center"
+		c.X, c.Y = value.X, value.Y
+		return nil
+	}}
+}
+func options(values []string) []card.ControlOption {
+	out := make([]card.ControlOption, 0, len(values))
+	for _, value := range values {
+		words := strings.Fields(strings.ReplaceAll(value, "-", " "))
+		for index, word := range words {
+			words[index] = strings.ToUpper(word[:1]) + word[1:]
+		}
+		out = append(out, card.Option(strings.Join(words, " "), value))
+	}
+	return out
+}
+func syncTextCSS(config *Config, control string) {
+	updates := map[string]string{}
+	switch control {
+	case "font_size_px":
+		updates["font-size"] = fmt.Sprintf("%dpx", config.FontSizePX)
+	case "font_weight":
+		updates["font-weight"] = fmt.Sprintf("%d", config.FontWeight)
+	case "font_style":
+		updates["font-style"] = config.FontStyle
+	case "color":
+		updates["color"] = config.Color
+	case "align":
+		updates["text-align"] = config.Align
+	case "background_color":
+		updates["background-color"] = config.BackgroundColor
+	case "border_color", "border_width_px":
+		updates["border"] = fmt.Sprintf("%dpx solid %s", config.BorderWidthPX, config.BorderColor)
+		updates["border-color"] = config.BorderColor
+		updates["border-width"] = fmt.Sprintf("%dpx", config.BorderWidthPX)
+	case "border_radius_px":
+		updates["border-radius"] = fmt.Sprintf("%dpx", config.BorderRadiusPX)
+	case "padding_px":
+		updates["padding"] = fmt.Sprintf("%dpx", config.PaddingPX)
+	}
+	declarations := schema.CSSDeclarations(config.CSS, AllowedCSS())
+	for key, value := range updates {
+		declarations[key] = value
+	}
+	keys := make([]string, 0, len(declarations))
+	for key := range declarations {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	var out strings.Builder
+	for _, key := range keys {
+		if value := strings.TrimSpace(declarations[key]); value != "" {
+			fmt.Fprintf(&out, "%s: %s; ", key, value)
+		}
+	}
+	config.CSS = strings.TrimSpace(out.String())
 }
 
 func intsToStrings(values []int) []string {
@@ -615,18 +673,8 @@ func intsToStrings(values []int) []string {
 	return out
 }
 
-func clamp(value, min, max int) int {
-	if value < min {
-		return min
-	}
-	if value > max {
-		return max
-	}
-	return value
-}
-
 const exampleJSON = `{
-  "componentKind": "textarea",
+  "component_kind": "text",
   "description": "A centered calm text treatment for the main card message.",
   "config": {
     "content": "Start designing this card.",
@@ -641,11 +689,11 @@ const exampleJSON = `{
   }
 }`
 
-const systemPrompt = `You generate safe declarative JSON configs for the textarea component of a card.
+const systemPrompt = `You generate safe declarative JSON configs for the text component of a card.
 Return exactly one JSON object and no markdown, prose, HTML, selectors, braces, or JavaScript.
 The JSON object must match this shape:
 {
-  "componentKind": "textarea",
+  "component_kind": "text",
   "description": "short human-readable summary",
   "config": {
     "content": "text shown on the card",
@@ -660,10 +708,10 @@ The JSON object must match this shape:
   }
 }
 Rules:
-- componentKind must be "textarea".
+- component_kind must be "text".
 - description and content are required.
 - font_family must be one of: system, serif, mono, display.
-- font_size_px is clamped to 10..72.
+- font_size_px must be within 10..72.
 - font_weight must be one of: 400, 500, 600, 700, 800.
 - font_style must be one of: normal, italic.
 - color must be a safe color: hex, rgb(...), rgba(...), hsl(...), or hsla(...).

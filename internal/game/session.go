@@ -7,12 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/n0remac/Living-Card/internal/components/background"
-	"github.com/n0remac/Living-Card/internal/components/border"
-	"github.com/n0remac/Living-Card/internal/components/button"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/components/slider"
-	"github.com/n0remac/Living-Card/internal/components/textinput"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
 const (
@@ -59,6 +55,7 @@ type EditSession struct {
 
 type Session struct {
 	mu                       sync.Mutex
+	registry                 *cardcomponent.Registry
 	deckDefinition           DeckDefinition
 	cardDefinitions          map[string]CardDefinition
 	documentVariants         map[string]map[string]cardcomponent.Document
@@ -74,24 +71,27 @@ type Session struct {
 	lastMessage              string
 }
 
-func NewSession() *Session {
-	session, err := NewSessionFromEmbeddedDeck()
+func NewSession(registry *cardcomponent.Registry) *Session {
+	session, err := NewSessionFromEmbeddedDeck(registry)
 	if err != nil {
 		panic(err)
 	}
 	return session
 }
 
-func NewSessionFromEmbeddedDeck() (*Session, error) {
-	definition, err := LoadEmbeddedSeededWorldDeck()
+func NewSessionFromEmbeddedDeck(registry *cardcomponent.Registry) (*Session, error) {
+	definition, err := LoadEmbeddedSeededWorldDeck(registry)
 	if err != nil {
 		return nil, err
 	}
-	return NewSessionFromDeck(definition)
+	return NewSessionFromDeck(registry, definition)
 }
 
-func NewSessionFromDeck(definition DeckDefinition) (*Session, error) {
-	if err := ValidateDeckDefinition(definition); err != nil {
+func NewSessionFromDeck(registry *cardcomponent.Registry, definition DeckDefinition) (*Session, error) {
+	if registry == nil {
+		return nil, fmt.Errorf("component registry is not initialized")
+	}
+	if err := ValidateDeckDefinition(registry, definition); err != nil {
 		return nil, err
 	}
 	definition = cloneValue(definition)
@@ -100,6 +100,7 @@ func NewSessionFromDeck(definition DeckDefinition) (*Session, error) {
 		return nil, err
 	}
 	return &Session{
+		registry:         registry,
 		deckDefinition:   definition,
 		cardDefinitions:  cardDefinitions,
 		documentVariants: documentVariants,
@@ -125,7 +126,7 @@ func (s *Session) Reset() (Snapshot, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	next, err := NewSessionFromDeck(s.deckDefinition)
+	next, err := NewSessionFromDeck(s.registry, s.deckDefinition)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -224,7 +225,7 @@ func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
 		if !s.ruleBaseMatches(rule, *source, target) {
 			continue
 		}
-		if !sourceComponentConditionsMatch(rule.SourceComponentConditions, source.Document) {
+		if !sourceComponentConditionsMatch(s.registry, rule.SourceComponentConditions, source.Document) {
 			if err := s.applyRuleFailureEffects(rule, *source, target); err != nil {
 				return Snapshot{}, err
 			}
@@ -257,7 +258,7 @@ func (s *Session) SubmitForm(cardID, formID string, fields map[string]string) (S
 		return Snapshot{}, fmt.Errorf("form may contain at most 16 fields")
 	}
 	for name, value := range fields {
-		if !safeComponentID(name) {
+		if !cardcomponent.ValidComponentID(name) {
 			return Snapshot{}, fmt.Errorf("form field name %q is invalid", name)
 		}
 		if len([]rune(value)) > 128 {
@@ -273,7 +274,7 @@ func (s *Session) SubmitForm(cardID, formID string, fields map[string]string) (S
 		if strings.TrimSpace(rule.FormID) != formID || !s.formSubmitRuleBaseMatches(rule, target) {
 			continue
 		}
-		if !documentHasSubmitButton(target.Document, formID) || !documentHasFormFields(target.Document, formID, rule.FieldConditions) {
+		if !documentHasSubmitButton(s.registry, target.Document, formID) || !documentHasFormFields(s.registry, target.Document, formID, rule.FieldConditions) {
 			return Snapshot{}, fmt.Errorf("form %q is not mounted on %s", formID, target.Name)
 		}
 		if !submittedFieldsMatch(rule.FieldConditions, fields) {
@@ -306,7 +307,7 @@ func (s *Session) SelectWorldComponent(cardID, componentID, componentKind string
 	}
 	s.activeIndex = index
 	s.activeEditingComponentID = node.ID
-	s.lastMessage = componentEditLabel(node.ComponentKind) + " edit controls opened."
+	s.lastMessage = componentEditLabel(s.registry, node.ComponentKind) + " edit controls opened."
 	return s.snapshotLocked()
 }
 
@@ -321,7 +322,7 @@ func (s *Session) ApplyWorldComponentControl(cardID, componentID, componentKind,
 	if err := s.requireWorldComponentEditable(node.ComponentKind); err != nil {
 		return Snapshot{}, err
 	}
-	if err := applyGameComponentControl(node, strings.TrimSpace(control), value); err != nil {
+	if err := applyGameComponentControl(s.registry, node, strings.TrimSpace(control), value); err != nil {
 		return Snapshot{}, err
 	}
 	s.activeIndex = index
@@ -331,7 +332,7 @@ func (s *Session) ApplyWorldComponentControl(cardID, componentID, componentKind,
 		return Snapshot{}, err
 	}
 	if !powered {
-		s.lastMessage = componentEditLabel(node.ComponentKind) + " updated."
+		s.lastMessage = componentEditLabel(s.registry, node.ComponentKind) + " updated."
 	}
 	return s.snapshotLocked()
 }
@@ -378,17 +379,15 @@ func (s *Session) InstallEditComponent(componentCardID string) (Snapshot, error)
 	}
 
 	component := s.library[componentIndex]
-	componentKind := stateString(component.State, "componentKind")
-	node, mergePolicy, err := componentNodeFromCard(component, s.editSession.DraftCard.Document)
+	template, err := componentTemplateFromCard(s.registry, component)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	installComponentNode(&s.editSession.DraftCard.Document, node, mergePolicy)
-	if mergePolicy == componentMergeReplace {
-		if installed := findNodeByKind(s.editSession.DraftCard.Document.Root, componentKind); installed != nil {
-			node.ID = installed.ID
-		}
+	document, node, err := s.registry.InstallTemplate(s.editSession.DraftCard.Document, template)
+	if err != nil {
+		return Snapshot{}, err
 	}
+	s.editSession.DraftCard.Document = document
 	s.editSession.SelectedComponentID = node.ID
 
 	s.editSession.PendingConsumedComponentIDs = append(s.editSession.PendingConsumedComponentIDs, componentCardID)
@@ -405,7 +404,7 @@ func (s *Session) SelectEditComponent(componentID, componentKind string) (Snapsh
 		return Snapshot{}, err
 	}
 	s.editSession.SelectedComponentID = node.ID
-	s.lastMessage = componentEditLabel(node.ComponentKind) + " edit controls opened."
+	s.lastMessage = componentEditLabel(s.registry, node.ComponentKind) + " edit controls opened."
 	return s.snapshotLocked()
 }
 
@@ -418,7 +417,7 @@ func (s *Session) ApplyEditControl(componentID, control string, value json.RawMe
 		return Snapshot{}, err
 	}
 	control = strings.TrimSpace(control)
-	if err := applyGameComponentControl(node, control, value); err != nil {
+	if err := applyGameComponentControl(s.registry, node, control, value); err != nil {
 		return Snapshot{}, err
 	}
 	s.editSession.SelectedComponentID = node.ID
@@ -440,13 +439,10 @@ func (s *Session) ApplyLibraryComponentControl(cardID, componentID, componentKin
 	if err != nil {
 		return Snapshot{}, err
 	}
-	if strings.TrimSpace(node.ComponentKind) != slider.Kind {
-		return Snapshot{}, fmt.Errorf("component kind %q does not support library controls", node.ComponentKind)
-	}
-	if err := applyGameComponentControl(node, strings.TrimSpace(control), value); err != nil {
+	if err := applyGameComponentControl(s.registry, node, strings.TrimSpace(control), value); err != nil {
 		return Snapshot{}, err
 	}
-	s.lastMessage = componentEditLabel(node.ComponentKind) + " updated in " + s.library[index].Name + "."
+	s.lastMessage = componentEditLabel(s.registry, node.ComponentKind) + " updated in " + s.library[index].Name + "."
 	return s.snapshotLocked()
 }
 
@@ -478,8 +474,8 @@ func (s *Session) SaveEdit() (Snapshot, error) {
 	}
 	for _, componentCardID := range s.editSession.PendingConsumedComponentIDs {
 		if componentCard := s.libraryCard(componentCardID); componentCard != nil {
-			if kind := stateString(componentCard.State, "componentKind"); kind != "" {
-				installedKinds[kind] = true
+			if template, err := componentTemplateFromCard(s.registry, *componentCard); err == nil {
+				installedKinds[template.ComponentKind] = true
 			}
 		}
 	}
@@ -570,19 +566,14 @@ func (s *Session) editComponentNode(componentID, componentKind string) (*cardcom
 	if componentID == "" && componentKind == "" {
 		componentID = strings.TrimSpace(s.editSession.SelectedComponentID)
 	}
-	if componentID == "" && componentKind == "" {
-		if node := findNodeByKind(s.editSession.DraftCard.Document.Root, slider.Kind); node != nil {
-			componentID = node.ID
-		} else if node := findNodeByKind(s.editSession.DraftCard.Document.Root, border.Kind); node != nil {
-			componentID = node.ID
-		}
-	}
 	node, err := componentNode(&s.editSession.DraftCard.Document.Root, componentID, componentKind, s.editSession.DraftCard.Name)
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := installableComponentDefinitionForKind(node.ComponentKind); ok {
-		return node, nil
+	if definition, ok := s.registry.Lookup(node.ComponentKind); ok {
+		if _, installable := definition.Install(); installable {
+			return node, nil
+		}
 	}
 	return nil, fmt.Errorf("component kind %q does not support edit controls", node.ComponentKind)
 }
@@ -631,26 +622,10 @@ func componentNode(root *cardcomponent.Node, componentID, componentKind, cardNam
 
 func (s *Session) requireWorldComponentEditable(componentKind string) error {
 	componentKind = strings.TrimSpace(componentKind)
-	if !worldComponentKindEditable(componentKind) {
-		return fmt.Errorf("component kind %q does not support active card editing", componentKind)
-	}
-	switch componentKind {
-	case background.Kind, border.Kind:
-		if !s.libraryHasComponentKind(componentKind) {
-			return fmt.Errorf("%s controls require finding a %s component card", componentEditLabel(componentKind), componentKind)
-		}
+	if !worldComponentKindEditable(s.registry, componentKind) {
+		return cardcomponent.NewUnsupportedOperationError(componentKind, "editing")
 	}
 	return nil
-}
-
-func (s *Session) libraryHasComponentKind(componentKind string) bool {
-	componentKind = strings.TrimSpace(componentKind)
-	for _, card := range s.library {
-		if stateString(card.State, "componentKind") == componentKind {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Session) worldCardIndex(cardID string) int {
@@ -735,35 +710,36 @@ func (s *Session) formSubmitRuleBaseMatches(rule FormSubmitRuleDefinition, targe
 	return true
 }
 
-func documentHasSubmitButton(document cardcomponent.Document, formID string) bool {
+func documentHasSubmitButton(registry *cardcomponent.Registry, document cardcomponent.Document, formID string) bool {
 	found := false
 	visitNodes(document.Root, func(node cardcomponent.Node) {
-		if found || node.ComponentKind != button.Kind {
+		if found {
 			return
 		}
-		part, err := cardcomponent.DecodeConfig[button.Config](node)
-		if err != nil {
+		definition, ok := registry.Lookup(node.ComponentKind)
+		if !ok || !definition.HasRole(cardcomponent.RoleFormSubmitter) {
 			return
 		}
-		part = button.NormalizeConfig(part)
-		found = part.FormID == formID && len(button.ValidateConfig(part)) == 0
+		value, present, issues := definition.ReadProperty(node.Config, "form_id")
+		found = len(issues) == 0 && present && value.Kind == schema.PropertyString && value.String == formID
 	})
 	return found
 }
 
-func documentHasFormFields(document cardcomponent.Document, formID string, conditions []FormFieldConditionDefinition) bool {
+func documentHasFormFields(registry *cardcomponent.Registry, document cardcomponent.Document, formID string, conditions []FormFieldConditionDefinition) bool {
 	available := map[string]bool{}
 	visitNodes(document.Root, func(node cardcomponent.Node) {
-		if node.ComponentKind != textinput.Kind {
+		definition, ok := registry.Lookup(node.ComponentKind)
+		if !ok || !definition.HasRole(cardcomponent.RoleFormField) {
 			return
 		}
-		part, err := cardcomponent.DecodeConfig[textinput.Config](node)
-		if err != nil {
+		form, present, issues := definition.ReadProperty(node.Config, "form_id")
+		if len(issues) > 0 || !present || form.Kind != schema.PropertyString || form.String != formID {
 			return
 		}
-		part = textinput.NormalizeConfig(part)
-		if part.FormID == formID && len(textinput.ValidateConfig(part)) == 0 {
-			available[part.Name] = true
+		name, present, issues := definition.ReadProperty(node.Config, "name")
+		if len(issues) == 0 && present && name.Kind == schema.PropertyString {
+			available[name.String] = true
 		}
 	})
 	for _, condition := range conditions {
@@ -805,16 +781,16 @@ func visitNodes(node cardcomponent.Node, visit func(cardcomponent.Node)) {
 	}
 }
 
-func sourceComponentConditionsMatch(conditions []ComponentConditionDefinition, document cardcomponent.Document) bool {
+func sourceComponentConditionsMatch(registry *cardcomponent.Registry, conditions []ComponentConditionDefinition, document cardcomponent.Document) bool {
 	for _, condition := range conditions {
-		if !componentConditionMatches(condition, document.Root) {
+		if !componentConditionMatches(registry, condition, document.Root) {
 			return false
 		}
 	}
 	return true
 }
 
-func componentConditionMatches(condition ComponentConditionDefinition, root cardcomponent.Node) bool {
+func componentConditionMatches(registry *cardcomponent.Registry, condition ComponentConditionDefinition, root cardcomponent.Node) bool {
 	kind := strings.TrimSpace(condition.ComponentKind)
 	componentID := strings.TrimSpace(condition.ComponentID)
 	var candidates []cardcomponent.Node
@@ -841,11 +817,13 @@ func componentConditionMatches(condition ComponentConditionDefinition, root card
 		if condition.ValueEquals == nil {
 			return true
 		}
-		if kind == slider.Kind {
-			part, err := decodeSliderNode(node)
-			if err == nil && part.Value == *condition.ValueEquals {
-				return true
-			}
+		definition, ok := registry.Lookup(kind)
+		if !ok {
+			continue
+		}
+		value, present, issues := definition.ReadProperty(node.Config, "value")
+		if len(issues) == 0 && present && value.Kind == schema.PropertyNumber && value.Number == float64(*condition.ValueEquals) {
+			return true
 		}
 	}
 	return false
@@ -937,8 +915,12 @@ func (s *Session) applyRuleFailureEffects(rule UseRuleDefinition, source Card, t
 
 func (s *Session) copySourceComponentToEffectCard(effect RuleEffectDefinition, source Card, target Card) error {
 	componentKind := strings.TrimSpace(effect.ComponentKind)
-	if _, ok := installableComponentDefinitionForKind(componentKind); !ok {
-		return fmt.Errorf("%s effect requires an installable componentKind", EffectCopySourceComponent)
+	definition, ok := s.registry.Lookup(componentKind)
+	if !ok {
+		return fmt.Errorf("%s effect requires a registered component_kind", EffectCopySourceComponent)
+	}
+	if _, ok := definition.Install(); !ok {
+		return fmt.Errorf("%s effect requires an installable component_kind", EffectCopySourceComponent)
 	}
 	var sourceNode *cardcomponent.Node
 	if sourceComponentID := strings.TrimSpace(effect.SourceComponentID); sourceComponentID != "" {
@@ -952,12 +934,16 @@ func (s *Session) copySourceComponentToEffectCard(effect RuleEffectDefinition, s
 	if sourceNode == nil {
 		return fmt.Errorf("%s source card %q has no %s component", EffectCopySourceComponent, source.ID, componentKind)
 	}
-	targetNode := cloneValue(*sourceNode)
+	template := cardcomponent.ComponentTemplate{ComponentKind: componentKind, ComponentID: sourceNode.ID, Config: append(json.RawMessage(nil), sourceNode.Config...)}
 	if componentID := strings.TrimSpace(effect.ComponentID); componentID != "" {
-		targetNode.ID = componentID
+		template.ComponentID = componentID
 	}
 	return s.updateEffectCard(effect, target, func(card *Card) error {
-		appendOrReplaceRootChild(&card.Document.Root, targetNode)
+		document, _, err := s.registry.InstallTemplate(card.Document, template)
+		if err != nil {
+			return err
+		}
+		card.Document = document
 		return nil
 	})
 }
@@ -974,18 +960,27 @@ func (s *Session) powerGeneratorIfTuned(cardIndex int, selectedComponentID strin
 	if !ok {
 		return false, nil
 	}
-	sliderNode := findNodeByKind(card.Document.Root, slider.Kind)
-	if sliderNode == nil {
+	var value schema.PropertyValue
+	var mountedSlider cardcomponent.Node
+	found := false
+	visitNodes(card.Document.Root, func(node cardcomponent.Node) {
+		if found {
+			return
+		}
+		definition, ok := s.registry.Lookup(node.ComponentKind)
+		if !ok {
+			return
+		}
+		candidate, present, issues := definition.ReadProperty(node.Config, "value")
+		if len(issues) == 0 && present && candidate.Kind == schema.PropertyNumber {
+			value = candidate
+			mountedSlider = cloneValue(node)
+			found = true
+		}
+	})
+	if !found || int(value.Number) != targetValue {
 		return false, nil
 	}
-	part, err := decodeSliderNode(*sliderNode)
-	if err != nil {
-		return false, err
-	}
-	if part.Value != targetValue {
-		return false, nil
-	}
-	mountedSlider := cloneValue(*sliderNode)
 	variants := s.documentVariants[card.ID]
 	activeDocument, ok := variants["active"]
 	if !ok {
@@ -1015,11 +1010,11 @@ func (s *Session) loadDeck(deckID string) error {
 	if s.loadedDecks[deckID] {
 		return nil
 	}
-	definition, err := LoadEmbeddedDeck(deckID)
+	definition, err := LoadEmbeddedDeck(s.registry, deckID)
 	if err != nil {
 		return err
 	}
-	if err := ValidateDeckPackDefinition(definition, s.cardDefinitions); err != nil {
+	if err := ValidateDeckPackDefinition(s.registry, definition, s.cardDefinitions); err != nil {
 		return err
 	}
 	worldDeck, documentVariants, cardDefinitions, activeIndex, err := materializeDeck(definition)

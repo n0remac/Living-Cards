@@ -592,11 +592,11 @@ function parsePercent(value: string): number | null {
 }
 
 function canDragActiveComponent(componentKind: string): boolean {
-  return componentKind === "textarea" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "textinput" || componentKind === "button";
+  return componentKind === "text" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "text_input" || componentKind === "button";
 }
 
 function canDragEditComponent(componentKind: string): boolean {
-  return componentKind === "textarea" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "textinput" || componentKind === "button";
+  return componentKind === "text" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "text_input" || componentKind === "button";
 }
 
 function componentTitle(componentKind: string): string {
@@ -605,7 +605,7 @@ function componentTitle(componentKind: string): string {
       return "Background";
     case "border":
       return "Border";
-    case "textarea":
+    case "text":
       return "Text";
     case "shape":
       return "Shape";
@@ -613,7 +613,7 @@ function componentTitle(componentKind: string): string {
       return "Image";
     case "slider":
       return "Slider";
-    case "textinput":
+    case "text_input":
       return "Text form";
     case "button":
       return "Button";
@@ -1096,7 +1096,9 @@ function isEditableCard(card: RenderedGameCard): boolean {
 }
 
 function componentKindForCard(card: RenderedGameCard): string {
-  const value = card.state?.componentKind;
+  const template = card.state?.component_template;
+  if (!template || typeof template !== "object") return "";
+  const value = (template as Record<string, unknown>).component_kind;
   return typeof value === "string" ? value : "";
 }
 

@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
-func TestNormalizeConfigClampsSliderRange(t *testing.T) {
+func TestNormalizeConfigDoesNotRepairSliderRange(t *testing.T) {
 	t.Parallel()
 
 	part := NormalizeConfig(Config{
@@ -17,15 +17,18 @@ func TestNormalizeConfigClampsSliderRange(t *testing.T) {
 		Step:  0,
 		Value: 140,
 	})
-	if part.Label != "Output" || part.Min != 0 || part.Max != 100 || part.Step != 1 || part.Value != 100 {
+	if part.Label != "" || part.Min != -10 || part.Max != 120 || part.Step != 0 || part.Value != 140 {
 		t.Fatalf("part = %#v", part)
+	}
+	if issues := ValidateConfig(part); len(issues) == 0 {
+		t.Fatal("ValidateConfig() issues = nil, want invalid slider")
 	}
 }
 
 func TestValidateGeneratedRejectsInvalidSlider(t *testing.T) {
 	t.Parallel()
 
-	issues := ValidateGenerated(design.GeneratedConfig[Config]{
+	issues := ValidateGenerated(schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Invalid slider",
 		Config: Config{

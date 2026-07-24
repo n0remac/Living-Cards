@@ -299,13 +299,13 @@ function normalizeGeneratedConfigEnvelope(value) {
     throw new Error("Generated config must be a JSON object.");
   }
   const record = value;
-  const componentKind = String(record.componentKind || "").trim();
+  const componentKind = String(record.component_kind || "").trim();
   const config = record.config;
   if (!config || typeof config !== "object") {
     throw new Error("Generated config must include a config object.");
   }
   return {
-    componentKind,
+    component_kind: componentKind,
     description: String(record.description || savedDesignFallbackName(componentKind)).trim(),
     config: cloneJSON(config)
   };
@@ -329,8 +329,8 @@ function savedDesignFallbackName(componentKind) {
       return "Saved Background";
     case "border":
       return "Saved Border";
-    case "textarea":
-      return "Saved Text Area";
+    case "text":
+      return "Saved Text";
     default:
       return "Saved Design";
   }
@@ -456,7 +456,7 @@ function renderDesignLibraryItems(items) {
   const list = byID("design-library-list");
   if (!list) return;
   const configKind = readConfigKind();
-  const visibleItems = items.filter((item) => item.componentKind === configKind);
+  const visibleItems = items.filter((item) => item.component_kind === configKind);
   if (!visibleItems.length) {
     list.innerHTML = '<div class="rounded-md border border-dashed border-[var(--app-border)] px-3 py-4 text-center text-sm text-[var(--app-fg-soft)]">No saved designs.</div>';
     return;
@@ -563,7 +563,7 @@ function readConfigKind() {
   const select = byID("config-target");
   switch (select?.value) {
     case "border":
-    case "textarea":
+    case "text":
     case "image":
       return select.value;
     default:
@@ -571,8 +571,8 @@ function readConfigKind() {
   }
 }
 function bindAddComponentControls() {
-  byID("add-textarea-component-btn")?.addEventListener("click", () => {
-    void addComponent("textarea");
+  byID("add-text-component-btn")?.addEventListener("click", () => {
+    void addComponent("text");
   });
   byID("add-shape-component-btn")?.addEventListener("click", () => {
     void addComponent("shape");
@@ -1397,10 +1397,10 @@ function parsePercent(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 function canDragActiveComponent(componentKind) {
-  return componentKind === "textarea" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "textinput" || componentKind === "button";
+  return componentKind === "text" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "text_input" || componentKind === "button";
 }
 function canDragEditComponent(componentKind) {
-  return componentKind === "textarea" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "textinput" || componentKind === "button";
+  return componentKind === "text" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "text_input" || componentKind === "button";
 }
 function componentTitle(componentKind) {
   switch (componentKind) {
@@ -1408,7 +1408,7 @@ function componentTitle(componentKind) {
       return "Background";
     case "border":
       return "Border";
-    case "textarea":
+    case "text":
       return "Text";
     case "shape":
       return "Shape";
@@ -1416,7 +1416,7 @@ function componentTitle(componentKind) {
       return "Image";
     case "slider":
       return "Slider";
-    case "textinput":
+    case "text_input":
       return "Text form";
     case "button":
       return "Button";
@@ -1857,7 +1857,9 @@ function isEditableCard(card) {
   return Boolean(card.state?.editable);
 }
 function componentKindForCard(card) {
-  const value = card.state?.componentKind;
+  const template = card.state?.component_template;
+  if (!template || typeof template !== "object") return "";
+  const value = template.component_kind;
   return typeof value === "string" ? value : "";
 }
 function pendingComponentIds() {

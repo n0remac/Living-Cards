@@ -80,13 +80,6 @@ export async function interactWithComponent(
   return await response.json() as TapCardResponse;
 }
 
-export interface ColorControlPayload {
-  color: string;
-  secondaryColor?: string;
-  gradient?: boolean;
-  angle?: number;
-}
-
 export async function applyComponentControl(componentId: string, trait: string, control: string, value: unknown): Promise<TapCardResponse> {
   const response = await fetch("/api/draft-card/control-change", {
     method: "POST",
@@ -107,18 +100,6 @@ export async function randomizeComponent(componentId: string, trait = "", scope 
   });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to randomize component."));
-  }
-  return await response.json() as TapCardResponse;
-}
-
-export async function applyColorControl(componentKind: ComponentTarget, control: ColorControlPayload): Promise<TapCardResponse> {
-  const response = await fetch("/api/draft-card/control-change", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ componentKind, ...control }),
-  });
-  if (!response.ok) {
-    throw new Error(await readError(response, "Failed to apply color."));
   }
   return await response.json() as TapCardResponse;
 }
@@ -341,7 +322,7 @@ export async function cancelGameEdit(): Promise<GameSessionSnapshot> {
   return await response.json() as GameSessionSnapshot;
 }
 
-export async function addDraftComponent(componentKind: "textarea" | "shape" | "image", config?: ConfigJSON): Promise<TapCardResponse> {
+export async function addDraftComponent(componentKind: "text" | "shape" | "image", config?: ConfigJSON): Promise<TapCardResponse> {
   const response = await fetch("/api/draft-card/components", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

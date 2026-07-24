@@ -36,8 +36,8 @@ export function hitTestCard(event: PointerEvent, preview: HTMLElement): CardHit 
   if (component && componentKind === "shape") {
     return componentHit(component, "shape", "shape", "geometry", x, y, event);
   }
-  if (component && componentKind === "textarea") {
-    return componentHit(component, "textarea", "textarea", "text", x, y, event);
+  if (component && componentKind === "text") {
+    return componentHit(component, "text", "text", "text", x, y, event);
   }
 
   return cardRootHit("background", "background", x, y, event);

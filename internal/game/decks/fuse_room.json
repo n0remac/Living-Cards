@@ -11,7 +11,10 @@
       "id": "fuse-box-note",
       "name": "Fuse Box Note",
       "kind": "clue",
-      "tags": ["clue", "fuse-room"],
+      "tags": [
+        "clue",
+        "fuse-room"
+      ],
       "collectible": false,
       "state": {
         "useful": true
@@ -23,7 +26,6 @@
           "name": "Fuse Box Note",
           "root": {
             "id": "fuse-box-note-root",
-            "componentKind": "card",
             "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
@@ -31,25 +33,24 @@
             "children": [
               {
                 "id": "fuse-box-note-background",
-                "componentKind": "background",
                 "config": {
                   "background_color": "#17211d",
                   "css": "background: #17211d;"
-                }
+                },
+                "component_kind": "background"
               },
               {
                 "id": "fuse-box-note-border",
-                "componentKind": "border",
                 "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#34d399",
                   "css": "border: 2px solid #34d399; border-radius: 22px;"
-                }
+                },
+                "component_kind": "border"
               },
               {
                 "id": "fuse-box-note-title",
-                "componentKind": "textarea",
                 "config": {
                   "content": "FUSE BOX NOTE",
                   "font_family": "system",
@@ -63,11 +64,11 @@
                   "y": 28,
                   "padding_px": 4,
                   "css": "text-align: center;"
-                }
+                },
+                "component_kind": "text"
               },
               {
                 "id": "fuse-box-note-body",
-                "componentKind": "textarea",
                 "config": {
                   "content": "A label points under the machinery: SPARE GLASS FUSE.",
                   "font_family": "system",
@@ -81,9 +82,11 @@
                   "y": 66,
                   "padding_px": 4,
                   "css": "text-align: center;"
-                }
+                },
+                "component_kind": "text"
               }
-            ]
+            ],
+            "component_kind": "card"
           }
         }
       }
@@ -92,7 +95,11 @@
       "id": "glass-fuse",
       "name": "Glass Fuse",
       "kind": "item",
-      "tags": ["item", "fuse", "power"],
+      "tags": [
+        "item",
+        "fuse",
+        "power"
+      ],
       "collectible": true,
       "state": {
         "powers": "sleeping-switch"
@@ -104,7 +111,6 @@
           "name": "Glass Fuse",
           "root": {
             "id": "glass-fuse-root",
-            "componentKind": "card",
             "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
@@ -112,25 +118,24 @@
             "children": [
               {
                 "id": "glass-fuse-background",
-                "componentKind": "background",
                 "config": {
                   "background_color": "#10231f",
                   "css": "background: #10231f;"
-                }
+                },
+                "component_kind": "background"
               },
               {
                 "id": "glass-fuse-border",
-                "componentKind": "border",
                 "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#fde68a",
                   "css": "border: 2px solid #fde68a; border-radius: 22px;"
-                }
+                },
+                "component_kind": "border"
               },
               {
                 "id": "glass-fuse-title",
-                "componentKind": "textarea",
                 "config": {
                   "content": "GLASS FUSE",
                   "font_family": "system",
@@ -144,11 +149,11 @@
                   "y": 24,
                   "padding_px": 4,
                   "css": "text-align: center;"
-                }
+                },
+                "component_kind": "text"
               },
               {
                 "id": "glass-fuse-body",
-                "componentKind": "textarea",
                 "config": {
                   "content": "A thin fuse, still clear enough to carry current.",
                   "font_family": "system",
@@ -162,9 +167,11 @@
                   "y": 68,
                   "padding_px": 4,
                   "css": "text-align: center;"
-                }
+                },
+                "component_kind": "text"
               }
-            ]
+            ],
+            "component_kind": "card"
           }
         }
       }
@@ -173,7 +180,10 @@
       "id": "copper-washer",
       "name": "Copper Washer",
       "kind": "clue",
-      "tags": ["decoy", "fuse-room"],
+      "tags": [
+        "decoy",
+        "fuse-room"
+      ],
       "collectible": false,
       "state": {
         "useful": false
@@ -185,7 +195,6 @@
           "name": "Copper Washer",
           "root": {
             "id": "copper-washer-root",
-            "componentKind": "card",
             "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
@@ -193,25 +202,24 @@
             "children": [
               {
                 "id": "copper-washer-background",
-                "componentKind": "background",
                 "config": {
                   "background_color": "#24160f",
                   "css": "background: #24160f;"
-                }
+                },
+                "component_kind": "background"
               },
               {
                 "id": "copper-washer-border",
-                "componentKind": "border",
                 "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#b45309",
                   "css": "border: 2px solid #b45309; border-radius: 22px;"
-                }
+                },
+                "component_kind": "border"
               },
               {
                 "id": "copper-washer-title",
-                "componentKind": "textarea",
                 "config": {
                   "content": "COPPER WASHER",
                   "font_family": "system",
@@ -225,11 +233,11 @@
                   "y": 30,
                   "padding_px": 4,
                   "css": "text-align: center;"
-                }
+                },
+                "component_kind": "text"
               },
               {
                 "id": "copper-washer-body",
-                "componentKind": "textarea",
                 "config": {
                   "content": "It shines like a useful part, but it has no bite.",
                   "font_family": "system",
@@ -243,9 +251,11 @@
                   "y": 68,
                   "padding_px": 4,
                   "css": "text-align: center;"
-                }
+                },
+                "component_kind": "text"
               }
-            ]
+            ],
+            "component_kind": "card"
           }
         }
       }
@@ -254,7 +264,10 @@
       "id": "burnt-ribbon",
       "name": "Burnt Ribbon",
       "kind": "clue",
-      "tags": ["decoy", "fuse-room"],
+      "tags": [
+        "decoy",
+        "fuse-room"
+      ],
       "collectible": false,
       "state": {
         "useful": false
@@ -266,7 +279,6 @@
           "name": "Burnt Ribbon",
           "root": {
             "id": "burnt-ribbon-root",
-            "componentKind": "card",
             "config": {
               "padding_px": 18,
               "shadow": "0 24px 60px rgba(0,0,0,0.34)"
@@ -274,25 +286,24 @@
             "children": [
               {
                 "id": "burnt-ribbon-background",
-                "componentKind": "background",
                 "config": {
                   "background_color": "#1f1f1f",
                   "css": "background: #1f1f1f;"
-                }
+                },
+                "component_kind": "background"
               },
               {
                 "id": "burnt-ribbon-border",
-                "componentKind": "border",
                 "config": {
                   "border_width_px": 2,
                   "border_radius_px": 22,
                   "border_color": "#78716c",
                   "css": "border: 2px solid #78716c; border-radius: 22px;"
-                }
+                },
+                "component_kind": "border"
               },
               {
                 "id": "burnt-ribbon-title",
-                "componentKind": "textarea",
                 "config": {
                   "content": "BURNT RIBBON",
                   "font_family": "system",
@@ -306,11 +317,11 @@
                   "y": 30,
                   "padding_px": 4,
                   "css": "text-align: center;"
-                }
+                },
+                "component_kind": "text"
               },
               {
                 "id": "burnt-ribbon-body",
-                "componentKind": "textarea",
                 "config": {
                   "content": "A strip of insulation curls into ash.",
                   "font_family": "system",
@@ -324,9 +335,11 @@
                   "y": 68,
                   "padding_px": 4,
                   "css": "text-align: center;"
-                }
+                },
+                "component_kind": "text"
               }
-            ]
+            ],
+            "component_kind": "card"
           }
         }
       }
@@ -337,7 +350,9 @@
       "id": "glass-fuse-powers-sleeping-switch",
       "source": {
         "id": "glass-fuse",
-        "tags": ["fuse"]
+        "tags": [
+          "fuse"
+        ]
       },
       "target": {
         "id": "sleeping-switch"
@@ -366,7 +381,9 @@
         {
           "effectKind": "removeCardTags",
           "cardId": "sleeping-switch",
-          "tags": ["decoy"]
+          "tags": [
+            "decoy"
+          ]
         },
         {
           "effectKind": "setDocumentVariant",

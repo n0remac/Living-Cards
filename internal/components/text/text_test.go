@@ -1,17 +1,17 @@
-package textarea
+package text
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
-func TestValidateGeneratedAcceptsSafeTextareaConfig(t *testing.T) {
+func TestValidateGeneratedAcceptsSafeTextConfig(t *testing.T) {
 	t.Parallel()
 
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Safe",
 		Config: Config{
@@ -33,25 +33,28 @@ func TestValidateGeneratedAcceptsSafeTextareaConfig(t *testing.T) {
 	}
 }
 
-func TestNormalizeGeneratedClampsFontSize(t *testing.T) {
+func TestNormalizeGeneratedDoesNotRepairFontSize(t *testing.T) {
 	t.Parallel()
 
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Clamp",
 		Config:        validConfig(),
 	}
 	generated.Config.FontSizePX = 999
 	NormalizeGenerated(&generated)
-	if generated.Config.FontSizePX != 72 {
-		t.Fatalf("FontSizePX = %d, want 72", generated.Config.FontSizePX)
+	if generated.Config.FontSizePX != 999 {
+		t.Fatalf("FontSizePX = %d, want 999", generated.Config.FontSizePX)
+	}
+	if issues := ValidateGenerated(generated); len(issues) == 0 {
+		t.Fatal("ValidateGenerated() issues = nil, want invalid font size")
 	}
 }
 
-func TestValidateGeneratedRejectsInvalidTextareaFields(t *testing.T) {
+func TestValidateGeneratedRejectsInvalidTextFields(t *testing.T) {
 	t.Parallel()
 
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Bad",
 		Config: Config{
@@ -69,7 +72,7 @@ func TestValidateGeneratedRejectsInvalidTextareaFields(t *testing.T) {
 		},
 	}
 	issues := ValidateGenerated(generated)
-	paths := textareaIssuePaths(issues)
+	paths := textIssuePaths(issues)
 	for _, path := range []string{
 		"config.content",
 		"config.font_family",
@@ -94,7 +97,7 @@ func TestValidateGeneratedRejectsUnsupportedTextCSSProperty(t *testing.T) {
 
 	part := validConfig()
 	part.CSS = "background: red;"
-	issues := ValidateGenerated(design.GeneratedConfig[Config]{
+	issues := ValidateGenerated(schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Bad CSS",
 		Config:        part,
@@ -104,10 +107,10 @@ func TestValidateGeneratedRejectsUnsupportedTextCSSProperty(t *testing.T) {
 	}
 }
 
-func TestRenderLayerIncludesExtendedTextareaStyles(t *testing.T) {
+func TestRenderLayerIncludesExtendedTextStyles(t *testing.T) {
 	t.Parallel()
 
-	node := RenderLayer("textarea-main", Config{
+	node := RenderLayer("text-main", Config{
 		Content:         "Styled text",
 		FontFamily:      "system",
 		FontSizePX:      18,
@@ -127,8 +130,8 @@ func TestRenderLayerIncludesExtendedTextareaStyles(t *testing.T) {
 	})
 	body := node.Render()
 	for _, marker := range []string{
-		`data-component-id="textarea-main"`,
-		`data-component-kind="textarea"`,
+		`data-component-id="text-main"`,
+		`data-component-kind="text"`,
 		`background-color: #f8fafc`,
 		`border: 2px solid #111827`,
 		`border-radius: 14px`,
@@ -143,13 +146,13 @@ func TestRenderLayerIncludesExtendedTextareaStyles(t *testing.T) {
 	}
 }
 
-func TestRenderLayerWithContextScopesTextareaID(t *testing.T) {
+func TestRenderLayerWithContextScopesTextID(t *testing.T) {
 	t.Parallel()
 
-	body := RenderLayerWithContext("textarea-main", validConfig(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
+	body := RenderLayerWithContext("text-main", validConfig(), card.RenderContext{DOMIDPrefix: "game-world-card"}).Render()
 	for _, marker := range []string{
-		`id="game-world-card-textarea-main-layer"`,
-		`data-component-id="textarea-main"`,
+		`id="game-world-card-text-main-layer"`,
+		`data-component-id="text-main"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("render missing %q:\n%s", marker, body)
@@ -173,7 +176,7 @@ func validConfig() Config {
 	}
 }
 
-func textareaIssuePaths(issues []design.Issue) map[string]bool {
+func textIssuePaths(issues []schema.Issue) map[string]bool {
 	paths := make(map[string]bool, len(issues))
 	for _, issue := range issues {
 		paths[issue.Path] = true

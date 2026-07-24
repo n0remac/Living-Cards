@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/n0remac/Living-Card/internal/components/catalog"
 	"github.com/n0remac/Living-Card/internal/config"
 	"github.com/n0remac/Living-Card/internal/ollama"
 	"github.com/n0remac/Living-Card/internal/web"
@@ -28,11 +29,13 @@ func run() error {
 	}
 
 	ollamaClient := ollama.NewClient(cfg.OllamaBaseURL, cfg.RequestTimeout)
+	registry := catalog.MustNew()
 
 	mux := http.NewServeMux()
 	web.Register(mux, web.Dependencies{
 		Patch:      ollamaClient,
 		PatchModel: cfg.OllamaChatModel,
+		Registry:   registry,
 	})
 
 	log.Printf("living card server listening on http://%s", cfg.WebAddr)

@@ -3,13 +3,13 @@ package background
 import (
 	"testing"
 
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
 func TestValidateGeneratedAcceptsSafeBackgroundCSS(t *testing.T) {
 	t.Parallel()
 
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Safe",
 		Config: Config{
@@ -53,7 +53,7 @@ func TestValidateGeneratedRejectsUnsafeBackgroundCSS(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			issues := ValidateGenerated(design.GeneratedConfig[Config]{
+			issues := ValidateGenerated(schema.GeneratedConfig[Config]{
 				ComponentKind: Kind,
 				Description:   "Bad",
 				Config: Config{
@@ -71,7 +71,7 @@ func TestValidateGeneratedRejectsUnsafeBackgroundCSS(t *testing.T) {
 func TestValidateGeneratedRejectsInvalidBackgroundColor(t *testing.T) {
 	t.Parallel()
 
-	issues := ValidateGenerated(design.GeneratedConfig[Config]{
+	issues := ValidateGenerated(schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Bad",
 		Config: Config{

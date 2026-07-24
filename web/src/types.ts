@@ -6,21 +6,21 @@ export interface CardDocument {
 
 export interface ComponentNode {
   id: string;
-  componentKind: string;
-  config?: ConfigJSON;
+  component_kind: string;
+  config: ConfigJSON;
   children?: ComponentNode[];
 }
 
-export type ConfigKind = "background" | "border" | "textarea" | "shape" | "image";
-export type ComponentKind = "card" | "background" | "border" | "textarea" | "shape" | "image" | "slider" | "textinput" | "button";
-export type ComponentTarget = ConfigKind | "slider" | "textinput" | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
-export type CardHitZone = "border" | "background" | "textarea" | "shape" | "image" | "slider" | "textinput" | "button";
+export type ConfigKind = "background" | "border" | "text" | "shape" | "image";
+export type ComponentKind = "card" | "background" | "border" | "text" | "shape" | "image" | "slider" | "text_input" | "button";
+export type ComponentTarget = ConfigKind | "slider" | "text_input" | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
+export type CardHitZone = "border" | "background" | "text" | "shape" | "image" | "slider" | "text_input" | "button";
 export type EditMode = "random" | "preset" | "simpleControls" | "advancedControls" | "aiPrompt" | "library";
 
 export type ConfigJSON = Record<string, unknown>;
 
 export interface GeneratedConfigEnvelope<T = ConfigJSON> {
-  componentKind: string;
+  component_kind: string;
   description: string;
   config: T;
 }
@@ -38,7 +38,7 @@ export interface ConfigIssue {
 export interface DesignLibraryItem {
   id: string;
   name: string;
-  componentKind: ConfigKind;
+  component_kind: ConfigKind;
   description: string;
   config: ConfigJSON;
   saved?: boolean;
@@ -63,7 +63,6 @@ export interface ComponentProgress {
   level: number;
   interactions: number;
   randomTapEnabled: boolean;
-  preventRandomizing: boolean;
   overlayUnlocked: boolean;
   overlayOpened: boolean;
   unlockedTraits: string[];
@@ -100,7 +99,7 @@ export interface ControlOption {
 export interface ControlDescriptor {
   trait: string;
   control: string;
-  kind: "checkbox" | "color" | "range" | "select" | "text";
+  kind: "checkbox" | "color" | "position" | "range" | "select" | "text";
   label: string;
   property?: string;
   value?: unknown;

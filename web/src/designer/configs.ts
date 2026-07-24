@@ -24,13 +24,13 @@ export function normalizeGeneratedConfigEnvelope(value: unknown): GeneratedConfi
     throw new Error("Generated config must be a JSON object.");
   }
   const record = value as Record<string, unknown>;
-  const componentKind = String(record.componentKind || "").trim();
+  const componentKind = String(record.component_kind || "").trim();
   const config = record.config;
   if (!config || typeof config !== "object") {
     throw new Error("Generated config must include a config object.");
   }
   return {
-    componentKind,
+    component_kind: componentKind,
     description: String(record.description || savedDesignFallbackName(componentKind)).trim(),
     config: cloneJSON(config as Record<string, unknown>),
   };
@@ -58,8 +58,8 @@ export function savedDesignFallbackName(componentKind: string): string {
       return "Saved Background";
     case "border":
       return "Saved Border";
-    case "textarea":
-      return "Saved Text Area";
+    case "text":
+      return "Saved Text";
     default:
       return "Saved Design";
   }

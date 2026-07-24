@@ -1,4 +1,4 @@
-package design
+package schema
 
 import (
 	"regexp"
@@ -9,18 +9,7 @@ import (
 var (
 	hexColorPattern      = regexp.MustCompile(`^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$`)
 	functionColorPattern = regexp.MustCompile(`(?i)^(rgba?|hsla?)\([0-9.,%\s+-]+\)$`)
-	forbiddenCSSMarkers  = []string{
-		"<",
-		">",
-		"{",
-		"}",
-		"url(",
-		"javascript:",
-		"expression(",
-		"@import",
-		"position",
-		"content",
-	}
+	forbiddenCSSMarkers  = []string{"<", ">", "{", "}", "url(", "javascript:", "expression(", "@import", "position", "content"}
 )
 
 func IsAllowedColor(value string) bool {
@@ -36,12 +25,7 @@ func ValidateInlineCSS(path, css string, allowed map[string]struct{}) []Issue {
 	lower := strings.ToLower(css)
 	for _, marker := range forbiddenCSSMarkers {
 		if strings.Contains(lower, marker) {
-			return []Issue{{
-				Path:    path,
-				Code:    "unsafe_css",
-				Message: "css contains forbidden marker " + marker,
-				Actual:  marker,
-			}}
+			return []Issue{{Path: path, Code: "unsafe_css", Message: "css contains forbidden marker " + marker, Actual: marker}}
 		}
 	}
 	var issues []Issue
@@ -52,33 +36,16 @@ func ValidateInlineCSS(path, css string, allowed map[string]struct{}) []Issue {
 		}
 		property, value, ok := strings.Cut(declaration, ":")
 		if !ok {
-			issues = append(issues, Issue{
-				Path:    path,
-				Code:    "invalid_css_declaration",
-				Message: "css declaration is missing a colon",
-				Actual:  declaration,
-			})
+			issues = append(issues, Issue{Path: path, Code: "invalid_css_declaration", Message: "css declaration is missing a colon", Actual: declaration})
 			continue
 		}
-		property = strings.ToLower(strings.TrimSpace(property))
-		value = strings.TrimSpace(value)
+		property, value = strings.ToLower(strings.TrimSpace(property)), strings.TrimSpace(value)
 		if property == "" || value == "" || strings.ContainsAny(property, " \t\r\n") {
-			issues = append(issues, Issue{
-				Path:    path,
-				Code:    "invalid_css_declaration",
-				Message: "css declaration is incomplete or invalid",
-				Actual:  declaration,
-			})
+			issues = append(issues, Issue{Path: path, Code: "invalid_css_declaration", Message: "css declaration is incomplete or invalid", Actual: declaration})
 			continue
 		}
 		if _, ok := allowed[property]; !ok {
-			issues = append(issues, Issue{
-				Path:    path,
-				Code:    "unsupported_css_property",
-				Message: "css property is not allowed",
-				Actual:  property,
-				Allowed: allowedKeys(allowed),
-			})
+			issues = append(issues, Issue{Path: path, Code: "unsupported_css_property", Message: "css property is not allowed", Actual: property, Allowed: allowedKeys(allowed)})
 		}
 	}
 	return issues
@@ -90,20 +57,14 @@ func CSSDeclarations(css string, allowed map[string]struct{}) map[string]string 
 		return out
 	}
 	for _, declaration := range strings.Split(css, ";") {
-		declaration = strings.TrimSpace(declaration)
-		if declaration == "" {
-			continue
-		}
-		property, value, ok := strings.Cut(declaration, ":")
+		property, value, ok := strings.Cut(strings.TrimSpace(declaration), ":")
 		if !ok {
 			continue
 		}
-		property = strings.ToLower(strings.TrimSpace(property))
-		value = strings.TrimSpace(value)
-		if _, ok := allowed[property]; !ok || value == "" {
-			continue
+		property, value = strings.ToLower(strings.TrimSpace(property)), strings.TrimSpace(value)
+		if _, ok := allowed[property]; ok && value != "" {
+			out[property] = value
 		}
-		out[property] = value
 	}
 	return out
 }

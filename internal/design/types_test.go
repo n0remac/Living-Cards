@@ -2,10 +2,13 @@ package design
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
+	"github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 	"github.com/n0remac/Living-Card/internal/ollama"
 )
 
@@ -13,127 +16,98 @@ type testConfig struct {
 	Foo string `json:"foo"`
 }
 
-func TestDecodeGeneratedInvalidJSONReturnsPathIssue(t *testing.T) {
-	t.Parallel()
-
-	_, issues := DecodeGeneratedConfig[testConfig](`{"componentKind":"test"`)
-	if len(issues) != 1 {
-		t.Fatalf("issues = %#v", issues)
-	}
-	if issues[0].Path != "$" || issues[0].Code != "invalid_json" {
-		t.Fatalf("issue = %#v", issues[0])
-	}
-}
-
-func TestServiceRepairsInvalidOutputOnce(t *testing.T) {
-	t.Parallel()
-
-	invalid := `{"componentKind":"test","description":"Bad","config":{"foo":"bad"}}`
+func TestServiceUsesErasedDefinitionAndRepairsOnce(t *testing.T) {
+	invalid := `{"component_kind":"test","description":"Bad","config":{"foo":"bad"}}`
 	client := &testChatClient{responses: []string{
 		invalid,
-		`{"componentKind":"test","description":"Good","config":{"foo":"ok"}}`,
+		`{"component_kind":"test","description":" Good ","config":{"foo":" ok "}}`,
 	}}
-	service := NewService(client, "test-model", testSpec())
+	service, err := NewService(client, "test-model", testDefinition(true))
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	response, err := service.Generate(context.Background(), GenerateRequest{
-		Instruction: "make it useful",
-		OldCode:     `{"componentKind":"test","config":{"foo":"old"}}`,
-		ComponentID: "component-1",
-	})
+	response, err := service.Generate(context.Background(), GenerateRequest{Instruction: "make it useful", OldCode: `{"component_kind":"test","config":{"foo":"old"}}`, ComponentID: "component-1"})
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
 	}
-	if response.Description != "Good" || response.Config.Foo != "ok" {
-		t.Fatalf("response = %#v", response)
+	var envelope schema.GeneratedConfigEnvelope
+	if err := json.Unmarshal(response, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.ComponentKind != "test" || envelope.Description != "Good" || string(envelope.Config) != `{"foo":"ok"}` {
+		t.Fatalf("response = %s", response)
 	}
 	if len(client.calls) != 2 {
 		t.Fatalf("calls = %d, want 2", len(client.calls))
 	}
-	repairPrompt := joinedConfigMessages(client.calls[1])
-	for _, marker := range []string{
-		"make it useful",
-		`{"componentKind":"test","config":{"foo":"old"}}`,
-		"component-1",
-		invalid,
-		`"path": "config.foo"`,
-		`"code": "invalid_value"`,
-		`"componentKind":"test"`,
-		`"foo":"ok"`,
-		"Preserve valid fields",
-	} {
+	repairPrompt := joinedMessages(client.calls[1])
+	for _, marker := range []string{"make it useful", "component-1", invalid, `"path": "config.foo"`, `"code": "invalid_value"`, "Preserve valid fields"} {
 		if !strings.Contains(repairPrompt, marker) {
 			t.Fatalf("repair prompt missing %q:\n%s", marker, repairPrompt)
 		}
 	}
 }
 
-func TestServiceFailedRepairReturnsRepairRawOutputAndIssues(t *testing.T) {
-	t.Parallel()
-
+func TestServiceReportsFailedRepairOutput(t *testing.T) {
 	client := &testChatClient{responses: []string{
-		`{"componentKind":"test","description":"Bad","config":{"foo":"bad"}}`,
-		`{"componentKind":"test","description":"Still bad","config":{"foo":"bad"}}`,
-		`{"componentKind":"test","description":"Would be ignored","config":{"foo":"ok"}}`,
+		`{"component_kind":"test","description":"Bad","config":{"foo":"bad"}}`,
+		`{"component_kind":"test","description":"Still bad","config":{"foo":"bad"}}`,
 	}}
-	service := NewService(client, "test-model", testSpec())
-
-	_, err := service.Generate(context.Background(), GenerateRequest{Instruction: "make it useful"})
-	if !errors.Is(err, ErrInvalidModelOutput) {
-		t.Fatalf("Generate() error = %v, want ErrInvalidModelOutput", err)
+	service, err := NewService(client, "test-model", testDefinition(true))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(client.calls) != 2 {
-		t.Fatalf("calls = %d, want exactly one repair call", len(client.calls))
+	_, err = service.Generate(context.Background(), GenerateRequest{Instruction: "make it useful"})
+	if !errors.Is(err, ErrInvalidModelOutput) || len(client.calls) != 2 {
+		t.Fatalf("Generate() error = %v, calls = %d", err, len(client.calls))
 	}
 	raw, ok := RawModelOutput(err)
 	if !ok || !strings.Contains(raw, "Still bad") {
 		t.Fatalf("RawModelOutput() = %q, %v", raw, ok)
 	}
-	issues := Issues(err)
-	if len(issues) != 1 || issues[0].Path != "config.foo" {
+	if issues := Issues(err); len(issues) != 1 || issues[0].Path != "config.foo" {
 		t.Fatalf("issues = %#v", issues)
 	}
 }
 
-func TestServiceDoesNotRepairEmptyInstruction(t *testing.T) {
-	t.Parallel()
-
-	client := &testChatClient{responses: []string{
-		`{"componentKind":"test","description":"Good","config":{"foo":"ok"}}`,
-	}}
-	service := NewService(client, "test-model", testSpec())
-
-	_, err := service.Generate(context.Background(), GenerateRequest{Instruction: " "})
-	if !errors.Is(err, ErrEmptyInstruction) {
-		t.Fatalf("Generate() error = %v, want ErrEmptyInstruction", err)
+func TestServiceRejectsEmptyInstructionAndUnsupportedDefinition(t *testing.T) {
+	client := &testChatClient{responses: []string{`{"component_kind":"test","description":"Good","config":{"foo":"ok"}}`}}
+	service, err := NewService(client, "test-model", testDefinition(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Generate(context.Background(), GenerateRequest{Instruction: " "}); !errors.Is(err, ErrEmptyInstruction) {
+		t.Fatalf("Generate() error = %v", err)
 	}
 	if len(client.calls) != 0 {
 		t.Fatalf("calls = %d, want 0", len(client.calls))
 	}
+	if _, err := NewService(client, "test-model", testDefinition(false)); !errors.Is(err, card.ErrUnsupportedOperation) {
+		t.Fatalf("NewService() error = %v, want ErrUnsupportedOperation", err)
+	}
 }
 
-func testSpec() Spec[testConfig] {
-	return Spec[testConfig]{
-		ComponentKind: "test",
-		SystemPrompt:  "Generate a test design.",
-		Example:       `{"componentKind":"test","description":"Example","config":{"foo":"ok"}}`,
-		Normalize: func(generated *GeneratedConfig[testConfig]) {
-			generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
-			generated.Description = strings.TrimSpace(generated.Description)
-			generated.Config.Foo = strings.TrimSpace(generated.Config.Foo)
-		},
-		Validate: func(generated GeneratedConfig[testConfig]) []Issue {
-			if generated.Config.Foo != "ok" {
-				return []Issue{{
-					Path:    "config.foo",
-					Code:    "invalid_value",
-					Message: "foo must be ok",
-					Actual:  generated.Config.Foo,
-					Allowed: []string{"ok"},
-				}}
+func testDefinition(withAI bool) card.Definition {
+	var generation *card.TypedGenerationDefinition[testConfig]
+	if withAI {
+		generation = &card.TypedGenerationDefinition[testConfig]{SystemPrompt: "Generate a test design.", Example: `{"component_kind":"test","description":"Example","config":{"foo":"ok"}}`}
+	}
+	return card.MustDefine(card.TypedDefinition[testConfig]{
+		Kind: "test", Label: "Test", Structure: card.StructureLeaf,
+		Default:   func() testConfig { return testConfig{Foo: "ok"} },
+		Normalize: func(config testConfig) testConfig { config.Foo = strings.TrimSpace(config.Foo); return config },
+		Validate: func(config testConfig) []schema.Issue {
+			if config.Foo != "ok" {
+				return []schema.Issue{{Path: "config.foo", Code: "invalid_value", Message: "foo must be ok", Actual: config.Foo, Allowed: []string{"ok"}}}
 			}
 			return nil
 		},
-	}
+		Render: func(card.Node, testConfig, card.RenderContext) (card.Contribution, error) {
+			return card.Contribution{}, nil
+		},
+		Generation: generation,
+	})
 }
 
 type testChatClient struct {
@@ -151,7 +125,7 @@ func (f *testChatClient) Chat(_ context.Context, _ string, messages []ollama.Cha
 	return response, nil
 }
 
-func joinedConfigMessages(messages []ollama.ChatMessage) string {
+func joinedMessages(messages []ollama.ChatMessage) string {
 	parts := make([]string, 0, len(messages))
 	for _, message := range messages {
 		parts = append(parts, message.Content)

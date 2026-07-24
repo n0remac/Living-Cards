@@ -3,10 +3,7 @@ package web
 import (
 	. "github.com/n0remac/GoDom/html"
 
-	"github.com/n0remac/Living-Card/internal/components/background"
-	"github.com/n0remac/Living-Card/internal/components/border"
-	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
-	"github.com/n0remac/Living-Card/internal/components/textarea"
+	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 )
 
 func Page() *Node {
@@ -223,10 +220,10 @@ func designerControlsView() *Node {
 					Id("config-target"),
 					Name("componentKind"),
 					Class(uiInputClass()),
-					Option(Value(background.Kind), T("Background")),
-					Option(Value(border.Kind), T("Border")),
-					Option(Value(textarea.Kind), T("Text area")),
-					Option(Value(imagecomponent.Kind), T("Image")),
+					Option(Value(cardcomponent.KindBackground), T("Background")),
+					Option(Value(cardcomponent.KindBorder), T("Border")),
+					Option(Value(cardcomponent.KindText), T("Text")),
+					Option(Value(cardcomponent.KindImage), T("Image")),
 				),
 			),
 			Div(
@@ -287,7 +284,7 @@ func designerControlsView() *Node {
 			H3(Class("text-[0.72rem] font-semibold uppercase text-[var(--app-fg-soft)]"), T("Add component")),
 			Div(
 				Class("flex flex-wrap gap-2"),
-				Button(Id("add-textarea-component-btn"), Type("button"), Class(uiSecondaryButtonClass("xs")), T("Text")),
+				Button(Id("add-text-component-btn"), Type("button"), Class(uiSecondaryButtonClass("xs")), T("Text")),
 				Button(Id("add-shape-component-btn"), Type("button"), Class(uiSecondaryButtonClass("xs")), T("Shape")),
 				Label(
 					Class(uiSecondaryButtonClass("xs")+" cursor-pointer"),
@@ -393,7 +390,7 @@ func pageCSS() string {
   touch-action: none;
 }
 
-.game-world-card [data-component-kind="textarea"],
+.game-world-card [data-component-kind="text"],
 .game-world-card [data-component-kind="shape"],
 .game-world-card [data-component-kind="image"],
 .game-world-card [data-component-kind="slider"] {
@@ -417,7 +414,7 @@ func pageCSS() string {
   user-select: auto;
 }
 
-.game-world-card [data-component-kind="textarea"][data-dragging="true"],
+.game-world-card [data-component-kind="text"][data-dragging="true"],
 .game-world-card [data-component-kind="shape"][data-dragging="true"],
 .game-world-card [data-component-kind="image"][data-dragging="true"],
 .game-world-card [data-component-kind="slider"][data-dragging="true"] {

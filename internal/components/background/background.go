@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
 const Kind = "background"
@@ -25,23 +26,27 @@ func DefaultConfig() Config {
 }
 
 func Presets() []card.LibraryItem {
-	return []card.LibraryItem{
-		preset("seed-background-night-sky", "Night Sky", "Deep blue night-sky background", Config{
+	return Definition().Presets()
+}
+
+func typedPresets() []card.TypedPreset[Config] {
+	return []card.TypedPreset[Config]{
+		{ID: "seed-background-night-sky", Name: "Night Sky", Description: "Deep blue night-sky background", Config: Config{
 			BackgroundColor: "#0f172a",
 			CSS:             "background: radial-gradient(circle at top, #1e3a8a 0%, #0f172a 60%, #020617 100%);",
-		}),
-		preset("seed-background-parchment", "Parchment", "Warm parchment background", Config{
+		}},
+		{ID: "seed-background-parchment", Name: "Parchment", Description: "Warm parchment background", Config: Config{
 			BackgroundColor: "#f5e6c8",
 			CSS:             "background: linear-gradient(135deg, #f8edd5 0%, #e7cfa6 100%);",
-		}),
-		preset("seed-background-mint", "Soft Mint", "Soft mint studio background", Config{
+		}},
+		{ID: "seed-background-mint", Name: "Soft Mint", Description: "Soft mint studio background", Config: Config{
 			BackgroundColor: "#d9f99d",
 			CSS:             "background: linear-gradient(145deg, #ecfccb 0%, #bbf7d0 100%); box-shadow: inset 0 0 40px rgba(22, 101, 52, 0.12);",
-		}),
+		}},
 	}
 }
 
-func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
+func RandomGenerated(seed int64, level int) schema.GeneratedConfig[Config] {
 	options := []struct {
 		description string
 		part        Config
@@ -95,79 +100,87 @@ func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
 		})
 	}
 	pick := options[rand.New(rand.NewSource(seed)).Intn(len(options))]
-	return design.GeneratedConfig[Config]{
+	return schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   pick.description,
 		Config:        pick.part,
 	}
 }
 
-func Spec() design.Spec[Config] {
-	return design.Spec[Config]{
-		ComponentKind: Kind,
-		SystemPrompt:  systemPrompt,
-		Example:       exampleJSON,
-		Normalize:     NormalizeGenerated,
-		Validate:      ValidateGenerated,
-	}
-}
-
 func Definition() card.Definition {
-	return card.Definition{
-		ComponentKind: Kind,
-		Contribute: func(node card.Node, _ card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeConfig[Config](node)
-			if err != nil {
-				return card.Contribution{}, err
-			}
-			generated := design.GeneratedConfig[Config]{
-				ComponentKind: Kind,
-				Description:   "Rendered background",
-				Config:        part,
-			}
-			NormalizeGenerated(&generated)
-			if issues := ValidateGenerated(generated); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid background config at %s: %s", issues[0].Path, issues[0].Message)
-			}
+	return card.MustDefine(card.TypedDefinition[Config]{
+		Kind: Kind, Label: "Background", Structure: card.StructureLeaf,
+		Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		Render: func(_ card.Node, part Config, _ card.RenderContext) (card.Contribution, error) {
 			styles := map[string]string{
 				"background-color": part.BackgroundColor,
 			}
-			for property, value := range design.CSSDeclarations(part.CSS, AllowedCSS()) {
+			for property, value := range schema.CSSDeclarations(part.CSS, AllowedCSS()) {
 				styles[property] = value
 			}
 			return card.Contribution{ShellStyle: styles}, nil
 		},
-	}
+		Controls:   []card.Control[Config]{backgroundColorControl()},
+		Install:    &card.InstallSpec{Policy: card.InstallReplaceKind},
+		Presets:    typedPresets(),
+		Generation: &card.TypedGenerationDefinition[Config]{SystemPrompt: systemPrompt, Example: exampleJSON, Random: RandomGenerated},
+	})
 }
 
-func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
+func backgroundColorControl() card.Control[Config] {
+	control := card.StringControl("background_color", "style", "color", "Color", "background-color", func(c Config) string { return c.BackgroundColor }, func(c *Config, value string) { c.BackgroundColor = value })
+	control.Apply = func(config *Config, raw json.RawMessage) error {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return fmt.Errorf("value must be a string")
+		}
+		config.BackgroundColor = value
+		declarations := schema.CSSDeclarations(config.CSS, AllowedCSS())
+		declarations["background"] = value
+		declarations["background-color"] = value
+		config.CSS = cssString(declarations)
+		return nil
+	}
+	return control
+}
+
+func NormalizeConfig(config Config) Config {
+	config.BackgroundColor = strings.TrimSpace(config.BackgroundColor)
+	config.CSS = strings.TrimSpace(config.CSS)
+	return config
+}
+
+func ValidateConfig(config Config) []schema.Issue {
+	return ValidateGenerated(schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Background config", Config: config})
+}
+
+func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
 	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config.BackgroundColor = strings.TrimSpace(generated.Config.BackgroundColor)
-	generated.Config.CSS = strings.TrimSpace(generated.Config.CSS)
+	generated.Config = NormalizeConfig(generated.Config)
 }
 
-func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
-	var issues []design.Issue
+func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
+	var issues []schema.Issue
 	color := strings.TrimSpace(generated.Config.BackgroundColor)
 	if color == "" {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.background_color",
 			Code:    "required",
 			Message: "background_color is required",
 		})
-	} else if !design.IsAllowedColor(color) {
-		issues = append(issues, design.Issue{
+	} else if !schema.IsAllowedColor(color) {
+		issues = append(issues, schema.Issue{
 			Path:    "config.background_color",
 			Code:    "invalid_color",
 			Message: "background_color must be a hex, rgb, rgba, hsl, or hsla color",
 			Actual:  color,
 		})
 	}
-	issues = append(issues, design.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
+	issues = append(issues, schema.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
 	return issues
 }
 
@@ -179,22 +192,23 @@ func AllowedCSS() map[string]struct{} {
 	}
 }
 
-func preset(id, name, description string, part Config) card.LibraryItem {
-	raw, err := json.Marshal(part)
-	if err != nil {
-		panic(err)
+func cssString(declarations map[string]string) string {
+	keys := make([]string, 0, len(declarations))
+	for key := range declarations {
+		keys = append(keys, key)
 	}
-	return card.LibraryItem{
-		ID:            id,
-		Name:          name,
-		ComponentKind: Kind,
-		Description:   description,
-		Config:        raw,
+	sort.Strings(keys)
+	var out strings.Builder
+	for _, key := range keys {
+		if value := strings.TrimSpace(declarations[key]); value != "" {
+			fmt.Fprintf(&out, "%s: %s; ", key, value)
+		}
 	}
+	return strings.TrimSpace(out.String())
 }
 
 const exampleJSON = `{
-  "componentKind": "background",
+  "component_kind": "background",
   "description": "A deep slate card background with a subtle radial highlight.",
   "config": {
     "background_color": "#111827",
@@ -206,7 +220,7 @@ const systemPrompt = `You generate safe declarative JSON configs for the backgro
 Return exactly one JSON object and no markdown, prose, HTML, selectors, braces, or JavaScript.
 The JSON object must match this shape:
 {
-  "componentKind": "background",
+  "component_kind": "background",
   "description": "short human-readable summary",
   "config": {
     "background_color": "#111827",
@@ -214,7 +228,7 @@ The JSON object must match this shape:
   }
 }
 Rules:
-- componentKind must be "background".
+- component_kind must be "background".
 - description is required.
 - background_color must be a safe color: hex, rgb(...), rgba(...), hsl(...), or hsla(...).
 - css is optional inline declarations only.

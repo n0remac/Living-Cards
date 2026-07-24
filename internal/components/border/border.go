@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
 const Kind = "border"
@@ -31,29 +32,36 @@ func DefaultConfig() Config {
 }
 
 func Presets() []card.LibraryItem {
-	return []card.LibraryItem{
-		preset("seed-border-cyan-glow", "Cyan Glow", "Glowing cyan sci-fi border", Config{
+	return Definition().Presets()
+}
+
+func typedPresets() []card.TypedPreset[Config] {
+	return []card.TypedPreset[Config]{
+		{ID: "seed-border-cyan-glow", Name: "Cyan Glow", Description: "Glowing cyan sci-fi border", Config: Config{
 			BorderWidthPX:  1,
 			BorderRadiusPX: 24,
 			BorderColor:    "rgba(103, 232, 249, 0.7)",
+			BorderStyle:    "solid",
 			CSS:            "border: 1px solid rgba(103, 232, 249, 0.7); box-shadow: 0 0 24px rgba(34, 211, 238, 0.25);",
-		}),
-		preset("seed-border-brass-frame", "Brass Frame", "Old brass picture-frame border", Config{
+		}},
+		{ID: "seed-border-brass-frame", Name: "Brass Frame", Description: "Old brass picture-frame border", Config: Config{
 			BorderWidthPX:  3,
 			BorderRadiusPX: 18,
 			BorderColor:    "#b08d57",
+			BorderStyle:    "double",
 			CSS:            "border: 3px double #b08d57; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);",
-		}),
-		preset("seed-border-ink-line", "Ink Line", "Fine black editorial border", Config{
+		}},
+		{ID: "seed-border-ink-line", Name: "Ink Line", Description: "Fine black editorial border", Config: Config{
 			BorderWidthPX:  1,
 			BorderRadiusPX: 8,
 			BorderColor:    "#111827",
+			BorderStyle:    "solid",
 			CSS:            "border: 1px solid #111827;",
-		}),
+		}},
 	}
 }
 
-func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
+func RandomGenerated(seed int64, level int) schema.GeneratedConfig[Config] {
 	options := []struct {
 		description string
 		part        Config
@@ -119,41 +127,21 @@ func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
 		})
 	}
 	pick := options[rand.New(rand.NewSource(seed)).Intn(len(options))]
-	return design.GeneratedConfig[Config]{
+	if pick.part.BorderStyle == "" {
+		pick.part.BorderStyle = "solid"
+	}
+	return schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   pick.description,
 		Config:        pick.part,
 	}
 }
 
-func Spec() design.Spec[Config] {
-	return design.Spec[Config]{
-		ComponentKind: Kind,
-		SystemPrompt:  systemPrompt,
-		Example:       exampleJSON,
-		Normalize:     NormalizeGenerated,
-		Validate:      ValidateGenerated,
-	}
-}
-
 func Definition() card.Definition {
-	return card.Definition{
-		ComponentKind: Kind,
-		Contribute: func(node card.Node, _ card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeConfig[Config](node)
-			if err != nil {
-				return card.Contribution{}, err
-			}
-			generated := design.GeneratedConfig[Config]{
-				ComponentKind: Kind,
-				Description:   "Rendered border",
-				Config:        part,
-			}
-			NormalizeGenerated(&generated)
-			if issues := ValidateGenerated(generated); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid border config at %s: %s", issues[0].Path, issues[0].Message)
-			}
-			part = generated.Config
+	return card.MustDefine(card.TypedDefinition[Config]{
+		Kind: Kind, Label: "Border", Structure: card.StructureLeaf,
+		Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		Render: func(_ card.Node, part Config, _ card.RenderContext) (card.Contribution, error) {
 			styles := map[string]string{
 				"border":        fmt.Sprintf("%dpx %s %s", part.BorderWidthPX, part.BorderStyle, part.BorderColor),
 				"border-color":  part.BorderColor,
@@ -161,32 +149,45 @@ func Definition() card.Definition {
 				"border-style":  part.BorderStyle,
 				"border-width":  fmt.Sprintf("%dpx", part.BorderWidthPX),
 			}
-			for property, value := range design.CSSDeclarations(part.CSS, AllowedCSS()) {
+			for property, value := range schema.CSSDeclarations(part.CSS, AllowedCSS()) {
 				styles[property] = value
 			}
 			return card.Contribution{ShellStyle: styles}, nil
 		},
-	}
+		Controls: []card.Control[Config]{
+			borderStringControl("border_color", "Color", "color", "border-color", func(c Config) string { return c.BorderColor }, func(c *Config, v string) { c.BorderColor = v }),
+			borderIntControl("border_width_px", "Width", "border-width", 0, 16, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
+			borderIntControl("border_radius_px", "Radius", "border-radius", 0, 64, func(c Config) int { return c.BorderRadiusPX }, func(c *Config, v int) { c.BorderRadiusPX = v }),
+			borderStringControl("border_style", "Line type", "select", "border-style", func(c Config) string { return c.BorderStyle }, func(c *Config, v string) { c.BorderStyle = v }, card.Option("Solid", "solid"), card.Option("Dashed", "dashed"), card.Option("Dotted", "dotted"), card.Option("Double", "double")),
+		},
+		Install: &card.InstallSpec{Policy: card.InstallReplaceKind}, Presets: typedPresets(),
+		Generation: &card.TypedGenerationDefinition[Config]{SystemPrompt: systemPrompt, Example: exampleJSON, Random: RandomGenerated},
+	})
 }
 
-func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
+func NormalizeConfig(config Config) Config {
+	config.BorderColor = strings.TrimSpace(config.BorderColor)
+	config.BorderStyle = strings.TrimSpace(config.BorderStyle)
+	config.CSS = strings.TrimSpace(config.CSS)
+	return config
+}
+func ValidateConfig(config Config) []schema.Issue {
+	return ValidateGenerated(schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Border config", Config: config})
+}
+
+func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
 	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config.BorderColor = strings.TrimSpace(generated.Config.BorderColor)
-	generated.Config.BorderStyle = normalizeBorderStyle(generated.Config.BorderStyle)
-	generated.Config.CSS = strings.TrimSpace(generated.Config.CSS)
-	generated.Config.BorderWidthPX = clamp(generated.Config.BorderWidthPX, 0, 16)
-	generated.Config.BorderRadiusPX = clamp(generated.Config.BorderRadiusPX, 0, 64)
+	generated.Config = NormalizeConfig(generated.Config)
 }
 
-func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
-	var issues []design.Issue
-	generated.Config.BorderStyle = normalizeBorderStyle(generated.Config.BorderStyle)
+func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
+	var issues []schema.Issue
 	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 16 {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_width_px",
 			Code:    "out_of_range",
 			Message: "border_width_px must be between 0 and 16",
@@ -194,7 +195,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if generated.Config.BorderRadiusPX < 0 || generated.Config.BorderRadiusPX > 64 {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_radius_px",
 			Code:    "out_of_range",
 			Message: "border_radius_px must be between 0 and 64",
@@ -203,13 +204,13 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 	}
 	color := strings.TrimSpace(generated.Config.BorderColor)
 	if color == "" {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_color",
 			Code:    "required",
 			Message: "border_color is required",
 		})
-	} else if !design.IsAllowedColor(color) {
-		issues = append(issues, design.Issue{
+	} else if !schema.IsAllowedColor(color) {
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_color",
 			Code:    "invalid_color",
 			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
@@ -217,7 +218,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if !borderStyleAllowed(generated.Config.BorderStyle) {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_style",
 			Code:    "invalid_option",
 			Message: "border_style must be solid, dashed, dotted, or double",
@@ -225,7 +226,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 			Allowed: []string{"solid", "dashed", "dotted", "double"},
 		})
 	}
-	issues = append(issues, design.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
+	issues = append(issues, schema.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
 	return issues
 }
 
@@ -245,14 +246,6 @@ func AllowedStyles() []string {
 	return []string{"solid", "dashed", "dotted", "double"}
 }
 
-func normalizeBorderStyle(style string) string {
-	style = strings.ToLower(strings.TrimSpace(style))
-	if style == "" {
-		return "solid"
-	}
-	return style
-}
-
 func borderStyleAllowed(style string) bool {
 	for _, candidate := range AllowedStyles() {
 		if style == candidate {
@@ -262,32 +255,56 @@ func borderStyleAllowed(style string) bool {
 	return false
 }
 
-func clamp(value, min, max int) int {
-	if value < min {
-		return min
+func borderStringControl(id, label, kind, property string, get func(Config) string, set func(*Config, string), options ...card.ControlOption) card.Control[Config] {
+	control := card.StringControl(id, "style", kind, label, property, get, set, options...)
+	base := control.Apply
+	control.Apply = func(c *Config, raw json.RawMessage) error {
+		if err := base(c, raw); err != nil {
+			return err
+		}
+		syncBorderCSS(c)
+		return nil
 	}
-	if value > max {
-		return max
-	}
-	return value
+	return control
 }
-
-func preset(id, name, description string, part Config) card.LibraryItem {
-	raw, err := json.Marshal(part)
-	if err != nil {
-		panic(err)
+func borderIntControl(id, label, property string, min, max int, get func(Config) int, set func(*Config, int)) card.Control[Config] {
+	control := card.IntControl(id, "style", "range", label, property, min, max, 1, get, set)
+	base := control.Apply
+	control.Apply = func(c *Config, raw json.RawMessage) error {
+		if err := base(c, raw); err != nil {
+			return err
+		}
+		syncBorderCSS(c)
+		return nil
 	}
-	return card.LibraryItem{
-		ID:            id,
-		Name:          name,
-		ComponentKind: Kind,
-		Description:   description,
-		Config:        raw,
+	return control
+}
+func syncBorderCSS(config *Config) {
+	declarations := schema.CSSDeclarations(config.CSS, AllowedCSS())
+	declarations["border"] = fmt.Sprintf("%dpx %s %s", config.BorderWidthPX, config.BorderStyle, config.BorderColor)
+	declarations["border-color"] = config.BorderColor
+	declarations["border-radius"] = fmt.Sprintf("%dpx", config.BorderRadiusPX)
+	declarations["border-style"] = config.BorderStyle
+	declarations["border-width"] = fmt.Sprintf("%dpx", config.BorderWidthPX)
+	config.CSS = cssString(declarations)
+}
+func cssString(declarations map[string]string) string {
+	keys := make([]string, 0, len(declarations))
+	for key := range declarations {
+		keys = append(keys, key)
 	}
+	sort.Strings(keys)
+	var out strings.Builder
+	for _, key := range keys {
+		if value := strings.TrimSpace(declarations[key]); value != "" {
+			fmt.Fprintf(&out, "%s: %s; ", key, value)
+		}
+	}
+	return strings.TrimSpace(out.String())
 }
 
 const exampleJSON = `{
-  "componentKind": "border",
+  "component_kind": "border",
   "description": "A soft translucent border with a large rounded radius.",
   "config": {
     "border_width_px": 1,
@@ -301,7 +318,7 @@ const systemPrompt = `You generate safe declarative JSON configs for the border 
 Return exactly one JSON object and no markdown, prose, HTML, selectors, braces, or JavaScript.
 The JSON object must match this shape:
 {
-  "componentKind": "border",
+  "component_kind": "border",
   "description": "short human-readable summary",
   "config": {
     "border_width_px": 1,
@@ -311,10 +328,10 @@ The JSON object must match this shape:
   }
 }
 Rules:
-- componentKind must be "border".
+- component_kind must be "border".
 - description is required.
-- border_width_px is clamped to 0..16.
-- border_radius_px is clamped to 0..64.
+- border_width_px must be within 0..16.
+- border_radius_px must be within 0..64.
 - border_color must be a safe color: hex, rgb(...), rgba(...), hsl(...), or hsla(...).
 - css is optional inline declarations only.
 - Allowed css properties: border, border-color, border-width, border-radius, border-image, box-shadow.

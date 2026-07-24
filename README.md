@@ -7,11 +7,11 @@ The current game content is pure JSON under `internal/game/decks/`. Runtime code
 ## What Is In The App
 
 - A visible world-deck game served at `/`.
-- Server-rendered card previews built from `card.Document` JSON, including background, border, textarea, shape, image, slider, text-input, and button components.
+- Server-rendered card previews built from strictly validated `card.Document` JSON, including background, border, text, shape, image, slider, text-input, and button components.
 - Data-driven deck packs with document variants, declarative use and form-submission rules, component-presence conditions, and chained `loadDeck` effects.
 - A seeded puzzle path where opening the door loads the fuse room, using the fuse on the switch loads the generator room, and powering the generator reveals an Archive Terminal password puzzle.
 - A reusable Blank Controller that accumulates separately collected components through the full-screen edit workflow. Component cards remain pending until save and are retained on cancel.
-- A retained draft-card designer API for generating and applying background, border, textarea, shape, and image configs.
+- A registry-driven draft-card designer API for editing every component that declares controls and generating AI configs for background, border, text, and image.
 - In-memory state only; restarting the server resets the game and draft card state.
 
 ## Requirements
@@ -77,7 +77,7 @@ Draft card/designer:
 - `POST /api/draft-card/components`
 - `POST /api/draft-card/configs/background`
 - `POST /api/draft-card/configs/border`
-- `POST /api/draft-card/configs/textarea`
+- `POST /api/draft-card/configs/text`
 - `POST /api/draft-card/configs/image`
 
 See `project.md` for the full architecture notes and current known gaps.

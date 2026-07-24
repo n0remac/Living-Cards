@@ -12,7 +12,12 @@
       "id": "archive-terminal",
       "name": "Archive Terminal",
       "kind": "world",
-      "tags": ["archive", "terminal", "puzzle", "locked"],
+      "tags": [
+        "archive",
+        "terminal",
+        "puzzle",
+        "locked"
+      ],
       "collectible": false,
       "state": {
         "controllerMounted": false,
@@ -26,35 +31,90 @@
           "name": "Archive Terminal",
           "root": {
             "id": "archive-terminal-root",
-            "componentKind": "card",
-            "config": {"padding_px": 18, "shadow": "0 24px 60px rgba(0,0,0,0.34)"},
+            "config": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
             "children": [
               {
                 "id": "archive-terminal-background",
-                "componentKind": "background",
-                "config": {"background_color": "#111827", "css": "background: linear-gradient(160deg, #111827 0%, #020617 100%);"}
+                "config": {
+                  "background_color": "#111827",
+                  "css": "background: linear-gradient(160deg, #111827 0%, #020617 100%);"
+                },
+                "component_kind": "background"
               },
               {
                 "id": "archive-terminal-border",
-                "componentKind": "border",
-                "config": {"border_width_px": 2, "border_radius_px": 22, "border_color": "#a78bfa", "border_style": "solid", "css": "border: 2px solid #a78bfa; border-radius: 22px;"}
+                "config": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#a78bfa",
+                  "border_style": "solid",
+                  "css": "border: 2px solid #a78bfa; border-radius: 22px;"
+                },
+                "component_kind": "border"
               },
               {
                 "id": "archive-terminal-title",
-                "componentKind": "textarea",
-                "config": {"content": "ARCHIVE TERMINAL", "font_family": "mono", "font_size_px": 22, "font_weight": 800, "font_style": "normal", "color": "#ede9fe", "align": "center", "position": "center", "x": 50, "y": 26, "padding_px": 4, "css": "text-align: center;"}
+                "config": {
+                  "content": "ARCHIVE TERMINAL",
+                  "font_family": "mono",
+                  "font_size_px": 22,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#ede9fe",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 26,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
               },
               {
                 "id": "archive-terminal-status",
-                "componentKind": "textarea",
-                "config": {"content": "NO INPUT HARDWARE", "font_family": "mono", "font_size_px": 18, "font_weight": 700, "font_style": "normal", "color": "#fca5a5", "align": "center", "position": "center", "x": 50, "y": 52, "padding_px": 10, "background_color": "rgba(127,29,29,0.30)", "border_color": "#f87171", "border_width_px": 1, "border_radius_px": 10, "css": "text-align: center;"}
+                "config": {
+                  "content": "NO INPUT HARDWARE",
+                  "font_family": "mono",
+                  "font_size_px": 18,
+                  "font_weight": 700,
+                  "font_style": "normal",
+                  "color": "#fca5a5",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 52,
+                  "padding_px": 10,
+                  "background_color": "rgba(127,29,29,0.30)",
+                  "border_color": "#f87171",
+                  "border_width_px": 1,
+                  "border_radius_px": 10,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
               },
               {
                 "id": "archive-terminal-body",
-                "componentKind": "textarea",
-                "config": {"content": "The terminal has two empty sockets: one for text entry and one for submission.", "font_family": "system", "font_size_px": 15, "font_weight": 600, "font_style": "normal", "color": "#ddd6fe", "align": "center", "position": "center", "x": 50, "y": 82, "padding_px": 4, "css": "text-align: center;"}
+                "config": {
+                  "content": "The terminal has two empty sockets: one for text entry and one for submission.",
+                  "font_family": "system",
+                  "font_size_px": 15,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#ddd6fe",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 82,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
               }
-            ]
+            ],
+            "component_kind": "card"
           }
         },
         "login": {
@@ -62,30 +122,68 @@
           "name": "Archive Terminal",
           "root": {
             "id": "archive-terminal-root",
-            "componentKind": "card",
-            "config": {"padding_px": 18, "shadow": "0 24px 60px rgba(0,0,0,0.34)"},
+            "config": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
             "children": [
               {
                 "id": "archive-terminal-background",
-                "componentKind": "background",
-                "config": {"background_color": "#172554", "css": "background: linear-gradient(160deg, #172554 0%, #111827 100%);"}
+                "config": {
+                  "background_color": "#172554",
+                  "css": "background: linear-gradient(160deg, #172554 0%, #111827 100%);"
+                },
+                "component_kind": "background"
               },
               {
                 "id": "archive-terminal-border",
-                "componentKind": "border",
-                "config": {"border_width_px": 2, "border_radius_px": 22, "border_color": "#60a5fa", "border_style": "solid", "css": "border: 2px solid #60a5fa; border-radius: 22px;"}
+                "config": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#60a5fa",
+                  "border_style": "solid",
+                  "css": "border: 2px solid #60a5fa; border-radius: 22px;"
+                },
+                "component_kind": "border"
               },
               {
                 "id": "archive-terminal-title",
-                "componentKind": "textarea",
-                "config": {"content": "ARCHIVE LOGIN", "font_family": "mono", "font_size_px": 22, "font_weight": 800, "font_style": "normal", "color": "#dbeafe", "align": "center", "position": "center", "x": 50, "y": 20, "padding_px": 4, "css": "text-align: center;"}
+                "config": {
+                  "content": "ARCHIVE LOGIN",
+                  "font_family": "mono",
+                  "font_size_px": 22,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#dbeafe",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 20,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
               },
               {
                 "id": "archive-terminal-body",
-                "componentKind": "textarea",
-                "config": {"content": "Enter the operator password.", "font_family": "system", "font_size_px": 14, "font_weight": 600, "font_style": "normal", "color": "#bfdbfe", "align": "center", "position": "center", "x": 50, "y": 34, "padding_px": 4, "css": "text-align: center;"}
+                "config": {
+                  "content": "Enter the operator password.",
+                  "font_family": "system",
+                  "font_size_px": 14,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#bfdbfe",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 34,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
               }
-            ]
+            ],
+            "component_kind": "card"
           }
         },
         "unlocked": {
@@ -93,30 +191,68 @@
           "name": "Archive Terminal",
           "root": {
             "id": "archive-terminal-root",
-            "componentKind": "card",
-            "config": {"padding_px": 18, "shadow": "0 24px 60px rgba(16,185,129,0.28)"},
+            "config": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(16,185,129,0.28)"
+            },
             "children": [
               {
                 "id": "archive-terminal-background",
-                "componentKind": "background",
-                "config": {"background_color": "#052e2b", "css": "background: linear-gradient(160deg, #052e2b 0%, #064e3b 100%);"}
+                "config": {
+                  "background_color": "#052e2b",
+                  "css": "background: linear-gradient(160deg, #052e2b 0%, #064e3b 100%);"
+                },
+                "component_kind": "background"
               },
               {
                 "id": "archive-terminal-border",
-                "componentKind": "border",
-                "config": {"border_width_px": 2, "border_radius_px": 22, "border_color": "#34d399", "border_style": "solid", "css": "border: 2px solid #34d399; border-radius: 22px; box-shadow: 0 0 28px rgba(52,211,153,0.24);"}
+                "config": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#34d399",
+                  "border_style": "solid",
+                  "css": "border: 2px solid #34d399; border-radius: 22px; box-shadow: 0 0 28px rgba(52,211,153,0.24);"
+                },
+                "component_kind": "border"
               },
               {
                 "id": "archive-terminal-title",
-                "componentKind": "textarea",
-                "config": {"content": "ARCHIVE OPEN", "font_family": "mono", "font_size_px": 25, "font_weight": 800, "font_style": "normal", "color": "#d1fae5", "align": "center", "position": "center", "x": 50, "y": 34, "padding_px": 4, "css": "text-align: center;"}
+                "config": {
+                  "content": "ARCHIVE OPEN",
+                  "font_family": "mono",
+                  "font_size_px": 25,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#d1fae5",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 34,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
               },
               {
                 "id": "archive-terminal-body",
-                "componentKind": "textarea",
-                "config": {"content": "NIGHTJAR accepted. The sealed records unfold across the screen.", "font_family": "system", "font_size_px": 17, "font_weight": 700, "font_style": "normal", "color": "#ecfdf5", "align": "center", "position": "center", "x": 50, "y": 64, "padding_px": 8, "css": "text-align: center;"}
+                "config": {
+                  "content": "NIGHTJAR accepted. The sealed records unfold across the screen.",
+                  "font_family": "system",
+                  "font_size_px": 17,
+                  "font_weight": 700,
+                  "font_style": "normal",
+                  "color": "#ecfdf5",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 64,
+                  "padding_px": 8,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
               }
-            ]
+            ],
+            "component_kind": "card"
           }
         }
       }
@@ -125,9 +261,15 @@
       "id": "archive-operator-log",
       "name": "Operator Log",
       "kind": "clue",
-      "tags": ["archive", "clue", "password"],
+      "tags": [
+        "archive",
+        "clue",
+        "password"
+      ],
       "collectible": false,
-      "state": {"useful": true},
+      "state": {
+        "useful": true
+      },
       "initialDocument": "default",
       "documents": {
         "default": {
@@ -135,14 +277,72 @@
           "name": "Operator Log",
           "root": {
             "id": "archive-operator-log-root",
-            "componentKind": "card",
-            "config": {"padding_px": 18, "shadow": "0 24px 60px rgba(0,0,0,0.34)"},
+            "config": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
             "children": [
-              {"id": "archive-log-background", "componentKind": "background", "config": {"background_color": "#292524", "css": "background: #292524;"}},
-              {"id": "archive-log-border", "componentKind": "border", "config": {"border_width_px": 2, "border_radius_px": 18, "border_color": "#d6d3d1", "border_style": "solid", "css": "border: 2px solid #d6d3d1; border-radius: 18px;"}},
-              {"id": "archive-log-title", "componentKind": "textarea", "config": {"content": "OPERATOR LOG", "font_family": "mono", "font_size_px": 22, "font_weight": 800, "font_style": "normal", "color": "#fafaf9", "align": "center", "position": "center", "x": 50, "y": 24, "padding_px": 4, "css": "text-align: center;"}},
-              {"id": "archive-log-body", "componentKind": "textarea", "config": {"content": "Night shift reminder:\nThe archive password is NIGHTJAR.\nChange it before inspection.", "font_family": "mono", "font_size_px": 16, "font_weight": 600, "font_style": "normal", "color": "#fef3c7", "align": "left", "position": "center", "x": 50, "y": 58, "padding_px": 12, "background_color": "rgba(0,0,0,0.20)", "border_color": "#78716c", "border_width_px": 1, "border_radius_px": 10, "css": "line-height: 1.5;"}}
-            ]
+              {
+                "id": "archive-log-background",
+                "config": {
+                  "background_color": "#292524",
+                  "css": "background: #292524;"
+                },
+                "component_kind": "background"
+              },
+              {
+                "id": "archive-log-border",
+                "config": {
+                  "border_width_px": 2,
+                  "border_radius_px": 18,
+                  "border_color": "#d6d3d1",
+                  "border_style": "solid",
+                  "css": "border: 2px solid #d6d3d1; border-radius: 18px;"
+                },
+                "component_kind": "border"
+              },
+              {
+                "id": "archive-log-title",
+                "config": {
+                  "content": "OPERATOR LOG",
+                  "font_family": "mono",
+                  "font_size_px": 22,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#fafaf9",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 24,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
+              },
+              {
+                "id": "archive-log-body",
+                "config": {
+                  "content": "Night shift reminder:\nThe archive password is NIGHTJAR.\nChange it before inspection.",
+                  "font_family": "mono",
+                  "font_size_px": 16,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#fef3c7",
+                  "align": "left",
+                  "position": "center",
+                  "x": 50,
+                  "y": 58,
+                  "padding_px": 12,
+                  "background_color": "rgba(0,0,0,0.20)",
+                  "border_color": "#78716c",
+                  "border_width_px": 1,
+                  "border_radius_px": 10,
+                  "css": "line-height: 1.5;"
+                },
+                "component_kind": "text"
+              }
+            ],
+            "component_kind": "card"
           }
         }
       }
@@ -151,20 +351,27 @@
       "id": "archive-password-input-component",
       "name": "Text Form Component",
       "kind": "item",
-      "tags": ["item", "component", "textinput-component", "archive"],
+      "tags": [
+        "item",
+        "component",
+        "text-input-component",
+        "archive"
+      ],
       "collectible": true,
       "state": {
-        "componentKind": "textinput",
-        "componentId": "archive-password-input",
-        "componentDefaults": {
-          "form_id": "archive-login",
-          "name": "password",
-          "label": "Password",
-          "placeholder": "Enter operator password",
-          "input_type": "password",
-          "x": 50,
-          "y": 54,
-          "width": 72
+        "component_template": {
+          "component_kind": "text_input",
+          "component_id": "archive-password-input",
+          "config": {
+            "form_id": "archive-login",
+            "name": "password",
+            "label": "Password",
+            "placeholder": "Enter operator password",
+            "input_type": "password",
+            "x": 50,
+            "y": 54,
+            "width": 72
+          }
         }
       },
       "initialDocument": "default",
@@ -174,14 +381,68 @@
           "name": "Text Form Component",
           "root": {
             "id": "archive-password-input-component-root",
-            "componentKind": "card",
-            "config": {"padding_px": 18, "shadow": "0 24px 60px rgba(0,0,0,0.34)"},
+            "config": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
             "children": [
-              {"id": "archive-input-card-background", "componentKind": "background", "config": {"background_color": "#172554", "css": "background: #172554;"}},
-              {"id": "archive-input-card-border", "componentKind": "border", "config": {"border_width_px": 2, "border_radius_px": 22, "border_color": "#60a5fa", "border_style": "solid", "css": "border: 2px solid #60a5fa; border-radius: 22px;"}},
-              {"id": "archive-input-card-title", "componentKind": "textarea", "config": {"content": "TEXT FORM", "font_family": "system", "font_size_px": 22, "font_weight": 800, "font_style": "normal", "color": "#dbeafe", "align": "center", "position": "center", "x": 50, "y": 28, "padding_px": 4, "css": "text-align: center;"}},
-              {"id": "archive-input-card-body", "componentKind": "textarea", "config": {"content": "Adds a masked text field to a controller.", "font_family": "system", "font_size_px": 16, "font_weight": 600, "font_style": "normal", "color": "#eff6ff", "align": "center", "position": "center", "x": 50, "y": 66, "padding_px": 4, "css": "text-align: center;"}}
-            ]
+              {
+                "id": "archive-input-card-background",
+                "config": {
+                  "background_color": "#172554",
+                  "css": "background: #172554;"
+                },
+                "component_kind": "background"
+              },
+              {
+                "id": "archive-input-card-border",
+                "config": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#60a5fa",
+                  "border_style": "solid",
+                  "css": "border: 2px solid #60a5fa; border-radius: 22px;"
+                },
+                "component_kind": "border"
+              },
+              {
+                "id": "archive-input-card-title",
+                "config": {
+                  "content": "TEXT FORM",
+                  "font_family": "system",
+                  "font_size_px": 22,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#dbeafe",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 28,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
+              },
+              {
+                "id": "archive-input-card-body",
+                "config": {
+                  "content": "Adds a masked text field to a controller.",
+                  "font_family": "system",
+                  "font_size_px": 16,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#eff6ff",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 66,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
+              }
+            ],
+            "component_kind": "card"
           }
         }
       }
@@ -190,17 +451,24 @@
       "id": "archive-submit-button-component",
       "name": "Submit Button Component",
       "kind": "item",
-      "tags": ["item", "component", "button-component", "archive"],
+      "tags": [
+        "item",
+        "component",
+        "button-component",
+        "archive"
+      ],
       "collectible": true,
       "state": {
-        "componentKind": "button",
-        "componentId": "archive-submit-button",
-        "componentDefaults": {
-          "form_id": "archive-login",
-          "label": "Unlock",
-          "x": 50,
-          "y": 76,
-          "width": 44
+        "component_template": {
+          "component_kind": "button",
+          "component_id": "archive-submit-button",
+          "config": {
+            "form_id": "archive-login",
+            "label": "Unlock",
+            "x": 50,
+            "y": 76,
+            "width": 44
+          }
         }
       },
       "initialDocument": "default",
@@ -210,14 +478,68 @@
           "name": "Submit Button Component",
           "root": {
             "id": "archive-submit-button-component-root",
-            "componentKind": "card",
-            "config": {"padding_px": 18, "shadow": "0 24px 60px rgba(0,0,0,0.34)"},
+            "config": {
+              "padding_px": 18,
+              "shadow": "0 24px 60px rgba(0,0,0,0.34)"
+            },
             "children": [
-              {"id": "archive-button-card-background", "componentKind": "background", "config": {"background_color": "#052e2b", "css": "background: #052e2b;"}},
-              {"id": "archive-button-card-border", "componentKind": "border", "config": {"border_width_px": 2, "border_radius_px": 22, "border_color": "#34d399", "border_style": "solid", "css": "border: 2px solid #34d399; border-radius: 22px;"}},
-              {"id": "archive-button-card-title", "componentKind": "textarea", "config": {"content": "SUBMIT BUTTON", "font_family": "system", "font_size_px": 21, "font_weight": 800, "font_style": "normal", "color": "#d1fae5", "align": "center", "position": "center", "x": 50, "y": 28, "padding_px": 4, "css": "text-align: center;"}},
-              {"id": "archive-button-card-body", "componentKind": "textarea", "config": {"content": "Submits a form with the matching form ID.", "font_family": "system", "font_size_px": 16, "font_weight": 600, "font_style": "normal", "color": "#ecfdf5", "align": "center", "position": "center", "x": 50, "y": 66, "padding_px": 4, "css": "text-align: center;"}}
-            ]
+              {
+                "id": "archive-button-card-background",
+                "config": {
+                  "background_color": "#052e2b",
+                  "css": "background: #052e2b;"
+                },
+                "component_kind": "background"
+              },
+              {
+                "id": "archive-button-card-border",
+                "config": {
+                  "border_width_px": 2,
+                  "border_radius_px": 22,
+                  "border_color": "#34d399",
+                  "border_style": "solid",
+                  "css": "border: 2px solid #34d399; border-radius: 22px;"
+                },
+                "component_kind": "border"
+              },
+              {
+                "id": "archive-button-card-title",
+                "config": {
+                  "content": "SUBMIT BUTTON",
+                  "font_family": "system",
+                  "font_size_px": 21,
+                  "font_weight": 800,
+                  "font_style": "normal",
+                  "color": "#d1fae5",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 28,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
+              },
+              {
+                "id": "archive-button-card-body",
+                "config": {
+                  "content": "Submits a form with the matching form ID.",
+                  "font_family": "system",
+                  "font_size_px": 16,
+                  "font_weight": 600,
+                  "font_style": "normal",
+                  "color": "#ecfdf5",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 66,
+                  "padding_px": 4,
+                  "css": "text-align: center;"
+                },
+                "component_kind": "text"
+              }
+            ],
+            "component_kind": "card"
           }
         }
       }
@@ -226,40 +548,110 @@
   "useRules": [
     {
       "id": "blank-controller-mounts-archive-login",
-      "source": {"id": "blank-controller"},
-      "target": {"id": "archive-terminal"},
-      "flagConditions": {"archiveControllerMounted": false},
+      "source": {
+        "id": "blank-controller"
+      },
+      "target": {
+        "id": "archive-terminal"
+      },
+      "flagConditions": {
+        "archiveControllerMounted": false
+      },
       "sourceComponentConditions": [
-        {"componentKind": "textinput", "componentId": "archive-password-input"},
-        {"componentKind": "button", "componentId": "archive-submit-button"}
+        {
+          "component_kind": "text_input",
+          "component_id": "archive-password-input"
+        },
+        {
+          "component_kind": "button",
+          "component_id": "archive-submit-button"
+        }
       ],
       "failureMessage": "The terminal needs both a text form and its matching submit button.",
       "effects": [
-        {"effectKind": "setDocumentVariant", "cardId": "archive-terminal", "variant": "login"},
-        {"effectKind": "copySourceComponentToTarget", "cardId": "archive-terminal", "componentKind": "textinput", "sourceComponentId": "archive-password-input"},
-        {"effectKind": "copySourceComponentToTarget", "cardId": "archive-terminal", "componentKind": "button", "sourceComponentId": "archive-submit-button"},
-        {"effectKind": "setFlag", "flag": "archiveControllerMounted", "value": true},
-        {"effectKind": "setCardState", "cardId": "archive-terminal", "key": "controllerMounted", "value": true},
-        {"effectKind": "setMessage", "message": "The controller seats into the terminal. The archive login is ready."}
+        {
+          "effectKind": "setDocumentVariant",
+          "cardId": "archive-terminal",
+          "variant": "login"
+        },
+        {
+          "effectKind": "copySourceComponentToTarget",
+          "cardId": "archive-terminal",
+          "component_kind": "text_input",
+          "source_component_id": "archive-password-input"
+        },
+        {
+          "effectKind": "copySourceComponentToTarget",
+          "cardId": "archive-terminal",
+          "component_kind": "button",
+          "source_component_id": "archive-submit-button"
+        },
+        {
+          "effectKind": "setFlag",
+          "flag": "archiveControllerMounted",
+          "value": true
+        },
+        {
+          "effectKind": "setCardState",
+          "cardId": "archive-terminal",
+          "key": "controllerMounted",
+          "value": true
+        },
+        {
+          "effectKind": "setMessage",
+          "message": "The controller seats into the terminal. The archive login is ready."
+        }
       ]
     }
   ],
   "formSubmitRules": [
     {
       "id": "nightjar-unlocks-archive",
-      "target": {"id": "archive-terminal"},
+      "target": {
+        "id": "archive-terminal"
+      },
       "formId": "archive-login",
-      "flagConditions": {"archiveControllerMounted": true, "archiveUnlocked": false},
+      "flagConditions": {
+        "archiveControllerMounted": true,
+        "archiveUnlocked": false
+      },
       "fieldConditions": [
-        {"name": "password", "valueEquals": "NIGHTJAR", "trimSpace": true, "caseSensitive": false}
+        {
+          "name": "password",
+          "valueEquals": "NIGHTJAR",
+          "trimSpace": true,
+          "caseSensitive": false
+        }
       ],
       "failureMessage": "ACCESS DENIED. The archive password is incorrect.",
       "effects": [
-        {"effectKind": "setFlag", "flag": "archiveUnlocked", "value": true},
-        {"effectKind": "setCardState", "cardId": "archive-terminal", "key": "unlocked", "value": true},
-        {"effectKind": "removeCardTags", "cardId": "archive-terminal", "tags": ["locked"]},
-        {"effectKind": "setDocumentVariant", "cardId": "archive-terminal", "variant": "unlocked"},
-        {"effectKind": "setMessage", "message": "NIGHTJAR accepted. The archive opens."}
+        {
+          "effectKind": "setFlag",
+          "flag": "archiveUnlocked",
+          "value": true
+        },
+        {
+          "effectKind": "setCardState",
+          "cardId": "archive-terminal",
+          "key": "unlocked",
+          "value": true
+        },
+        {
+          "effectKind": "removeCardTags",
+          "cardId": "archive-terminal",
+          "tags": [
+            "locked"
+          ]
+        },
+        {
+          "effectKind": "setDocumentVariant",
+          "cardId": "archive-terminal",
+          "variant": "unlocked"
+        },
+        {
+          "effectKind": "setMessage",
+          "message": "NIGHTJAR accepted. The archive opens."
+        }
       ]
     }
   ]

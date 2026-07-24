@@ -1,13 +1,15 @@
 package game
 
 import (
+	"bytes"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/components/slider"
 )
 
 //go:embed decks/*.json
@@ -65,8 +67,8 @@ type CardMatcherDefinition struct {
 }
 
 type ComponentConditionDefinition struct {
-	ComponentKind string `json:"componentKind"`
-	ComponentID   string `json:"componentId,omitempty"`
+	ComponentKind string `json:"component_kind"`
+	ComponentID   string `json:"component_id,omitempty"`
 	ValueEquals   *int   `json:"valueEquals,omitempty"`
 }
 
@@ -90,9 +92,9 @@ type FormFieldConditionDefinition struct {
 type RuleEffectDefinition struct {
 	EffectKind        string   `json:"effectKind"`
 	CardID            string   `json:"cardId,omitempty"`
-	SourceComponentID string   `json:"sourceComponentId,omitempty"`
-	ComponentID       string   `json:"componentId,omitempty"`
-	ComponentKind     string   `json:"componentKind,omitempty"`
+	SourceComponentID string   `json:"source_component_id,omitempty"`
+	ComponentID       string   `json:"component_id,omitempty"`
+	ComponentKind     string   `json:"component_kind,omitempty"`
 	ApplyOnFailure    bool     `json:"applyOnFailure,omitempty"`
 	Key               string   `json:"key,omitempty"`
 	Flag              string   `json:"flag,omitempty"`
@@ -103,18 +105,18 @@ type RuleEffectDefinition struct {
 	DeckID            string   `json:"deckId,omitempty"`
 }
 
-func LoadEmbeddedSeededWorldDeck() (DeckDefinition, error) {
-	definition, err := LoadEmbeddedDeck(SeededWorldDeckDefinition)
+func LoadEmbeddedSeededWorldDeck(registry *cardcomponent.Registry) (DeckDefinition, error) {
+	definition, err := LoadEmbeddedDeck(registry, SeededWorldDeckDefinition)
 	if err != nil {
 		return DeckDefinition{}, err
 	}
-	if err := ValidateDeckDefinition(definition); err != nil {
+	if err := ValidateDeckDefinition(registry, definition); err != nil {
 		return DeckDefinition{}, err
 	}
 	return definition, nil
 }
 
-func LoadEmbeddedDeck(deckID string) (DeckDefinition, error) {
+func LoadEmbeddedDeck(registry *cardcomponent.Registry, deckID string) (DeckDefinition, error) {
 	deckID = strings.TrimSpace(deckID)
 	if err := validateDeckID(deckID); err != nil {
 		return DeckDefinition{}, err
@@ -123,51 +125,83 @@ func LoadEmbeddedDeck(deckID string) (DeckDefinition, error) {
 	if err != nil {
 		return DeckDefinition{}, fmt.Errorf("read embedded deck %q: %w", deckID, err)
 	}
-	definition, err := decodeDeckDefinition(raw)
+	definition, err := decodeDeckDefinition(registry, raw)
 	if err != nil {
 		return DeckDefinition{}, err
 	}
 	if definition.ID != deckID {
 		return DeckDefinition{}, fmt.Errorf("embedded deck %q has id %q", deckID, definition.ID)
 	}
-	if _, err := validateDeckCards(definition); err != nil {
+	if _, err := validateDeckCards(registry, definition); err != nil {
 		return DeckDefinition{}, err
 	}
 	return definition, nil
 }
 
-func DecodeDeckDefinition(raw []byte) (DeckDefinition, error) {
-	definition, err := decodeDeckDefinition(raw)
+func DecodeDeckDefinition(registry *cardcomponent.Registry, raw []byte) (DeckDefinition, error) {
+	definition, err := decodeDeckDefinition(registry, raw)
 	if err != nil {
 		return DeckDefinition{}, err
 	}
-	if err := ValidateDeckDefinition(definition); err != nil {
+	if err := ValidateDeckDefinition(registry, definition); err != nil {
 		return DeckDefinition{}, err
 	}
 	return definition, nil
 }
 
-func decodeDeckDefinition(raw []byte) (DeckDefinition, error) {
-	var definition DeckDefinition
-	if err := json.Unmarshal(raw, &definition); err != nil {
+func decodeDeckDefinition(registry *cardcomponent.Registry, raw []byte) (DeckDefinition, error) {
+	type cardWire struct {
+		ID              string                     `json:"id"`
+		Name            string                     `json:"name"`
+		Kind            string                     `json:"kind"`
+		Tags            []string                   `json:"tags,omitempty"`
+		Collectible     bool                       `json:"collectible"`
+		State           map[string]any             `json:"state,omitempty"`
+		InitialDocument string                     `json:"initialDocument"`
+		Documents       map[string]json.RawMessage `json:"documents"`
+	}
+	type deckWire struct {
+		ID                  string                     `json:"id"`
+		Name                string                     `json:"name"`
+		InitialActiveCardID string                     `json:"initialActiveCardId"`
+		InitialMessage      string                     `json:"initialMessage"`
+		InitialSolvedFlags  map[string]bool            `json:"initialSolvedFlags,omitempty"`
+		Cards               []cardWire                 `json:"cards"`
+		UseRules            []UseRuleDefinition        `json:"useRules,omitempty"`
+		FormSubmitRules     []FormSubmitRuleDefinition `json:"formSubmitRules,omitempty"`
+	}
+	var wire deckWire
+	if err := decodeStrictJSON(raw, &wire); err != nil {
 		return DeckDefinition{}, fmt.Errorf("decode deck definition: %w", err)
 	}
+	definition := DeckDefinition{ID: wire.ID, Name: wire.Name, InitialActiveCardID: wire.InitialActiveCardID, InitialMessage: wire.InitialMessage, InitialSolvedFlags: wire.InitialSolvedFlags, UseRules: wire.UseRules, FormSubmitRules: wire.FormSubmitRules}
+	for _, cardWire := range wire.Cards {
+		card := CardDefinition{ID: cardWire.ID, Name: cardWire.Name, Kind: cardWire.Kind, Tags: cardWire.Tags, Collectible: cardWire.Collectible, State: cardWire.State, InitialDocument: cardWire.InitialDocument, Documents: map[string]cardcomponent.Document{}}
+		for variant, documentRaw := range cardWire.Documents {
+			document, issues := registry.DecodeDocument(documentRaw)
+			if len(issues) > 0 {
+				return DeckDefinition{}, fmt.Errorf("card %q document %q at %s: %s", card.ID, variant, issues[0].Path, issues[0].Message)
+			}
+			card.Documents[variant] = document
+		}
+		definition.Cards = append(definition.Cards, card)
+	}
 	return definition, nil
 }
 
-func ValidateDeckDefinition(definition DeckDefinition) error {
-	cardsByID, err := validateDeckCards(definition)
+func ValidateDeckDefinition(registry *cardcomponent.Registry, definition DeckDefinition) error {
+	cardsByID, err := validateDeckCards(registry, definition)
 	if err != nil {
 		return err
 	}
-	if err := validateRules(definition.UseRules, cardsByID); err != nil {
+	if err := validateRules(registry, definition.UseRules, cardsByID); err != nil {
 		return err
 	}
-	return validateFormSubmitRules(definition.FormSubmitRules, cardsByID)
+	return validateFormSubmitRules(registry, definition.FormSubmitRules, cardsByID)
 }
 
-func ValidateDeckPackDefinition(definition DeckDefinition, existingCards map[string]CardDefinition) error {
-	cardsByID, err := validateDeckCards(definition)
+func ValidateDeckPackDefinition(registry *cardcomponent.Registry, definition DeckDefinition, existingCards map[string]CardDefinition) error {
+	cardsByID, err := validateDeckCards(registry, definition)
 	if err != nil {
 		return err
 	}
@@ -177,13 +211,13 @@ func ValidateDeckPackDefinition(definition DeckDefinition, existingCards map[str
 		}
 		cardsByID[cardID] = card
 	}
-	if err := validateRules(definition.UseRules, cardsByID); err != nil {
+	if err := validateRules(registry, definition.UseRules, cardsByID); err != nil {
 		return err
 	}
-	return validateFormSubmitRules(definition.FormSubmitRules, cardsByID)
+	return validateFormSubmitRules(registry, definition.FormSubmitRules, cardsByID)
 }
 
-func validateDeckCards(definition DeckDefinition) (map[string]CardDefinition, error) {
+func validateDeckCards(registry *cardcomponent.Registry, definition DeckDefinition) (map[string]CardDefinition, error) {
 	if strings.TrimSpace(definition.ID) == "" {
 		return nil, fmt.Errorf("deck id is required")
 	}
@@ -220,8 +254,11 @@ func validateDeckCards(definition DeckDefinition) (map[string]CardDefinition, er
 			if document.Root.ComponentKind != cardcomponent.Kind {
 				return nil, fmt.Errorf("card %q document variant %q root type must be %q", card.ID, variant, cardcomponent.Kind)
 			}
+			if _, issues := registry.CanonicalizeDocument(document); len(issues) > 0 {
+				return nil, fmt.Errorf("card %q document variant %q at %s: %s", card.ID, variant, issues[0].Path, issues[0].Message)
+			}
 		}
-		if err := validateComponentCardState(card.ID, card.State); err != nil {
+		if err := validateComponentCardState(registry, card.ID, card.State); err != nil {
 			return nil, err
 		}
 		cardsByID[card.ID] = card
@@ -232,9 +269,9 @@ func validateDeckCards(definition DeckDefinition) (map[string]CardDefinition, er
 	return cardsByID, nil
 }
 
-func validateRules(rules []UseRuleDefinition, cardsByID map[string]CardDefinition) error {
+func validateRules(registry *cardcomponent.Registry, rules []UseRuleDefinition, cardsByID map[string]CardDefinition) error {
 	for _, rule := range rules {
-		if err := validateRuleDefinition(rule, cardsByID); err != nil {
+		if err := validateRuleDefinition(registry, rule, cardsByID); err != nil {
 			if strings.TrimSpace(rule.ID) == "" {
 				return err
 			}
@@ -244,9 +281,9 @@ func validateRules(rules []UseRuleDefinition, cardsByID map[string]CardDefinitio
 	return nil
 }
 
-func validateFormSubmitRules(rules []FormSubmitRuleDefinition, cardsByID map[string]CardDefinition) error {
+func validateFormSubmitRules(registry *cardcomponent.Registry, rules []FormSubmitRuleDefinition, cardsByID map[string]CardDefinition) error {
 	for _, rule := range rules {
-		if err := validateFormSubmitRule(rule, cardsByID); err != nil {
+		if err := validateFormSubmitRule(registry, rule, cardsByID); err != nil {
 			if strings.TrimSpace(rule.ID) == "" {
 				return err
 			}
@@ -256,11 +293,11 @@ func validateFormSubmitRules(rules []FormSubmitRuleDefinition, cardsByID map[str
 	return nil
 }
 
-func validateFormSubmitRule(rule FormSubmitRuleDefinition, cardsByID map[string]CardDefinition) error {
+func validateFormSubmitRule(registry *cardcomponent.Registry, rule FormSubmitRuleDefinition, cardsByID map[string]CardDefinition) error {
 	if err := validateMatcher("target", rule.Target, cardsByID); err != nil {
 		return err
 	}
-	if !safeComponentID(rule.FormID) {
+	if !cardcomponent.ValidComponentID(rule.FormID) {
 		return fmt.Errorf("formId must contain only letters, numbers, hyphens, and underscores")
 	}
 	if len(rule.FieldConditions) == 0 {
@@ -268,7 +305,7 @@ func validateFormSubmitRule(rule FormSubmitRuleDefinition, cardsByID map[string]
 	}
 	seenFields := map[string]bool{}
 	for _, condition := range rule.FieldConditions {
-		if !safeComponentID(condition.Name) {
+		if !cardcomponent.ValidComponentID(condition.Name) {
 			return fmt.Errorf("field condition name must contain only letters, numbers, hyphens, and underscores")
 		}
 		if seenFields[condition.Name] {
@@ -286,7 +323,7 @@ func validateFormSubmitRule(rule FormSubmitRuleDefinition, cardsByID map[string]
 		if effect.EffectKind == EffectCopySourceComponent {
 			return fmt.Errorf("form submit rules do not support %s effects", EffectCopySourceComponent)
 		}
-		if err := validateRuleEffect(effect, rule.Target, cardsByID); err != nil {
+		if err := validateRuleEffect(registry, effect, rule.Target, cardsByID); err != nil {
 			return err
 		}
 	}
@@ -310,7 +347,7 @@ func validateDeckID(deckID string) error {
 	return nil
 }
 
-func validateRuleDefinition(rule UseRuleDefinition, cardsByID map[string]CardDefinition) error {
+func validateRuleDefinition(registry *cardcomponent.Registry, rule UseRuleDefinition, cardsByID map[string]CardDefinition) error {
 	if err := validateMatcher("source", rule.Source, cardsByID); err != nil {
 		return err
 	}
@@ -320,36 +357,39 @@ func validateRuleDefinition(rule UseRuleDefinition, cardsByID map[string]CardDef
 	if len(rule.Effects) == 0 {
 		return fmt.Errorf("effects are required")
 	}
-	if err := validateComponentConditions(rule.SourceComponentConditions); err != nil {
+	if err := validateComponentConditions(registry, rule.SourceComponentConditions); err != nil {
 		return err
 	}
 	for _, effect := range rule.Effects {
-		if err := validateRuleEffect(effect, rule.Target, cardsByID); err != nil {
+		if err := validateRuleEffect(registry, effect, rule.Target, cardsByID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func validateComponentConditions(conditions []ComponentConditionDefinition) error {
+func validateComponentConditions(registry *cardcomponent.Registry, conditions []ComponentConditionDefinition) error {
 	for _, condition := range conditions {
 		kind := strings.TrimSpace(condition.ComponentKind)
 		if kind == "" {
-			return fmt.Errorf("source component condition requires componentKind")
+			return fmt.Errorf("source component condition requires component_kind")
 		}
-		if _, ok := installableComponentDefinitionForKind(kind); !ok {
-			return fmt.Errorf("unsupported source component condition componentKind %q", condition.ComponentKind)
+		definition, ok := registry.Lookup(kind)
+		if !ok {
+			return fmt.Errorf("unsupported source component condition component_kind %q", condition.ComponentKind)
 		}
-		if condition.ComponentID != "" && !safeComponentID(condition.ComponentID) {
-			return fmt.Errorf("source component condition componentId %q is invalid", condition.ComponentID)
+		if condition.ComponentID != "" && !cardcomponent.ValidComponentID(condition.ComponentID) {
+			return fmt.Errorf("source component condition component_id %q is invalid", condition.ComponentID)
 		}
 		if condition.ValueEquals != nil {
-			if kind != slider.Kind {
-				return fmt.Errorf("source component condition valueEquals is only supported for %q", slider.Kind)
+			found := false
+			for _, property := range definition.PropertyIDs() {
+				if property == "value" {
+					found = true
+				}
 			}
-			value := *condition.ValueEquals
-			if value < 0 || value > 100 {
-				return fmt.Errorf("slider source component condition valueEquals must be between 0 and 100")
+			if !found {
+				return fmt.Errorf("source component condition valueEquals requires a numeric value property")
 			}
 		}
 	}
@@ -373,7 +413,7 @@ func validateMatcher(name string, matcher CardMatcherDefinition, cardsByID map[s
 	return nil
 }
 
-func validateRuleEffect(effect RuleEffectDefinition, target CardMatcherDefinition, cardsByID map[string]CardDefinition) error {
+func validateRuleEffect(registry *cardcomponent.Registry, effect RuleEffectDefinition, target CardMatcherDefinition, cardsByID map[string]CardDefinition) error {
 	switch effect.EffectKind {
 	case EffectSetFlag:
 		if strings.TrimSpace(effect.Flag) == "" {
@@ -421,20 +461,39 @@ func validateRuleEffect(effect RuleEffectDefinition, target CardMatcherDefinitio
 			return fmt.Errorf("%s effect requires valid deckId: %w", EffectLoadDeck, err)
 		}
 	case EffectCopySourceComponent:
-		if _, ok := installableComponentDefinitionForKind(effect.ComponentKind); !ok {
-			return fmt.Errorf("%s effect requires an installable componentKind", EffectCopySourceComponent)
+		definition, ok := registry.Lookup(effect.ComponentKind)
+		if !ok {
+			return fmt.Errorf("%s effect requires a registered component_kind", EffectCopySourceComponent)
 		}
-		if effect.SourceComponentID != "" && !safeComponentID(effect.SourceComponentID) {
-			return fmt.Errorf("%s effect sourceComponentId %q is invalid", EffectCopySourceComponent, effect.SourceComponentID)
+		if _, ok := definition.Install(); !ok {
+			return fmt.Errorf("%s effect requires an installable component_kind", EffectCopySourceComponent)
 		}
-		if effect.ComponentID != "" && !safeComponentID(effect.ComponentID) {
-			return fmt.Errorf("%s effect componentId %q is invalid", EffectCopySourceComponent, effect.ComponentID)
+		if effect.SourceComponentID != "" && !cardcomponent.ValidComponentID(effect.SourceComponentID) {
+			return fmt.Errorf("%s effect source_component_id %q is invalid", EffectCopySourceComponent, effect.SourceComponentID)
+		}
+		if effect.ComponentID != "" && !cardcomponent.ValidComponentID(effect.ComponentID) {
+			return fmt.Errorf("%s effect component_id %q is invalid", EffectCopySourceComponent, effect.ComponentID)
 		}
 		if _, err := effectCardDefinition(effect, target, cardsByID); err != nil {
 			return err
 		}
 	default:
 		return fmt.Errorf("unsupported effect kind %q", effect.EffectKind)
+	}
+	return nil
+}
+
+func decodeStrictJSON(raw []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return err
 	}
 	return nil
 }

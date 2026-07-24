@@ -358,7 +358,7 @@ function renderSelection(gameState: GameState): void {
 }
 
 function canDragComponent(hit: CardHit): boolean {
-  return hit.componentKind === "shape" || hit.componentKind === "textarea";
+  return hit.componentKind === "shape" || hit.componentKind === "text";
 }
 
 function componentElement(preview: HTMLElement, componentId: string): HTMLElement | null {

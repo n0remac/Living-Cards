@@ -10,12 +10,12 @@ import (
 func TestNormalizeAndValidateConfig(t *testing.T) {
 	t.Parallel()
 
-	part := NormalizeConfig(Config{InputType: " PASSWORD ", X: -4, Y: 120, Width: 4})
-	if part.FormID != "controller-form" || part.Name != "text" || part.InputType != "password" || part.X != 0 || part.Y != 100 || part.Width != 12 {
+	part := NormalizeConfig(Config{FormID: " form ", Name: " field ", Label: " Label ", InputType: " PASSWORD ", X: -4, Y: 120, Width: 4})
+	if part.FormID != "form" || part.Name != "field" || part.Label != "Label" || part.InputType != "PASSWORD" || part.X != -4 || part.Y != 120 || part.Width != 4 {
 		t.Fatalf("part = %#v", part)
 	}
-	if issues := ValidateConfig(part); len(issues) != 0 {
-		t.Fatalf("issues = %#v", issues)
+	if issues := ValidateConfig(part); len(issues) == 0 {
+		t.Fatal("ValidateConfig() issues = nil, want noncanonical type and invalid ranges")
 	}
 	if issues := ValidateConfig(Config{FormID: "bad id", Name: "password", Label: "Password", InputType: "email", Width: 50}); len(issues) < 2 {
 		t.Fatalf("issues = %#v, want invalid form id and type", issues)
@@ -36,7 +36,7 @@ func TestRenderLayerUsesPrefixedSemanticForm(t *testing.T) {
 		`id="game-world-archive-archive-login"`,
 		`data-card-form`,
 		`data-form-id="archive-login"`,
-		`data-component-kind="textinput"`,
+		`data-component-kind="text_input"`,
 		`name="password"`,
 		`type="password"`,
 		`for="game-world-archive-archive-password-input-input"`,

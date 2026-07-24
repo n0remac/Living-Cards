@@ -131,7 +131,7 @@ function renderDesignLibraryItems(items: DesignLibraryItem[]): void {
   const list = byID<HTMLDivElement>("design-library-list");
   if (!list) return;
   const configKind = readConfigKind();
-  const visibleItems = items.filter((item) => item.componentKind === configKind);
+  const visibleItems = items.filter((item) => item.component_kind === configKind);
   if (!visibleItems.length) {
     list.innerHTML = '<div class="rounded-md border border-dashed border-[var(--app-border)] px-3 py-4 text-center text-sm text-[var(--app-fg-soft)]">No saved designs.</div>';
     return;
@@ -250,7 +250,7 @@ function readConfigKind(): string {
   const select = byID<HTMLSelectElement>("config-target");
   switch (select?.value) {
     case "border":
-    case "textarea":
+    case "text":
     case "image":
       return select.value;
     default:
@@ -259,8 +259,8 @@ function readConfigKind(): string {
 }
 
 function bindAddComponentControls(): void {
-  byID<HTMLButtonElement>("add-textarea-component-btn")?.addEventListener("click", () => {
-    void addComponent("textarea");
+  byID<HTMLButtonElement>("add-text-component-btn")?.addEventListener("click", () => {
+    void addComponent("text");
   });
   byID<HTMLButtonElement>("add-shape-component-btn")?.addEventListener("click", () => {
     void addComponent("shape");
@@ -274,7 +274,7 @@ function bindAddComponentControls(): void {
   });
 }
 
-async function addComponent(componentKind: "textarea" | "shape"): Promise<void> {
+async function addComponent(componentKind: "text" | "shape"): Promise<void> {
   try {
     setDesignerStatus("Adding component...", false);
     const response = await addDraftComponent(componentKind);

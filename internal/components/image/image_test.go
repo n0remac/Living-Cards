@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
 func TestValidateGeneratedAcceptsSafeImageDataURL(t *testing.T) {
 	t.Parallel()
 
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Safe image",
 		Config:        DefaultConfig(),
@@ -40,7 +40,7 @@ func TestValidateGeneratedRejectsUnsafeImageSources(t *testing.T) {
 			t.Parallel()
 			part := DefaultConfig()
 			part.Src = test.src
-			generated := design.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Unsafe", Config: part}
+			generated := schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Unsafe", Config: part}
 			NormalizeGenerated(&generated)
 			issues := ValidateGenerated(generated)
 			if len(issues) == 0 || issues[0].Code != test.code {

@@ -1,6 +1,7 @@
 package textinput
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -9,10 +10,10 @@ import (
 	godom "github.com/n0remac/GoDom/html"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
-const Kind = "textinput"
+const Kind = "text_input"
 
 type Config struct {
 	FormID      string `json:"form_id"`
@@ -39,58 +40,40 @@ func DefaultConfig() Config {
 }
 
 func Definition() card.Definition {
-	return card.Definition{
-		ComponentKind: Kind,
-		Contribute: func(node card.Node, renderContext card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeConfig[Config](node)
-			if err != nil {
-				return card.Contribution{}, err
-			}
-			part = NormalizeConfig(part)
-			if issues := ValidateConfig(part); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid textinput config at %s: %s", issues[0].Path, issues[0].Message)
-			}
+	return card.MustDefine(card.TypedDefinition[Config]{
+		Kind: Kind, Label: "Text Input", Structure: card.StructureLeaf, Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		Render: func(node card.Node, part Config, renderContext card.RenderContext) (card.Contribution, error) {
 			return card.Contribution{Layers: []*godom.Node{RenderLayerWithContext(node.ID, part, renderContext)}}, nil
 		},
-	}
+		Controls: []card.Control[Config]{
+			card.StringControl("form_id", "form", "text", "Form ID", "form", func(c Config) string { return c.FormID }, func(c *Config, v string) { c.FormID = v }),
+			card.StringControl("name", "form", "text", "Field name", "name", func(c Config) string { return c.Name }, func(c *Config, v string) { c.Name = v }),
+			card.StringControl("label", "content", "text", "Label", "label", func(c Config) string { return c.Label }, func(c *Config, v string) { c.Label = v }),
+			card.StringControl("placeholder", "content", "text", "Placeholder", "placeholder", func(c Config) string { return c.Placeholder }, func(c *Config, v string) { c.Placeholder = v }),
+			card.StringControl("input_type", "content", "select", "Input type", "type", func(c Config) string { return c.InputType }, func(c *Config, v string) { c.InputType = v }, card.Option("Text", "text"), card.Option("Password", "password")),
+			positionControl(),
+			card.IntControl("x", "layout", "range", "X position", "left", 0, 100, 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
+			card.IntControl("y", "layout", "range", "Y position", "top", 0, 100, 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
+			card.IntControl("width", "layout", "range", "Width", "width", 12, 100, 1, func(c Config) int { return c.Width }, func(c *Config, v int) { c.Width = v }),
+		},
+		Properties: []card.Property[Config]{
+			{ID: "form_id", Kind: schema.PropertyString, Read: func(c Config) (schema.PropertyValue, bool) { return schema.StringValue(c.FormID), true }},
+			{ID: "name", Kind: schema.PropertyString, Read: func(c Config) (schema.PropertyValue, bool) { return schema.StringValue(c.Name), true }},
+		}, Roles: []card.ComponentRole{card.RoleFormField}, Install: &card.InstallSpec{Policy: card.InstallAppend},
+	})
 }
 
 func NormalizeConfig(part Config) Config {
-	defaults := DefaultConfig()
 	part.FormID = strings.TrimSpace(part.FormID)
-	if part.FormID == "" {
-		part.FormID = defaults.FormID
-	}
 	part.Name = strings.TrimSpace(part.Name)
-	if part.Name == "" {
-		part.Name = defaults.Name
-	}
 	part.Label = strings.TrimSpace(part.Label)
-	if part.Label == "" {
-		part.Label = defaults.Label
-	}
 	part.Placeholder = strings.TrimSpace(part.Placeholder)
-	part.InputType = strings.ToLower(strings.TrimSpace(part.InputType))
-	if part.InputType == "" {
-		part.InputType = defaults.InputType
-	}
-	if part.X == 0 {
-		part.X = defaults.X
-	}
-	if part.Y == 0 {
-		part.Y = defaults.Y
-	}
-	if part.Width == 0 {
-		part.Width = defaults.Width
-	}
-	part.X = clamp(part.X, 0, 100)
-	part.Y = clamp(part.Y, 0, 100)
-	part.Width = clamp(part.Width, 12, 100)
+	part.InputType = strings.TrimSpace(part.InputType)
 	return part
 }
 
-func ValidateConfig(part Config) []design.Issue {
-	var issues []design.Issue
+func ValidateConfig(part Config) []schema.Issue {
+	var issues []schema.Issue
 	if !safeToken(part.FormID) {
 		issues = append(issues, issue("config.form_id", "form_id must contain only letters, numbers, hyphens, or underscores"))
 	}
@@ -180,8 +163,8 @@ func safeToken(value string) bool {
 	return true
 }
 
-func issue(path, message string) design.Issue {
-	return design.Issue{Path: path, Code: "invalid", Message: message}
+func issue(path, message string) schema.Issue {
+	return schema.Issue{Path: path, Code: "invalid", Message: message}
 }
 
 func styleString(styles map[string]string) string {
@@ -200,12 +183,17 @@ func styleString(styles map[string]string) string {
 	return strings.TrimSpace(out.String())
 }
 
-func clamp(value, min, max int) int {
-	if value < min {
-		return min
+func positionControl() card.Control[Config] {
+	type position struct {
+		X int `json:"x"`
+		Y int `json:"y"`
 	}
-	if value > max {
-		return max
-	}
-	return value
+	return card.Control[Config]{ID: "position", Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
+		var value position
+		if err := card.DecodeControlObject(raw, &value); err != nil {
+			return fmt.Errorf("value must include integer x and y: %w", err)
+		}
+		c.X, c.Y = value.X, value.Y
+		return nil
+	}}
 }

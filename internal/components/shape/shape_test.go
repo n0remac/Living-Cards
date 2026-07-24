@@ -5,13 +5,13 @@ import (
 	"testing"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
 func TestValidateGeneratedAcceptsSafeShapeConfig(t *testing.T) {
 	t.Parallel()
 
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Safe shape",
 		Config: Config{
@@ -35,7 +35,7 @@ func TestValidateGeneratedAcceptsSafeShapeConfig(t *testing.T) {
 func TestValidateGeneratedRejectsInvalidShapeConfig(t *testing.T) {
 	t.Parallel()
 
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Invalid shape",
 		Config: Config{

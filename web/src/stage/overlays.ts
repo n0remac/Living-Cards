@@ -178,7 +178,7 @@ function labelForTarget(componentKind: string): string {
       return "Background";
     case "border":
       return "Border";
-    case "textarea":
+    case "text":
       return "Text";
     default:
       return "Card";
@@ -187,7 +187,7 @@ function labelForTarget(componentKind: string): string {
 
 function labelForComponent(componentKind: string): string {
   switch (componentKind) {
-    case "textarea":
+    case "text":
       return "Text";
     case "shape":
       return "Shape";

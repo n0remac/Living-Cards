@@ -11,12 +11,9 @@ import (
 
 	. "github.com/n0remac/GoDom/html"
 
-	"github.com/n0remac/Living-Card/internal/components/background"
-	"github.com/n0remac/Living-Card/internal/components/border"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
-	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
-	"github.com/n0remac/Living-Card/internal/components/shape"
-	"github.com/n0remac/Living-Card/internal/components/textarea"
+	"github.com/n0remac/Living-Card/internal/components/catalog"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 	"github.com/n0remac/Living-Card/internal/design"
 	"github.com/n0remac/Living-Card/internal/game"
 )
@@ -24,15 +21,19 @@ import (
 type Dependencies struct {
 	Patch      design.ChatClient
 	PatchModel string
+	Registry   *cardcomponent.Registry
 }
 
 func Register(mux *http.ServeMux, deps Dependencies) {
-	state := newDesignerState()
-	gameSession := game.NewSession()
+	if deps.Registry == nil {
+		deps.Registry = catalog.MustNew()
+	}
+	state := newDesignerState(deps.Registry)
+	gameSession := game.NewSession(deps.Registry)
 	mux.HandleFunc("/", pageHandler())
 	mux.HandleFunc("/api/", http.NotFound)
 	mux.HandleFunc("/assets/", frontendAssetHandler())
-	mux.HandleFunc("/api/game/", gameResourceHandler(gameSession))
+	mux.HandleFunc("/api/game/", gameResourceHandler(deps.Registry, gameSession))
 	mux.HandleFunc("/api/draft-card", draftCardResourceHandler(deps, state))
 	mux.HandleFunc("/api/draft-card/", draftCardResourceHandler(deps, state))
 }
@@ -111,7 +112,7 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 				return
 			}
 			document, library := state.snapshot()
-			writeRenderedDraftCard(w, document, library)
+			writeRenderedDraftCard(state.registry, w, document, library)
 			return
 		}
 		if path == "interactive" {
@@ -120,7 +121,7 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 				return
 			}
 			document, gameState, library := state.interactiveSnapshot()
-			writeInteractiveDraftCard(w, document, gameState, library)
+			writeInteractiveDraftCard(state.registry, w, document, gameState, library)
 			return
 		}
 		if path == "reset" {
@@ -129,7 +130,7 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 				return
 			}
 			document, library := state.reset()
-			writeRenderedDraftCard(w, document, library)
+			writeRenderedDraftCard(state.registry, w, document, library)
 			return
 		}
 		if path == "apply-config" {
@@ -195,18 +196,17 @@ func draftCardResourceHandler(deps Dependencies, state *designerState) http.Hand
 				}
 			}
 		}
-		switch parts[1] {
-		case background.Kind:
-			generateDraftConfig(w, r, deps, request.Instruction, request.OldCode, request.ComponentID, background.Spec())
-		case border.Kind:
-			generateDraftConfig(w, r, deps, request.Instruction, request.OldCode, request.ComponentID, border.Spec())
-		case textarea.Kind:
-			generateDraftConfig(w, r, deps, request.Instruction, request.OldCode, request.ComponentID, textarea.Spec())
-		case imagecomponent.Kind:
-			generateDraftConfig(w, r, deps, request.Instruction, request.OldCode, request.ComponentID, imagecomponent.Spec())
-		default:
+		definition, ok := deps.Registry.Lookup(parts[1])
+		if !ok {
 			http.NotFound(w, r)
+			return
 		}
+		generation, supported := definition.Generation()
+		if !supported || !generation.SupportsAI() {
+			http.NotFound(w, r)
+			return
+		}
+		generateDraftConfig(w, r, deps, request.Instruction, request.OldCode, request.ComponentID, definition)
 	}
 }
 
@@ -217,7 +217,7 @@ type applyDraftConfigRequest struct {
 
 type applyDraftConfigResponse struct {
 	Document         cardcomponent.Document      `json:"document"`
-	NormalizedConfig any                         `json:"normalized_config"`
+	NormalizedConfig json.RawMessage             `json:"normalized_config"`
 	PreviewHTML      string                      `json:"preview_html"`
 	Library          []cardcomponent.LibraryItem `json:"library"`
 }
@@ -246,15 +246,10 @@ type tapDraftCardRequest struct {
 }
 
 type controlChangeDraftCardRequest struct {
-	ComponentID    string          `json:"componentId,omitempty"`
-	Trait          string          `json:"trait,omitempty"`
-	Control        string          `json:"control,omitempty"`
-	Value          json.RawMessage `json:"value,omitempty"`
-	ComponentKind  string          `json:"componentKind"`
-	Color          string          `json:"color"`
-	SecondaryColor string          `json:"secondaryColor,omitempty"`
-	Gradient       bool            `json:"gradient,omitempty"`
-	Angle          int             `json:"angle,omitempty"`
+	ComponentID string          `json:"componentId"`
+	Trait       string          `json:"trait,omitempty"`
+	Control     string          `json:"control"`
+	Value       json.RawMessage `json:"value"`
 }
 
 type interactDraftCardRequest struct {
@@ -279,7 +274,7 @@ type addDraftComponentRequest struct {
 type tapDraftCardResponse struct {
 	Document      cardcomponent.Document      `json:"document"`
 	GameState     GameState                   `json:"gameState"`
-	AppliedConfig any                         `json:"appliedConfig,omitempty"`
+	AppliedConfig json.RawMessage             `json:"appliedConfig,omitempty"`
 	PreviewHTML   string                      `json:"preview_html"`
 	Events        []CardEvent                 `json:"events"`
 	Overlay       *ComponentOverlay           `json:"overlay,omitempty"`
@@ -304,14 +299,14 @@ func applyDraftConfigHandler(w http.ResponseWriter, r *http.Request, state *desi
 		return
 	}
 	if len(request.GeneratedConfig) == 0 {
-		writeApplyConfigError(w, design.NewInvalidModelOutputError("", []design.Issue{{
+		writeApplyConfigError(w, design.NewInvalidModelOutputError("", []schema.Issue{{
 			Path:    "generated_config",
 			Code:    "required",
 			Message: "generated_config is required",
 		}}, design.ErrInvalidModelOutput), http.StatusBadRequest)
 		return
 	}
-	if err := validateGeneratedConfigEnvelope(request.GeneratedConfig); err != nil {
+	if err := validateGeneratedConfigEnvelope(state.registry, request.GeneratedConfig); err != nil {
 		writeApplyConfigError(w, err, http.StatusBadRequest)
 		return
 	}
@@ -321,7 +316,7 @@ func applyDraftConfigHandler(w http.ResponseWriter, r *http.Request, state *desi
 		return
 	}
 	_, library := state.snapshot()
-	writeAppliedDraftConfig(w, document, normalized, library)
+	writeAppliedDraftConfig(state.registry, w, document, normalized, library)
 }
 
 func tapDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
@@ -341,7 +336,7 @@ func tapDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designer
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeTappedDraftCard(w, result)
+	writeTappedDraftCard(state.registry, w, result)
 }
 
 func interactDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
@@ -361,7 +356,7 @@ func interactDraftCardHandler(w http.ResponseWriter, r *http.Request, state *des
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeTappedDraftCard(w, result)
+	writeTappedDraftCard(state.registry, w, result)
 }
 
 func controlChangeDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
@@ -376,26 +371,12 @@ func controlChangeDraftCardHandler(w http.ResponseWriter, r *http.Request, state
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(request.ComponentID) != "" || strings.TrimSpace(request.Control) != "" || len(request.Value) > 0 {
-		result, err := state.applyControlChange(request.ComponentID, request.Trait, request.Control, request.Value)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		writeTappedDraftCard(w, result)
-		return
-	}
-	result, err := state.applyColorControl(request.ComponentKind, colorControlRequest{
-		Color:          request.Color,
-		SecondaryColor: request.SecondaryColor,
-		Gradient:       request.Gradient,
-		Angle:          request.Angle,
-	})
+	result, err := state.applyControlChange(request.ComponentID, request.Trait, request.Control, request.Value)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeTappedDraftCard(w, result)
+	writeTappedDraftCard(state.registry, w, result)
 }
 
 func randomizeDraftCardHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
@@ -415,7 +396,7 @@ func randomizeDraftCardHandler(w http.ResponseWriter, r *http.Request, state *de
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeTappedDraftCard(w, result)
+	writeTappedDraftCard(state.registry, w, result)
 }
 
 func addDraftComponentHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
@@ -435,32 +416,36 @@ func addDraftComponentHandler(w http.ResponseWriter, r *http.Request, state *des
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeTappedDraftCard(w, result)
+	writeTappedDraftCard(state.registry, w, result)
 }
 
-func validateGeneratedConfigEnvelope(raw json.RawMessage) error {
-	var envelope struct {
-		ComponentKind string `json:"componentKind"`
-	}
+func validateGeneratedConfigEnvelope(registry *cardcomponent.Registry, raw json.RawMessage) error {
+	var envelope schema.GeneratedConfigEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return design.NewInvalidModelOutputError(string(raw), []design.Issue{{
+		return design.NewInvalidModelOutputError(string(raw), []schema.Issue{{
 			Path:    "generated_config",
 			Code:    "invalid_json",
 			Message: "generated_config must be one JSON object: " + err.Error(),
 		}}, design.ErrInvalidModelOutput)
 	}
-	switch strings.TrimSpace(envelope.ComponentKind) {
-	case background.Kind, border.Kind, textarea.Kind, shape.Kind, imagecomponent.Kind:
-		return nil
-	default:
-		return design.NewInvalidModelOutputError(string(raw), []design.Issue{{
-			Path:    "componentKind",
+	definition, ok := registry.Lookup(strings.TrimSpace(envelope.ComponentKind))
+	if !ok {
+		return design.NewInvalidModelOutputError(string(raw), []schema.Issue{{
+			Path:    "component_kind",
 			Code:    "invalid_component_kind",
-			Message: "componentKind must be background, border, textarea, shape, or image",
+			Message: "component_kind is not registered",
 			Actual:  envelope.ComponentKind,
-			Allowed: []string{background.Kind, border.Kind, textarea.Kind, shape.Kind, imagecomponent.Kind},
 		}}, design.ErrInvalidModelOutput)
 	}
+	generation, ok := definition.Generation()
+	if !ok {
+		return fmt.Errorf("component %q does not accept generated configs", definition.Kind())
+	}
+	_, issues := generation.CanonicalizeEnvelope(raw)
+	if len(issues) > 0 {
+		return design.NewInvalidModelOutputError(string(raw), issues, design.ErrInvalidModelOutput)
+	}
+	return nil
 }
 
 func designLibraryHandler(w http.ResponseWriter, r *http.Request, state *designerState) {
@@ -510,11 +495,11 @@ func applyLibraryDesignHandler(w http.ResponseWriter, r *http.Request, state *de
 		return
 	}
 	_, library := state.snapshot()
-	writeAppliedDraftConfig(w, document, normalized, library)
+	writeAppliedDraftConfig(state.registry, w, document, normalized, library)
 }
 
-func writeAppliedDraftConfig(w http.ResponseWriter, document cardcomponent.Document, normalized any, library []cardcomponent.LibraryItem) {
-	previewHTML, ok := renderDraftPreview(w, document, http.StatusBadRequest)
+func writeAppliedDraftConfig(registry *cardcomponent.Registry, w http.ResponseWriter, document cardcomponent.Document, normalized json.RawMessage, library []cardcomponent.LibraryItem) {
+	previewHTML, ok := renderDraftPreview(registry, w, document, http.StatusBadRequest)
 	if !ok {
 		return
 	}
@@ -526,8 +511,8 @@ func writeAppliedDraftConfig(w http.ResponseWriter, document cardcomponent.Docum
 	})
 }
 
-func writeRenderedDraftCard(w http.ResponseWriter, document cardcomponent.Document, library []cardcomponent.LibraryItem) {
-	previewHTML, ok := renderDraftPreview(w, document, http.StatusInternalServerError)
+func writeRenderedDraftCard(registry *cardcomponent.Registry, w http.ResponseWriter, document cardcomponent.Document, library []cardcomponent.LibraryItem) {
+	previewHTML, ok := renderDraftPreview(registry, w, document, http.StatusInternalServerError)
 	if !ok {
 		return
 	}
@@ -538,8 +523,8 @@ func writeRenderedDraftCard(w http.ResponseWriter, document cardcomponent.Docume
 	})
 }
 
-func writeInteractiveDraftCard(w http.ResponseWriter, document cardcomponent.Document, gameState GameState, library []cardcomponent.LibraryItem) {
-	previewHTML, ok := renderDraftPreview(w, document, http.StatusInternalServerError)
+func writeInteractiveDraftCard(registry *cardcomponent.Registry, w http.ResponseWriter, document cardcomponent.Document, gameState GameState, library []cardcomponent.LibraryItem) {
+	previewHTML, ok := renderDraftPreview(registry, w, document, http.StatusInternalServerError)
 	if !ok {
 		return
 	}
@@ -548,14 +533,14 @@ func writeInteractiveDraftCard(w http.ResponseWriter, document cardcomponent.Doc
 		GameState:            gameState,
 		PreviewHTML:          previewHTML,
 		AvailableConfigKinds: append([]string(nil), gameState.UnlockedConfigKinds...),
-		AvailableComponents:  availableComponents(gameState, document),
-		Overlay:              buildOverlay(document, gameState, gameState.SelectedComponentID),
+		AvailableComponents:  availableComponents(registry, gameState, document),
+		Overlay:              buildOverlay(registry, document, gameState, gameState.SelectedComponentID),
 		Library:              library,
 	})
 }
 
-func writeTappedDraftCard(w http.ResponseWriter, result tapResult) {
-	previewHTML, ok := renderDraftPreview(w, result.document, http.StatusBadRequest)
+func writeTappedDraftCard(registry *cardcomponent.Registry, w http.ResponseWriter, result tapResult) {
+	previewHTML, ok := renderDraftPreview(registry, w, result.document, http.StatusBadRequest)
 	if !ok {
 		return
 	}
@@ -577,8 +562,8 @@ func nonNilCardEvents(events []CardEvent) []CardEvent {
 	return events
 }
 
-func renderDraftPreview(w http.ResponseWriter, document cardcomponent.Document, status int) (string, bool) {
-	preview, err := cardcomponent.RenderDocument(document, cardComponentRegistry())
+func renderDraftPreview(registry *cardcomponent.Registry, w http.ResponseWriter, document cardcomponent.Document, status int) (string, bool) {
+	preview, err := cardcomponent.RenderDocument(document, registry)
 	if err != nil {
 		http.Error(w, err.Error(), status)
 		return "", false
@@ -586,92 +571,61 @@ func renderDraftPreview(w http.ResponseWriter, document cardcomponent.Document, 
 	return preview.Render(), true
 }
 
-func applyGeneratedConfigToDocument(raw json.RawMessage, document *cardcomponent.Document) (any, cardcomponent.LibraryItem, error) {
-	return applyGeneratedConfigToDocumentForComponent(raw, document, "")
+func applyGeneratedConfigToDocument(registry *cardcomponent.Registry, raw json.RawMessage, document *cardcomponent.Document) (json.RawMessage, cardcomponent.LibraryItem, string, error) {
+	return applyGeneratedConfigToDocumentForComponent(registry, raw, document, "")
 }
 
-func applyGeneratedConfigToDocumentForComponent(raw json.RawMessage, document *cardcomponent.Document, componentID string) (any, cardcomponent.LibraryItem, error) {
-	var envelope struct {
-		ComponentKind  string `json:"componentKind"`
-		ComponentID    string `json:"component_id"`
-		ComponentIDAlt string `json:"componentId"`
-	}
+func applyGeneratedConfigToDocumentForComponent(registry *cardcomponent.Registry, raw json.RawMessage, document *cardcomponent.Document, componentID string) (json.RawMessage, cardcomponent.LibraryItem, string, error) {
+	var envelope schema.GeneratedConfigEnvelope
 	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return nil, cardcomponent.LibraryItem{}, design.NewInvalidModelOutputError(string(raw), []design.Issue{{
+		return nil, cardcomponent.LibraryItem{}, "", design.NewInvalidModelOutputError(string(raw), []schema.Issue{{
 			Path:    "generated_config",
 			Code:    "invalid_json",
 			Message: "generated_config must be one JSON object: " + err.Error(),
 		}}, design.ErrInvalidModelOutput)
 	}
-	if strings.TrimSpace(componentID) == "" {
-		componentID = strings.TrimSpace(firstNonEmpty(envelope.ComponentID, envelope.ComponentIDAlt))
-	}
-	switch strings.TrimSpace(envelope.ComponentKind) {
-	case background.Kind:
-		return applyDraftConfig(raw, background.Spec(), document, componentID)
-	case border.Kind:
-		return applyDraftConfig(raw, border.Spec(), document, componentID)
-	case textarea.Kind:
-		return applyDraftConfig(raw, textarea.Spec(), document, componentID)
-	case shape.Kind:
-		return applyDraftConfig(raw, shape.Spec(), document, componentID)
-	case imagecomponent.Kind:
-		return applyDraftConfig(raw, imagecomponent.Spec(), document, componentID)
-	default:
-		return nil, cardcomponent.LibraryItem{}, design.NewInvalidModelOutputError(string(raw), []design.Issue{{
-			Path:    "componentKind",
+	definition, ok := registry.Lookup(strings.TrimSpace(envelope.ComponentKind))
+	if !ok {
+		return nil, cardcomponent.LibraryItem{}, "", design.NewInvalidModelOutputError(string(raw), []schema.Issue{{
+			Path:    "component_kind",
 			Code:    "invalid_component_kind",
-			Message: "componentKind must be background, border, textarea, shape, or image",
+			Message: "component_kind is not registered",
 			Actual:  envelope.ComponentKind,
-			Allowed: []string{background.Kind, border.Kind, textarea.Kind, shape.Kind, imagecomponent.Kind},
 		}}, design.ErrInvalidModelOutput)
 	}
-}
-
-func applyDraftConfig[T any](raw json.RawMessage, spec design.Spec[T], document *cardcomponent.Document, componentID string) (design.GeneratedConfig[T], cardcomponent.LibraryItem, error) {
-	decodeRaw, err := generatedConfigDecodeRaw(raw)
-	if err != nil {
-		return design.GeneratedConfig[T]{}, cardcomponent.LibraryItem{}, err
+	generation, ok := definition.Generation()
+	if !ok {
+		return nil, cardcomponent.LibraryItem{}, "", fmt.Errorf("component %q does not accept generated configs", definition.Kind())
 	}
-	generated, err := design.DecodeNormalizeValidateConfig[T](string(decodeRaw), spec)
-	if err != nil {
-		return design.GeneratedConfig[T]{}, cardcomponent.LibraryItem{}, err
+	canonical, issues := generation.CanonicalizeEnvelope(raw)
+	if len(issues) > 0 {
+		return nil, cardcomponent.LibraryItem{}, "", design.NewInvalidModelOutputError(string(raw), issues, design.ErrInvalidModelOutput)
 	}
-	configRaw, err := json.Marshal(generated.Config)
-	if err != nil {
-		return design.GeneratedConfig[T]{}, cardcomponent.LibraryItem{}, err
+	if err := json.Unmarshal(canonical, &envelope); err != nil {
+		return nil, cardcomponent.LibraryItem{}, "", err
 	}
+	configRaw := envelope.Config
 	replaced := false
 	if strings.TrimSpace(componentID) != "" {
-		replaced = replaceComponentConfigByID(&document.Root, componentID, spec.ComponentKind, configRaw)
+		replaced = replaceComponentConfigByID(&document.Root, componentID, definition.Kind(), configRaw)
 	} else {
-		replaced = replaceComponentConfig(&document.Root, spec.ComponentKind, configRaw)
+		replaced = replaceComponentConfig(&document.Root, definition.Kind(), configRaw)
 	}
 	if !replaced {
-		return design.GeneratedConfig[T]{}, cardcomponent.LibraryItem{}, design.NewInvalidModelOutputError(string(raw), []design.Issue{{
-			Path:    "componentKind",
+		return nil, cardcomponent.LibraryItem{}, "", design.NewInvalidModelOutputError(string(raw), []schema.Issue{{
+			Path:    "component_kind",
 			Code:    "missing_component",
 			Message: "selected component is not present in this card",
-			Actual:  spec.ComponentKind,
+			Actual:  definition.Kind(),
 		}}, design.ErrInvalidModelOutput)
 	}
-	return generated, cardcomponent.LibraryItem{
-		ID:            "applied-" + spec.ComponentKind,
-		Name:          fallbackLibraryName(generated.ComponentKind, generated.Description),
-		ComponentKind: spec.ComponentKind,
-		Description:   generated.Description,
+	return canonical, cardcomponent.LibraryItem{
+		ID:            "applied-" + definition.Kind(),
+		Name:          fallbackLibraryName(definition.Kind(), envelope.Description),
+		ComponentKind: definition.Kind(),
+		Description:   envelope.Description,
 		Config:        configRaw,
-	}, nil
-}
-
-func generatedConfigDecodeRaw(raw json.RawMessage) (json.RawMessage, error) {
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return nil, err
-	}
-	delete(envelope, "component_id")
-	delete(envelope, "componentId")
-	return json.Marshal(envelope)
+	}, definition.Kind(), nil
 }
 
 func replaceComponentConfigByID(node *cardcomponent.Node, componentID, target string, raw json.RawMessage) bool {
@@ -716,8 +670,12 @@ func replaceComponentConfig(node *cardcomponent.Node, target string, raw json.Ra
 	return false
 }
 
-func generateDraftConfig[T any](w http.ResponseWriter, r *http.Request, deps Dependencies, instruction, oldCode, componentID string, spec design.Spec[T]) {
-	service := design.NewService(deps.Patch, deps.PatchModel, spec)
+func generateDraftConfig(w http.ResponseWriter, r *http.Request, deps Dependencies, instruction, oldCode, componentID string, definition cardcomponent.Definition) {
+	service, err := design.NewService(deps.Patch, deps.PatchModel, definition)
+	if err != nil {
+		writeConfigError(w, err)
+		return
+	}
 	response, err := service.Generate(r.Context(), design.GenerateRequest{
 		Instruction: instruction,
 		OldCode:     oldCode,
@@ -743,7 +701,7 @@ func writeApplyConfigError(w http.ResponseWriter, err error, status int) {
 	_ = json.NewEncoder(w).Encode(struct {
 		Message     string         `json:"message"`
 		RawResponse string         `json:"raw_response,omitempty"`
-		Issues      []design.Issue `json:"issues,omitempty"`
+		Issues      []schema.Issue `json:"issues,omitempty"`
 	}{
 		Message:     err.Error(),
 		RawResponse: raw,
@@ -768,7 +726,7 @@ func writeConfigError(w http.ResponseWriter, err error) {
 		_ = json.NewEncoder(w).Encode(struct {
 			Message     string         `json:"message"`
 			RawResponse string         `json:"raw_response,omitempty"`
-			Issues      []design.Issue `json:"issues,omitempty"`
+			Issues      []schema.Issue `json:"issues,omitempty"`
 		}{
 			Message:     err.Error(),
 			RawResponse: raw,

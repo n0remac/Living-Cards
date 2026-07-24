@@ -3,13 +3,13 @@ package border
 import (
 	"testing"
 
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
-func TestNormalizeGeneratedClampsBorderDimensions(t *testing.T) {
+func TestNormalizeGeneratedDoesNotRepairBorderDimensions(t *testing.T) {
 	t.Parallel()
 
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Clamp",
 		Config: Config{
@@ -19,8 +19,11 @@ func TestNormalizeGeneratedClampsBorderDimensions(t *testing.T) {
 		},
 	}
 	NormalizeGenerated(&generated)
-	if generated.Config.BorderWidthPX != 16 || generated.Config.BorderRadiusPX != 0 {
+	if generated.Config.BorderWidthPX != 100 || generated.Config.BorderRadiusPX != -4 {
 		t.Fatalf("config = %#v", generated.Config)
+	}
+	if issues := ValidateGenerated(generated); len(issues) == 0 {
+		t.Fatal("ValidateGenerated() issues = nil, want invalid dimensions")
 	}
 }
 
@@ -42,13 +45,14 @@ func TestRandomGeneratedBorderValidates(t *testing.T) {
 func TestValidateGeneratedAcceptsSafeBorderCSS(t *testing.T) {
 	t.Parallel()
 
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Safe",
 		Config: Config{
 			BorderWidthPX:  2,
 			BorderRadiusPX: 18,
 			BorderColor:    "hsla(190, 90%, 70%, 0.7)",
+			BorderStyle:    "solid",
 			CSS:            "border: 2px solid rgba(103, 232, 249, 0.7); box-shadow: 0 0 24px rgba(34, 211, 238, 0.25);",
 		},
 	}
@@ -60,13 +64,14 @@ func TestValidateGeneratedAcceptsSafeBorderCSS(t *testing.T) {
 func TestValidateGeneratedRejectsInvalidBorderFields(t *testing.T) {
 	t.Parallel()
 
-	generated := design.GeneratedConfig[Config]{
+	generated := schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   "Bad",
 		Config: Config{
 			BorderWidthPX:  -1,
 			BorderRadiusPX: 90,
 			BorderColor:    "blueish",
+			BorderStyle:    "solid",
 			CSS:            "background: red;",
 		},
 	}
@@ -79,7 +84,7 @@ func TestValidateGeneratedRejectsInvalidBorderFields(t *testing.T) {
 	}
 }
 
-func issuePaths(issues []design.Issue) map[string]bool {
+func issuePaths(issues []schema.Issue) map[string]bool {
 	paths := make(map[string]bool, len(issues))
 	for _, issue := range issues {
 		paths[issue.Path] = true

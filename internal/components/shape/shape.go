@@ -10,7 +10,7 @@ import (
 	godom "github.com/n0remac/GoDom/html"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
-	"github.com/n0remac/Living-Card/internal/design"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
 const Kind = "shape"
@@ -43,7 +43,7 @@ func DefaultConfig() Config {
 	}
 }
 
-func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
+func RandomGenerated(seed int64, level int) schema.GeneratedConfig[Config] {
 	options := []struct {
 		description string
 		part        Config
@@ -115,49 +115,39 @@ func RandomGenerated(seed int64, level int) design.GeneratedConfig[Config] {
 		})
 	}
 	pick := options[rand.New(rand.NewSource(seed)).Intn(len(options))]
-	return design.GeneratedConfig[Config]{
+	return schema.GeneratedConfig[Config]{
 		ComponentKind: Kind,
 		Description:   pick.description,
 		Config:        pick.part,
 	}
 }
 
-func Spec() design.Spec[Config] {
-	return design.Spec[Config]{
-		ComponentKind: Kind,
-		SystemPrompt:  systemPrompt,
-		Example:       exampleJSON,
-		Normalize:     NormalizeGenerated,
-		Validate:      ValidateGenerated,
-	}
-}
-
 func Definition() card.Definition {
-	return card.Definition{
-		ComponentKind: Kind,
-		Contribute: func(node card.Node, renderContext card.RenderContext) (card.Contribution, error) {
-			part, err := card.DecodeConfig[Config](node)
-			if err != nil {
-				return card.Contribution{}, err
-			}
-			generated := design.GeneratedConfig[Config]{
-				ComponentKind: Kind,
-				Description:   "Rendered shape",
-				Config:        part,
-			}
-			NormalizeGenerated(&generated)
-			if issues := ValidateGenerated(generated); len(issues) > 0 {
-				return card.Contribution{}, fmt.Errorf("invalid shape config at %s: %s", issues[0].Path, issues[0].Message)
-			}
+	return card.MustDefine(card.TypedDefinition[Config]{
+		Kind: Kind, Label: "Shape", Structure: card.StructureLeaf, Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		Render: func(node card.Node, part Config, renderContext card.RenderContext) (card.Contribution, error) {
 			return card.Contribution{
-				Layers: []*godom.Node{RenderLayerWithContext(node.ID, generated.Config, renderContext)},
+				Layers: []*godom.Node{RenderLayerWithContext(node.ID, part, renderContext)},
 			}, nil
 		},
-	}
+		Controls: []card.Control[Config]{
+			card.StringControl("shape", "shape", "select", "Shape", "shape", func(c Config) string { return c.Shape }, func(c *Config, v string) { c.Shape = v }, shapeOptions()...),
+			positionControl(),
+			card.IntControl("x", "layout", "range", "X position", "left", 0, 100, 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
+			card.IntControl("y", "layout", "range", "Y position", "top", 0, 100, 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
+			card.IntControl("width", "layout", "range", "Width", "width", 8, 100, 1, func(c Config) int { return c.Width }, func(c *Config, v int) { c.Width = v }),
+			card.IntControl("height", "layout", "range", "Height", "height", 8, 100, 1, func(c Config) int { return c.Height }, func(c *Config, v int) { c.Height = v }),
+			card.IntControl("rotation", "layout", "range", "Rotation", "transform", 0, 359, 1, func(c Config) int { return c.Rotation }, func(c *Config, v int) { c.Rotation = v }),
+			card.StringControl("background_color", "style", "color", "Fill color", "fill", func(c Config) string { return c.BackgroundColor }, func(c *Config, v string) { c.BackgroundColor = v }),
+			card.StringControl("border_color", "style", "color", "Border color", "stroke", func(c Config) string { return c.BorderColor }, func(c *Config, v string) { c.BorderColor = v }),
+			card.IntControl("border_width_px", "style", "range", "Border width", "stroke-width", 0, 10, 1, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
+			card.StringControl("shadow", "style", "select", "Shadow", "filter", func(c Config) string { return c.Shadow }, func(c *Config, v string) { c.Shadow = v }, shadowOptions()...),
+		}, Install: &card.InstallSpec{Policy: card.InstallAppend}, Generation: &card.TypedGenerationDefinition[Config]{Random: RandomGenerated},
+	})
 }
 
 const exampleJSON = `{
-  "componentKind": "shape",
+  "component_kind": "shape",
   "description": "A warm circle shape layer.",
   "config": {
     "shape": "circle",
@@ -177,49 +167,35 @@ const systemPrompt = `You generate safe declarative JSON configs for one shape c
 Return exactly one JSON object and no markdown, prose, HTML, selectors, braces, or JavaScript.
 The JSON object must match the shape component schema.
 Rules:
-- componentKind must be "shape".
+- component_kind must be "shape".
 - shape must be one of circle, oval, rectangle, roundedRectangle, triangle, diamond, star, blob.
 - colors must be safe colors: hex, rgb(...), rgba(...), hsl(...), or hsla(...).
 - x, y, width, and height are percentage values within the allowed ranges.`
 
-func NormalizeGenerated(generated *design.GeneratedConfig[Config]) {
+func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
 	if generated == nil {
 		return
 	}
-	defaults := DefaultConfig()
 	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
 	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config.Shape = strings.TrimSpace(generated.Config.Shape)
-	if generated.Config.Shape == "" {
-		generated.Config.Shape = defaults.Shape
-	}
-	generated.Config.BackgroundColor = strings.TrimSpace(generated.Config.BackgroundColor)
-	if generated.Config.BackgroundColor == "" {
-		generated.Config.BackgroundColor = defaults.BackgroundColor
-	}
-	generated.Config.BorderColor = strings.TrimSpace(generated.Config.BorderColor)
-	if generated.Config.BorderColor == "" {
-		generated.Config.BorderColor = defaults.BorderColor
-	}
-	generated.Config.Shadow = strings.TrimSpace(generated.Config.Shadow)
-	if generated.Config.Width == 0 {
-		generated.Config.Width = defaults.Width
-	}
-	if generated.Config.Height == 0 {
-		generated.Config.Height = defaults.Height
-	}
-	generated.Config.X = clamp(generated.Config.X, 0, 100)
-	generated.Config.Y = clamp(generated.Config.Y, 0, 100)
-	generated.Config.Width = clamp(generated.Config.Width, 8, 100)
-	generated.Config.Height = clamp(generated.Config.Height, 8, 100)
-	generated.Config.BorderWidthPX = clamp(generated.Config.BorderWidthPX, 0, 10)
-	generated.Config.Rotation = normalizeRotation(generated.Config.Rotation)
+	generated.Config = NormalizeConfig(generated.Config)
 }
 
-func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue {
-	var issues []design.Issue
+func NormalizeConfig(config Config) Config {
+	config.Shape = strings.TrimSpace(config.Shape)
+	config.BackgroundColor = strings.TrimSpace(config.BackgroundColor)
+	config.BorderColor = strings.TrimSpace(config.BorderColor)
+	config.Shadow = strings.TrimSpace(config.Shadow)
+	return config
+}
+func ValidateConfig(config Config) []schema.Issue {
+	return ValidateGenerated(schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Shape config", Config: config})
+}
+
+func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
+	var issues []schema.Issue
 	if !contains(AllowedShapes(), generated.Config.Shape) {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.shape",
 			Code:    "invalid_value",
 			Message: "shape is not allowed",
@@ -243,13 +219,13 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		issues = append(issues, rangeIssue("config.border_width_px", "border_width_px", generated.Config.BorderWidthPX, 0, 10))
 	}
 	if color := strings.TrimSpace(generated.Config.BackgroundColor); color == "" {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.background_color",
 			Code:    "required",
 			Message: "background_color is required",
 		})
-	} else if !design.IsAllowedColor(color) {
-		issues = append(issues, design.Issue{
+	} else if !schema.IsAllowedColor(color) {
+		issues = append(issues, schema.Issue{
 			Path:    "config.background_color",
 			Code:    "invalid_color",
 			Message: "background_color must be a hex, rgb, rgba, hsl, or hsla color",
@@ -257,13 +233,13 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if color := strings.TrimSpace(generated.Config.BorderColor); color == "" {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_color",
 			Code:    "required",
 			Message: "border_color is required",
 		})
-	} else if !design.IsAllowedColor(color) {
-		issues = append(issues, design.Issue{
+	} else if !schema.IsAllowedColor(color) {
+		issues = append(issues, schema.Issue{
 			Path:    "config.border_color",
 			Code:    "invalid_color",
 			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
@@ -271,7 +247,7 @@ func ValidateGenerated(generated design.GeneratedConfig[Config]) []design.Issue 
 		})
 	}
 	if shadow := strings.TrimSpace(generated.Config.Shadow); shadow != "" && !contains(AllowedShadows(), shadow) {
-		issues = append(issues, design.Issue{
+		issues = append(issues, schema.Issue{
 			Path:    "config.shadow",
 			Code:    "invalid_value",
 			Message: "shadow is not an allowed preset value",
@@ -381,7 +357,7 @@ func AllowedShadows() []string {
 	}
 }
 
-func MarshalGenerated(generated design.GeneratedConfig[Config]) (json.RawMessage, error) {
+func MarshalGenerated(generated schema.GeneratedConfig[Config]) (json.RawMessage, error) {
 	NormalizeGenerated(&generated)
 	if issues := ValidateGenerated(generated); len(issues) > 0 {
 		return nil, fmt.Errorf("invalid shape config at %s: %s", issues[0].Path, issues[0].Message)
@@ -409,8 +385,8 @@ func styleString(styles map[string]string) string {
 	return strings.TrimSpace(out.String())
 }
 
-func rangeIssue(path, name string, value, min, max int) design.Issue {
-	return design.Issue{
+func rangeIssue(path, name string, value, min, max int) schema.Issue {
+	return schema.Issue{
 		Path:    path,
 		Code:    "out_of_range",
 		Message: fmt.Sprintf("%s must be between %d and %d", name, min, max),
@@ -418,22 +394,36 @@ func rangeIssue(path, name string, value, min, max int) design.Issue {
 	}
 }
 
-func normalizeRotation(value int) int {
-	value = value % 360
-	if value < 0 {
-		value += 360
+func positionControl() card.Control[Config] {
+	type position struct {
+		X int `json:"x"`
+		Y int `json:"y"`
 	}
-	return value
+	return card.Control[Config]{ID: "position", Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
+		var value position
+		if err := card.DecodeControlObject(raw, &value); err != nil {
+			return fmt.Errorf("value must include integer x and y: %w", err)
+		}
+		c.X, c.Y = value.X, value.Y
+		return nil
+	}}
 }
-
-func clamp(value, min, max int) int {
-	if value < min {
-		return min
+func shapeOptions() []card.ControlOption {
+	labels := map[string]string{"circle": "Circle", "oval": "Oval", "rectangle": "Rectangle", "roundedRectangle": "Rounded rectangle", "triangle": "Triangle", "diamond": "Diamond", "star": "Star", "blob": "Blob"}
+	out := make([]card.ControlOption, 0, len(AllowedShapes()))
+	for _, value := range AllowedShapes() {
+		out = append(out, card.Option(labels[value], value))
 	}
-	if value > max {
-		return max
+	return out
+}
+func shadowOptions() []card.ControlOption {
+	labels := []string{"None", "Soft slate", "Deep slate", "Rose glow", "Sky glow"}
+	values := AllowedShadows()
+	out := make([]card.ControlOption, 0, len(values))
+	for index, value := range values {
+		out = append(out, card.Option(labels[index], value))
 	}
-	return value
+	return out
 }
 
 func contains(values []string, target string) bool {
