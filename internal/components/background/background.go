@@ -7,6 +7,9 @@ import (
 	"sort"
 	"strings"
 
+	godom "github.com/n0remac/GoDom/html"
+
+	"github.com/n0remac/Living-Card/internal/cardassets"
 	"github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/schema"
 )
@@ -14,12 +17,14 @@ import (
 const Kind = "background"
 
 type Config struct {
+	AssetID         string `json:"asset_id"`
 	BackgroundColor string `json:"background_color"`
 	CSS             string `json:"css"`
 }
 
 func DefaultConfig() Config {
 	return Config{
+		AssetID:         "",
 		BackgroundColor: "#111827",
 		CSS:             "",
 	}
@@ -112,22 +117,39 @@ func Definition() card.Definition {
 		Kind: Kind, Label: "Background", Structure: card.StructureLeaf,
 		Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
 		ConfigRules: []schema.FieldRule{
+			schema.StringMaxLength("asset_id", 96),
 			schema.StringFormat("background_color", schema.FormatCSSColor),
 		},
-		Render: func(_ card.Node, part Config, _ card.RenderContext) (card.Contribution, error) {
+		Render: func(node card.Node, part Config, renderContext card.RenderContext) (card.Contribution, error) {
 			styles := map[string]string{
 				"background-color": part.BackgroundColor,
 			}
 			for property, value := range schema.CSSDeclarations(part.CSS, AllowedCSS()) {
 				styles[property] = value
 			}
-			return card.Contribution{ShellStyle: styles}, nil
+			contribution := card.Contribution{ShellStyle: styles}
+			if part.AssetID != "" {
+				contribution.Layers = []*godom.Node{renderAssetLayer(node.ID, part.AssetID, renderContext)}
+			}
+			return contribution, nil
 		},
-		Controls:   []card.Control[Config]{backgroundColorControl()},
+		Controls:   []card.Control[Config]{assetIDControl(), backgroundColorControl()},
 		Install:    &card.InstallSpec{Policy: card.InstallReplaceKind},
 		Presets:    typedPresets(),
 		Generation: &card.TypedGenerationDefinition[Config]{SystemPrompt: systemPrompt, Example: exampleJSON, Random: RandomGenerated},
 	})
+}
+
+func assetIDControl() card.Control[Config] {
+	return card.StringControl(
+		"asset_id",
+		"content",
+		"text",
+		"Card background asset",
+		"background-image",
+		func(c Config) string { return c.AssetID },
+		func(c *Config, value string) { c.AssetID = value },
+	)
 }
 
 func backgroundColorControl() card.Control[Config] {
@@ -148,13 +170,48 @@ func backgroundColorControl() card.Control[Config] {
 }
 
 func NormalizeConfig(config Config) Config {
+	config.AssetID = strings.TrimSpace(config.AssetID)
 	config.BackgroundColor = strings.TrimSpace(config.BackgroundColor)
 	config.CSS = strings.TrimSpace(config.CSS)
 	return config
 }
 
 func ValidateConfig(config Config) []schema.Issue {
-	return schema.ValidateInlineCSS("config.css", config.CSS, AllowedCSS())
+	issues := schema.ValidateInlineCSS("config.css", config.CSS, AllowedCSS())
+	if config.AssetID != "" && !IsValidAssetID(config.AssetID) {
+		issues = append(issues, schema.Issue{
+			Path:    "config.asset_id",
+			Code:    "invalid_asset_id",
+			Message: "asset_id must be a lowercase card asset name using letters, numbers, hyphens, or underscores",
+			Actual:  config.AssetID,
+		})
+	}
+	return issues
+}
+
+func IsValidAssetID(assetID string) bool {
+	return cardassets.ValidBackgroundID(assetID)
+}
+
+func AssetURL(assetID string) string {
+	return cardassets.BackgroundURL(assetID)
+}
+
+func renderAssetLayer(componentID, assetID string, renderContext card.RenderContext) *godom.Node {
+	style := "height: 100%; inset: 0; object-fit: cover; object-position: center; pointer-events: none; position: absolute; user-select: none; width: 100%; z-index: 0;"
+	return godom.Img(
+		godom.Id(renderContext.LayerID(componentID)),
+		godom.Class("card-background-image"),
+		godom.Src(AssetURL(assetID)),
+		godom.Alt(""),
+		godom.Attr("aria-hidden", "true"),
+		godom.Attr("data-component-id", componentID),
+		godom.Attr("data-component-kind", Kind),
+		godom.Attr("decoding", "async"),
+		godom.Attr("draggable", "false"),
+		godom.Attr("loading", "lazy"),
+		godom.Attr("style", style),
+	)
 }
 
 func AllowedCSS() map[string]struct{} {
@@ -184,6 +241,7 @@ const exampleJSON = `{
   "component_kind": "background",
   "description": "A deep slate card background with a subtle radial highlight.",
   "config": {
+    "asset_id": "",
     "background_color": "#111827",
     "css": "background: radial-gradient(circle at top, rgba(56,189,248,0.22), transparent 45%), #111827;"
   }
@@ -196,6 +254,7 @@ The JSON object must match this shape:
   "component_kind": "background",
   "description": "short human-readable summary",
   "config": {
+    "asset_id": "",
     "background_color": "#111827",
     "css": "optional inline CSS declarations"
   }
@@ -203,6 +262,7 @@ The JSON object must match this shape:
 Rules:
 - component_kind must be "background".
 - description is required.
+- asset_id must be empty. Local card artwork is selected by the application, not generated by this config.
 - background_color must be a safe color: hex, rgb(...), rgba(...), hsl(...), or hsla(...).
 - css is optional inline declarations only.
 - Allowed css properties: background, background-color, box-shadow.

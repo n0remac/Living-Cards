@@ -42,6 +42,63 @@ npm ci
 npm run typecheck
 ```
 
+## Generate Card Background Images
+
+The `cardimages` developer command combines abandoned fantasy technology,
+nature growth, and signs of reawakening into deterministic image prompts, then
+uses the OpenAI Images API to download card-background artwork.
+
+Preview prompts without making a billable request:
+
+```sh
+go run ./cmd/cardimages -dry-run -count 3 -seed 42
+```
+
+Generate an image after setting `OPENAI_API_KEY`:
+
+```sh
+go run ./cmd/cardimages -count 1 -seed 42 -quality low
+```
+
+The equivalent Make target accepts command arguments through `ARGS`:
+
+```sh
+make card-images ARGS="-dry-run -count 3 -seed 42"
+```
+
+Generate one tailored prompt and image for every card currently authored under
+`internal/game/decks/`:
+
+```sh
+make card-images-game ARGS="-seed 42"
+```
+
+Preview the complete game-card batch without making any billable requests:
+
+```sh
+make card-images-game ARGS="-dry-run -seed 42"
+```
+
+Game-card mode discovers every deck JSON automatically. It uses each card's
+name, kind, tags, deck setting, and text from all document variants as
+narrative context. Outputs use stable card-ID filenames such as
+`glass-fuse.webp` and `glass-fuse.json`. The seed controls art-direction
+details independently for each card, so adding another card does not change
+existing card prompts.
+
+Defaults use `gpt-image-2`, WebP, medium quality, and an exact 5:7 resolution
+of `960x1344`. Images and JSON manifests are written to
+`web/assets/card-backgrounds/`. Each manifest records the complete prompt,
+selected vocabulary, generation settings, seed, and OpenAI request ID.
+
+Use `-tech "glass fuse"` or `-nature "moss,fungi"` to pin prompt elements.
+Existing assets are never overwritten unless `-force` is supplied. Run
+`go run ./cmd/cardimages -help` for all options.
+
+Generated WebP files are served from `/assets/card-backgrounds/`. Authored deck
+backgrounds select them with a validated local `asset_id`; arbitrary URLs and
+the adjacent JSON generation manifests are not exposed by the asset route.
+
 ## Generated Card Types
 
 The Go component catalog is the source of truth for component kinds, config

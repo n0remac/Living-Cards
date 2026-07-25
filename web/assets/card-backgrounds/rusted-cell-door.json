@@ -1,0 +1,24 @@
+{
+  "description": "The Rusted Cell Door is the clear focal subject in the ruined cell complex. Organic growths—black trumpet mushrooms and waterlogged reeds—have spread across it. A sign of reawakening is visible: dormant coils beginning to glow.",
+  "selection": {
+    "technology": "Rusted Cell Door",
+    "nature_primary": "black trumpet mushrooms",
+    "nature_secondary": "waterlogged reeds",
+    "location": "the ruined cell complex",
+    "awakening": "dormant coils beginning to glow",
+    "lighting": "soft overcast light with deep green shadows"
+  },
+  "prompt": "Card:\nRusted Cell Door\n\nScene:\nThe Rusted Cell Door is the clear focal subject in the ruined cell complex. Organic growths—black trumpet mushrooms and waterlogged reeds—have spread across it. A sign of reawakening is visible: dormant coils beginning to glow.\n\nAuthored game context (use as narrative reference; do not render these words):\nLOCKED Requires a bent iron key. OPEN A dark route has appeared behind the door.\n\nCard role and tags:\nworld. Tags: door, locked, iron-key.\n\nInterpretation:\nTreat the subject as a persistent part of the environment. Scale it naturally for what it is: architecture should feel imposing, while machinery or found objects should remain physically believable.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, soft overcast light with deep green shadows, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "seeded_world",
+  "card_id": "rusted-cell-door",
+  "card_name": "Rusted Cell Door",
+  "seed": 42,
+  "index": 16,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "rusted-cell-door.webp",
+  "request_id": "63288762-3253-4c8e-8da2-6efea3436d88",
+  "created_at": "2026-07-25T19:49:10.332006691Z"
+}

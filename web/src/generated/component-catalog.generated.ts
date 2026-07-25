@@ -97,6 +97,15 @@ export const componentCatalog = [
       "kind": "object",
       "fields": [
         {
+          "json_name": "asset_id",
+          "schema": {
+            "kind": "string",
+            "max_length": 96,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
           "json_name": "background_color",
           "schema": {
             "kind": "string",
@@ -117,10 +126,25 @@ export const componentCatalog = [
       "nullable": false
     },
     "default": {
+      "asset_id": "",
       "background_color": "#111827",
       "css": ""
     },
     "controls": [
+      {
+        "id": "asset_id",
+        "config_path": "asset_id",
+        "trait": "content",
+        "kind": "text",
+        "label": "Card background asset",
+        "property": "background-image",
+        "value_schema": {
+          "kind": "string",
+          "max_length": 96,
+          "nullable": false
+        },
+        "default": ""
+      },
       {
         "id": "background_color",
         "config_path": "background_color",
@@ -145,6 +169,7 @@ export const componentCatalog = [
         "name": "Night Sky",
         "description": "Deep blue night-sky background",
         "config": {
+          "asset_id": "",
           "background_color": "#0f172a",
           "css": "background: radial-gradient(circle at top, #1e3a8a 0%, #0f172a 60%, #020617 100%);"
         }
@@ -154,6 +179,7 @@ export const componentCatalog = [
         "name": "Parchment",
         "description": "Warm parchment background",
         "config": {
+          "asset_id": "",
           "background_color": "#f5e6c8",
           "css": "background: linear-gradient(135deg, #f8edd5 0%, #e7cfa6 100%);"
         }
@@ -163,6 +189,7 @@ export const componentCatalog = [
         "name": "Soft Mint",
         "description": "Soft mint studio background",
         "config": {
+          "asset_id": "",
           "background_color": "#d9f99d",
           "css": "background: linear-gradient(145deg, #ecfccb 0%, #bbf7d0 100%); box-shadow: inset 0 0 40px rgba(22, 101, 52, 0.12);"
         }

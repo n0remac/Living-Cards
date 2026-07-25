@@ -1,0 +1,24 @@
+{
+  "description": "The Faded Photograph is the clear focal subject in the ruined cell complex. Organic growths—silver lichen and velvet moss—have spread across it. A sign of reawakening is visible: a relay twitching for the first time in centuries.",
+  "selection": {
+    "technology": "Faded Photograph",
+    "nature_primary": "silver lichen",
+    "nature_secondary": "velvet moss",
+    "location": "the ruined cell complex",
+    "awakening": "a relay twitching for the first time in centuries",
+    "lighting": "pale dawn light filtering through a fractured ceiling"
+  },
+  "prompt": "Card:\nFaded Photograph\n\nScene:\nThe Faded Photograph is the clear focal subject in the ruined cell complex. Organic growths—silver lichen and velvet moss—have spread across it. A sign of reawakening is visible: a relay twitching for the first time in centuries.\n\nAuthored game context (use as narrative reference; do not render these words):\nFADED PHOTOGRAPH The picture has forgotten almost everything.\n\nCard role and tags:\nworld. Tags: decoy, worldbuilding, image.\n\nInterpretation:\nTreat the subject as a small, weathered physical photograph discovered among the ruins, with its erased image suggested by faded chemistry and damaged paper.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, pale dawn light filtering through a fractured ceiling, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "seeded_world",
+  "card_id": "faded-photograph",
+  "card_name": "Faded Photograph",
+  "seed": 42,
+  "index": 14,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "faded-photograph.webp",
+  "request_id": "2a43c2ee-cbf8-4b2e-985b-56cb881740a3",
+  "created_at": "2026-07-25T19:47:21.664663522Z"
+}

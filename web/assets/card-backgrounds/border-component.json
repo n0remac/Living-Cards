@@ -1,0 +1,24 @@
+{
+  "description": "The Border Component is the clear focal subject in the dormant generator hall. Organic growths—silver lichen and mineral deposits—have spread across it. A sign of reawakening is visible: a buried mechanism turning by one deliberate tooth.",
+  "selection": {
+    "technology": "Border Component",
+    "nature_primary": "silver lichen",
+    "nature_secondary": "mineral deposits",
+    "location": "the dormant generator hall",
+    "awakening": "a buried mechanism turning by one deliberate tooth",
+    "lighting": "subterranean darkness broken by blue-green luminescence"
+  },
+  "prompt": "Card:\nBorder Component\n\nScene:\nThe Border Component is the clear focal subject in the dormant generator hall. Organic growths—silver lichen and mineral deposits—have spread across it. A sign of reawakening is visible: a buried mechanism turning by one deliberate tooth.\n\nAuthored game context (use as narrative reference; do not render these words):\nBORDER COMPONENT Changes border color, width, radius, and line type.\n\nCard role and tags:\nitem. Tags: item, component, border-component, generator.\n\nInterpretation:\nInterpret this component card as a removable piece of ancient physical control hardware, not as software or a modern user interface.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, subterranean darkness broken by blue-green luminescence, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "generator_room",
+  "card_id": "border-component",
+  "card_name": "Border Component",
+  "seed": 42,
+  "index": 9,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "border-component.webp",
+  "request_id": "ae6845fb-baf7-4a82-abb8-9fa47953e216",
+  "created_at": "2026-07-25T19:42:59.484431821Z"
+}

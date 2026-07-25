@@ -11,6 +11,7 @@ import (
 
 	. "github.com/n0remac/GoDom/html"
 
+	"github.com/n0remac/Living-Card/internal/cardassets"
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/catalog"
 	"github.com/n0remac/Living-Card/internal/components/schema"
@@ -63,12 +64,38 @@ func frontendAssetHandler() http.HandlerFunc {
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			path = frontendAssetPath("app.js.map")
 		default:
-			http.NotFound(w, r)
+			assetID, ok := cardBackgroundAssetID(r.URL.Path)
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "image/webp")
+			w.Header().Set("Cache-Control", "no-cache")
+			http.ServeFile(w, r, cardBackgroundAssetPath(assetID))
 			return
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		http.ServeFile(w, r, path)
 	}
+}
+
+func cardBackgroundAssetID(urlPath string) (string, bool) {
+	if !strings.HasPrefix(urlPath, cardassets.BackgroundURLPrefix) {
+		return "", false
+	}
+	filename := strings.TrimPrefix(urlPath, cardassets.BackgroundURLPrefix)
+	if !strings.HasSuffix(filename, ".webp") {
+		return "", false
+	}
+	assetID := strings.TrimSuffix(filename, ".webp")
+	if cardassets.BackgroundURL(assetID) != urlPath {
+		return "", false
+	}
+	return assetID, true
+}
+
+func cardBackgroundAssetPath(assetID string) string {
+	return filepath.Join(projectRoot(), "web", "assets", "card-backgrounds", assetID+".webp")
 }
 
 func frontendAssetPath(name string) string {

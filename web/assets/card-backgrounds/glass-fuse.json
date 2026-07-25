@@ -1,0 +1,24 @@
+{
+  "description": "The Glass Fuse is the clear focal subject in the abandoned fuse room. Organic growths—fern roots and mineral deposits—have spread across it. A sign of reawakening is visible: a faint amber current moving through its contacts.",
+  "selection": {
+    "technology": "Glass Fuse",
+    "nature_primary": "fern roots",
+    "nature_secondary": "mineral deposits",
+    "location": "the abandoned fuse room",
+    "awakening": "a faint amber current moving through its contacts",
+    "lighting": "subterranean darkness broken by blue-green luminescence"
+  },
+  "prompt": "Card:\nGlass Fuse\n\nScene:\nThe Glass Fuse is the clear focal subject in the abandoned fuse room. Organic growths—fern roots and mineral deposits—have spread across it. A sign of reawakening is visible: a faint amber current moving through its contacts.\n\nAuthored game context (use as narrative reference; do not render these words):\nGLASS FUSE A thin fuse, still clear enough to carry current.\n\nCard role and tags:\nitem. Tags: item, fuse, power.\n\nInterpretation:\nTreat the subject as a tangible artifact that could be found, carried, and fitted into an ancient machine.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, subterranean darkness broken by blue-green luminescence, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "fuse_room",
+  "card_id": "glass-fuse",
+  "card_name": "Glass Fuse",
+  "seed": 42,
+  "index": 8,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "glass-fuse.webp",
+  "request_id": "27749ebc-efc9-4e35-a0fb-7f92a664ad08",
+  "created_at": "2026-07-25T19:42:07.866963541Z"
+}

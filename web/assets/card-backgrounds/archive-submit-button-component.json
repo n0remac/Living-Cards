@@ -1,0 +1,24 @@
+{
+  "description": "The Submit Button Component is the clear focal subject in the overgrown archive terminal chamber. Organic growths—shelf fungi and bioluminescent spores—have spread across it. A sign of reawakening is visible: a faint amber current moving through its contacts.",
+  "selection": {
+    "technology": "Submit Button Component",
+    "nature_primary": "shelf fungi",
+    "nature_secondary": "bioluminescent spores",
+    "location": "the overgrown archive terminal chamber",
+    "awakening": "a faint amber current moving through its contacts",
+    "lighting": "cool mist cut by a restrained amber glow"
+  },
+  "prompt": "Card:\nSubmit Button Component\n\nScene:\nThe Submit Button Component is the clear focal subject in the overgrown archive terminal chamber. Organic growths—shelf fungi and bioluminescent spores—have spread across it. A sign of reawakening is visible: a faint amber current moving through its contacts.\n\nAuthored game context (use as narrative reference; do not render these words):\nSUBMIT BUTTON Submits a form with the matching form ID.\n\nCard role and tags:\nitem. Tags: item, component, button-component, archive.\n\nInterpretation:\nInterpret this component card as a removable piece of ancient physical control hardware, not as software or a modern user interface.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, cool mist cut by a restrained amber glow, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "archive_terminal",
+  "card_id": "archive-submit-button-component",
+  "card_name": "Submit Button Component",
+  "seed": 42,
+  "index": 3,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "archive-submit-button-component.webp",
+  "request_id": "7b9be7bd-0659-47e9-b065-5bde321ff290",
+  "created_at": "2026-07-25T19:37:34.676770113Z"
+}

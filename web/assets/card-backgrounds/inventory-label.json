@@ -1,0 +1,24 @@
+{
+  "description": "The Inventory Label is the clear focal subject in the ruined cell complex. Organic growths—shelf fungi and silver lichen—have spread across it. A sign of reawakening is visible: a low blue pulse traveling through old conductors.",
+  "selection": {
+    "technology": "Inventory Label",
+    "nature_primary": "shelf fungi",
+    "nature_secondary": "silver lichen",
+    "location": "the ruined cell complex",
+    "awakening": "a low blue pulse traveling through old conductors",
+    "lighting": "low directional light revealing damp textures and corrosion"
+  },
+  "prompt": "Card:\nInventory Label\n\nScene:\nThe Inventory Label is the clear focal subject in the ruined cell complex. Organic growths—shelf fungi and silver lichen—have spread across it. A sign of reawakening is visible: a low blue pulse traveling through old conductors.\n\nAuthored game context (use as narrative reference; do not render these words):\nINVENTORY LABEL A little brass plate reads: CARRY ONLY WHAT OPENS A WAY.\n\nCard role and tags:\nclue. Tags: decoy, worldbuilding.\n\nInterpretation:\nTreat the subject as a physical clue discovered in the abandoned complex, with its meaning suggested through wear, placement, and surrounding objects rather than readable writing.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, low directional light revealing damp textures and corrosion, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "seeded_world",
+  "card_id": "inventory-label",
+  "card_name": "Inventory Label",
+  "seed": 42,
+  "index": 15,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "inventory-label.webp",
+  "request_id": "b346a796-928c-465f-8e09-ad7f23295df0",
+  "created_at": "2026-07-25T19:48:17.838353893Z"
+}

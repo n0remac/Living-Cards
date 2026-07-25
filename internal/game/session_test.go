@@ -2,11 +2,16 @@ package game
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
+	backgroundcomponent "github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/catalog"
+	textcomponent "github.com/n0remac/Living-Card/internal/components/text"
 )
 
 func TestEmbeddedDecksDecodeAgainstCatalog(t *testing.T) {
@@ -33,6 +38,66 @@ func TestEmbeddedDecksDecodeAgainstCatalog(t *testing.T) {
 	}
 	if len(definitions) != len(ids) {
 		t.Fatalf("definitions = %d", len(definitions))
+	}
+}
+
+func TestEmbeddedDecksUseGeneratedArtworkAndOpaqueTextPanels(t *testing.T) {
+	registry := catalog.MustNew()
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not locate test file")
+	}
+	assetDirectory := filepath.Join(filepath.Dir(testFile), "..", "..", "web", "assets", "card-backgrounds")
+
+	for _, deckID := range []string{SeededWorldDeckDefinition, FuseRoomDeckDefinition, GeneratorDeckDefinition, ArchiveTerminalDefinition} {
+		definition, err := LoadEmbeddedDeck(registry, deckID)
+		if err != nil {
+			t.Fatalf("LoadEmbeddedDeck(%q): %v", deckID, err)
+		}
+		for _, cardDefinition := range definition.Cards {
+			assetPath := filepath.Join(assetDirectory, cardDefinition.ID+".webp")
+			assetInfo, err := os.Stat(assetPath)
+			if err != nil {
+				t.Fatalf("card %q background asset: %v", cardDefinition.ID, err)
+			}
+			if !assetInfo.Mode().IsRegular() || assetInfo.Size() == 0 {
+				t.Fatalf("card %q background asset is not a non-empty regular file", cardDefinition.ID)
+			}
+
+			for variant, document := range cardDefinition.Documents {
+				backgroundCount, textCount := 0, 0
+				for _, child := range document.Root.Children {
+					switch child.ComponentKind {
+					case card.KindBackground:
+						backgroundCount++
+						var config backgroundcomponent.Config
+						if err := json.Unmarshal(child.Config, &config); err != nil {
+							t.Fatalf("card %q variant %q background config: %v", cardDefinition.ID, variant, err)
+						}
+						if config.AssetID != cardDefinition.ID {
+							t.Fatalf("card %q variant %q background asset = %q", cardDefinition.ID, variant, config.AssetID)
+						}
+					case card.KindText:
+						textCount++
+						var config textcomponent.Config
+						if err := json.Unmarshal(child.Config, &config); err != nil {
+							t.Fatalf("card %q variant %q text %q config: %v", cardDefinition.ID, variant, child.ID, err)
+						}
+						if config.BackgroundColor != "#101713" || config.PaddingPX < 10 || config.BorderWidthPX < 1 {
+							t.Fatalf("card %q variant %q text %q is not an opaque readable panel: %#v", cardDefinition.ID, variant, child.ID, config)
+						}
+					case card.KindShape, card.KindImage:
+						t.Fatalf("card %q variant %q still uses illustration component %q", cardDefinition.ID, variant, child.ComponentKind)
+					}
+				}
+				if backgroundCount != 1 {
+					t.Fatalf("card %q variant %q backgrounds = %d, want 1", cardDefinition.ID, variant, backgroundCount)
+				}
+				if textCount == 0 {
+					t.Fatalf("card %q variant %q has no readable text panel", cardDefinition.ID, variant)
+				}
+			}
+		}
 	}
 }
 

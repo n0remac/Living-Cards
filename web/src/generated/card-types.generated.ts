@@ -14,11 +14,13 @@ export interface CardConfigInput {
 }
 
 export interface BackgroundConfig {
+  "asset_id": string;
   "background_color": string;
   "css": string;
 }
 
 export interface BackgroundConfigInput {
+  "asset_id"?: string;
   "background_color"?: string;
   "css"?: string;
 }

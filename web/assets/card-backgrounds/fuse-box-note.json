@@ -1,0 +1,24 @@
+{
+  "description": "The Fuse Box Note is the clear focal subject in the abandoned fuse room. Organic growths—mineral deposits and amber sap—have spread across it. A sign of reawakening is visible: a single indicator shining through a veil of roots.",
+  "selection": {
+    "technology": "Fuse Box Note",
+    "nature_primary": "mineral deposits",
+    "nature_secondary": "amber sap",
+    "location": "the abandoned fuse room",
+    "awakening": "a single indicator shining through a veil of roots",
+    "lighting": "low directional light revealing damp textures and corrosion"
+  },
+  "prompt": "Card:\nFuse Box Note\n\nScene:\nThe Fuse Box Note is the clear focal subject in the abandoned fuse room. Organic growths—mineral deposits and amber sap—have spread across it. A sign of reawakening is visible: a single indicator shining through a veil of roots.\n\nAuthored game context (use as narrative reference; do not render these words):\nFUSE BOX NOTE A label points under the machinery: SPARE GLASS FUSE.\n\nCard role and tags:\nclue. Tags: clue, fuse-room.\n\nInterpretation:\nTreat the subject as a physical clue discovered in the abandoned complex, with its meaning suggested through wear, placement, and surrounding objects rather than readable writing.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, low directional light revealing damp textures and corrosion, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "fuse_room",
+  "card_id": "fuse-box-note",
+  "card_name": "Fuse Box Note",
+  "seed": 42,
+  "index": 7,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "fuse-box-note.webp",
+  "request_id": "6fa735e3-2014-43e0-9c5d-da67d12b60e2",
+  "created_at": "2026-07-25T19:41:13.933787766Z"
+}

@@ -1,0 +1,24 @@
+{
+  "description": "The Burnt Ribbon is the clear focal subject in the abandoned fuse room. Organic growths—pale mycelium and tiny glassy mushrooms—have spread across it. A sign of reawakening is visible: a low blue pulse traveling through old conductors.",
+  "selection": {
+    "technology": "Burnt Ribbon",
+    "nature_primary": "pale mycelium",
+    "nature_secondary": "tiny glassy mushrooms",
+    "location": "the abandoned fuse room",
+    "awakening": "a low blue pulse traveling through old conductors",
+    "lighting": "low directional light revealing damp textures and corrosion"
+  },
+  "prompt": "Card:\nBurnt Ribbon\n\nScene:\nThe Burnt Ribbon is the clear focal subject in the abandoned fuse room. Organic growths—pale mycelium and tiny glassy mushrooms—have spread across it. A sign of reawakening is visible: a low blue pulse traveling through old conductors.\n\nAuthored game context (use as narrative reference; do not render these words):\nBURNT RIBBON A strip of insulation curls into ash.\n\nCard role and tags:\nclue. Tags: decoy, fuse-room.\n\nInterpretation:\nTreat the subject as a physical clue discovered in the abandoned complex, with its meaning suggested through wear, placement, and surrounding objects rather than readable writing.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, low directional light revealing damp textures and corrosion, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "fuse_room",
+  "card_id": "burnt-ribbon",
+  "card_name": "Burnt Ribbon",
+  "seed": 42,
+  "index": 5,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "burnt-ribbon.webp",
+  "request_id": "07e7ffc9-4321-4317-aea6-16f9a56338df",
+  "created_at": "2026-07-25T19:39:23.495241212Z"
+}

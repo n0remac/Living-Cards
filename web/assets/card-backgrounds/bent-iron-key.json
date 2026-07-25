@@ -1,0 +1,24 @@
+{
+  "description": "The Bent Iron Key is the clear focal subject in the ruined cell complex. Organic growths—velvet moss and tiny glassy mushrooms—have spread across it. A sign of reawakening is visible: a faint amber current moving through its contacts.",
+  "selection": {
+    "technology": "Bent Iron Key",
+    "nature_primary": "velvet moss",
+    "nature_secondary": "tiny glassy mushrooms",
+    "location": "the ruined cell complex",
+    "awakening": "a faint amber current moving through its contacts",
+    "lighting": "pale dawn light filtering through a fractured ceiling"
+  },
+  "prompt": "Card:\nBent Iron Key\n\nScene:\nThe Bent Iron Key is the clear focal subject in the ruined cell complex. Organic growths—velvet moss and tiny glassy mushrooms—have spread across it. A sign of reawakening is visible: a faint amber current moving through its contacts.\n\nAuthored game context (use as narrative reference; do not render these words):\nBENT IRON KEY Its teeth match a rusted lock.\n\nCard role and tags:\nitem. Tags: item, key, iron-key.\n\nInterpretation:\nTreat the subject as a tangible artifact that could be found, carried, and fitted into an ancient machine.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, pale dawn light filtering through a fractured ceiling, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "seeded_world",
+  "card_id": "bent-iron-key",
+  "card_name": "Bent Iron Key",
+  "seed": 42,
+  "index": 13,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "bent-iron-key.webp",
+  "request_id": "0ec03b0e-226f-4788-ae70-47570440756d",
+  "created_at": "2026-07-25T19:46:24.337135434Z"
+}

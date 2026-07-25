@@ -40,7 +40,8 @@
                 "id": "generator-panel-background",
                 "config": {
                   "background_color": "#111827",
-                  "css": "background: #111827;"
+                  "css": "background: #111827;",
+                  "asset_id": "generator-panel"
                 },
                 "component_kind": "background"
               },
@@ -66,27 +67,15 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 24,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 16,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
-              },
-              {
-                "id": "generator-panel-meter",
-                "config": {
-                  "shape": "roundedRectangle",
-                  "x": 50,
-                  "y": 52,
-                  "width": 62,
-                  "height": 24,
-                  "rotation": 0,
-                  "background_color": "#0f172a",
-                  "border_color": "#7dd3fc",
-                  "border_width_px": 2,
-                  "shadow": "0 10px 24px rgba(14,165,233,0.22)"
-                },
-                "component_kind": "shape"
               },
               {
                 "id": "generator-panel-value",
@@ -100,9 +89,13 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 52,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 50,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
               },
@@ -118,9 +111,13 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 82,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 84,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
               }
@@ -142,7 +139,8 @@
                 "id": "generator-panel-background",
                 "config": {
                   "background_color": "#052e2b",
-                  "css": "background: #052e2b;"
+                  "css": "background: #052e2b;",
+                  "asset_id": "generator-panel"
                 },
                 "component_kind": "background"
               },
@@ -168,27 +166,15 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 25,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 16,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
-              },
-              {
-                "id": "generator-panel-glow",
-                "config": {
-                  "shape": "circle",
-                  "x": 50,
-                  "y": 52,
-                  "width": 34,
-                  "height": 34,
-                  "rotation": 0,
-                  "background_color": "#34d399",
-                  "border_color": "#ecfdf5",
-                  "border_width_px": 2,
-                  "shadow": "0 10px 24px rgba(14,165,233,0.22)"
-                },
-                "component_kind": "shape"
               },
               {
                 "id": "generator-panel-body",
@@ -202,9 +188,13 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 82,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 84,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
               }
@@ -242,7 +232,8 @@
                 "id": "numbered-gauge-background",
                 "config": {
                   "background_color": "#172554",
-                  "css": "background: #172554;"
+                  "css": "background: #172554;",
+                  "asset_id": "numbered-gauge"
                 },
                 "component_kind": "background"
               },
@@ -268,9 +259,13 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 28,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 16,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
               },
@@ -286,9 +281,13 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 56,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 50,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
               },
@@ -304,9 +303,13 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 86,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 84,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
               }
@@ -349,7 +352,8 @@
                 "id": "slider-component-background",
                 "config": {
                   "background_color": "#0f172a",
-                  "css": "background: #0f172a;"
+                  "css": "background: #0f172a;",
+                  "asset_id": "slider-component"
                 },
                 "component_kind": "background"
               },
@@ -375,27 +379,15 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 26,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 16,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
-              },
-              {
-                "id": "slider-component-track",
-                "config": {
-                  "shape": "roundedRectangle",
-                  "x": 50,
-                  "y": 56,
-                  "width": 62,
-                  "height": 12,
-                  "rotation": 0,
-                  "background_color": "#facc15",
-                  "border_color": "#111827",
-                  "border_width_px": 2,
-                  "shadow": ""
-                },
-                "component_kind": "shape"
               },
               {
                 "id": "slider-component-body",
@@ -409,9 +401,13 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 82,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 84,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
               }
@@ -460,7 +456,8 @@
                 "id": "border-component-background",
                 "config": {
                   "background_color": "#111827",
-                  "css": "background: #111827;"
+                  "css": "background: #111827;",
+                  "asset_id": "border-component"
                 },
                 "component_kind": "background"
               },
@@ -487,9 +484,13 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 30,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 16,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
               },
@@ -505,9 +506,13 @@
                   "align": "center",
                   "position": "center",
                   "x": 50,
-                  "y": 70,
-                  "padding_px": 4,
-                  "css": "text-align: center;"
+                  "y": 84,
+                  "padding_px": 12,
+                  "css": "text-align: center;",
+                  "background_color": "#101713",
+                  "border_color": "#6b7a6d",
+                  "border_width_px": 1,
+                  "border_radius_px": 12
                 },
                 "component_kind": "text"
               }

@@ -31,6 +31,55 @@ func TestPageUsesCanonicalComponentVocabulary(t *testing.T) {
 	}
 }
 
+func TestCardBackgroundAssetsAreServedSafely(t *testing.T) {
+	mux := testMux(nil)
+
+	recorder := request(t, mux, http.MethodGet, "/assets/card-backgrounds/rusted-cell-door.webp", "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("asset status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Content-Type"); got != "image/webp" {
+		t.Fatalf("content type = %q", got)
+	}
+	if got := recorder.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("cache control = %q", got)
+	}
+	if recorder.Body.Len() == 0 {
+		t.Fatal("asset response is empty")
+	}
+
+	head := request(t, mux, http.MethodHead, "/assets/card-backgrounds/rusted-cell-door.webp", "")
+	if head.Code != http.StatusOK || head.Body.Len() != 0 {
+		t.Fatalf("HEAD status = %d body bytes = %d", head.Code, head.Body.Len())
+	}
+
+	for _, path := range []string{
+		"/assets/card-backgrounds/rusted-cell-door.json",
+		"/assets/card-backgrounds/Rusted-Cell-Door.webp",
+		"/assets/card-backgrounds/nested/rusted-cell-door.webp",
+		"/assets/card-backgrounds/rusted-cell-door.webp/extra",
+	} {
+		recorder := request(t, mux, http.MethodGet, path, "")
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d", path, recorder.Code)
+		}
+	}
+	for _, path := range []string{
+		"/assets/card-backgrounds/../app.webp",
+		"/assets/card-backgrounds/%2e%2e/app.webp",
+		"/assets/card-backgrounds//rusted-cell-door.webp",
+	} {
+		if assetID, ok := cardBackgroundAssetID(path); ok {
+			t.Fatalf("unsafe path %q resolved to %q", path, assetID)
+		}
+	}
+
+	post := request(t, mux, http.MethodPost, "/assets/card-backgrounds/rusted-cell-door.webp", "")
+	if post.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST status = %d", post.Code)
+	}
+}
+
 func TestDraftResourcesExposeCanonicalDocuments(t *testing.T) {
 	mux := testMux(nil)
 	recorder := request(t, mux, http.MethodGet, "/api/draft-card", "")
@@ -139,7 +188,18 @@ func TestGameSessionRendersWithInjectedRegistry(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
-	if !strings.Contains(recorder.Body.String(), `"component_kind":"card"`) || !strings.Contains(recorder.Body.String(), `"preview_html"`) {
+	body := recorder.Body.String()
+	for _, marker := range []string{
+		`"component_kind":"card"`,
+		`"preview_html"`,
+		`src=\"/assets/card-backgrounds/rusted-cell-door.webp\"`,
+		`background-color: #101713`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("body missing %q: %s", marker, body)
+		}
+	}
+	if strings.Contains(body, `data-component-kind=\"shape\"`) || strings.Contains(body, `data-component-kind=\"image\"`) {
 		t.Fatalf("body = %s", recorder.Body.String())
 	}
 }

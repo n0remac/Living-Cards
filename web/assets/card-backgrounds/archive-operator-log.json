@@ -1,0 +1,24 @@
+{
+  "description": "The Operator Log is the clear focal subject in the overgrown archive terminal chamber. Organic growths—bioluminescent spores and mineral deposits—have spread across it. A sign of reawakening is visible: dim geometric symbols returning to life.",
+  "selection": {
+    "technology": "Operator Log",
+    "nature_primary": "bioluminescent spores",
+    "nature_secondary": "mineral deposits",
+    "location": "the overgrown archive terminal chamber",
+    "awakening": "dim geometric symbols returning to life",
+    "lighting": "pale dawn light filtering through a fractured ceiling"
+  },
+  "prompt": "Card:\nOperator Log\n\nScene:\nThe Operator Log is the clear focal subject in the overgrown archive terminal chamber. Organic growths—bioluminescent spores and mineral deposits—have spread across it. A sign of reawakening is visible: dim geometric symbols returning to life.\n\nAuthored game context (use as narrative reference; do not render these words):\nOPERATOR LOG Night shift reminder: The archive password is NIGHTJAR. Change it before inspection.\n\nCard role and tags:\nclue. Tags: archive, clue, password.\n\nInterpretation:\nTreat the subject as a physical clue discovered in the abandoned complex, with its meaning suggested through wear, placement, and surrounding objects rather than readable writing.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, pale dawn light filtering through a fractured ceiling, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "archive_terminal",
+  "card_id": "archive-operator-log",
+  "card_name": "Operator Log",
+  "seed": 42,
+  "index": 1,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "archive-operator-log.webp",
+  "request_id": "f2e125e9-b6bc-4af6-b37d-0acb1b98ae17",
+  "created_at": "2026-07-25T19:35:47.309134002Z"
+}

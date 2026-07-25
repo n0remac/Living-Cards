@@ -20,7 +20,13 @@ GOCACHE ?= $(CURDIR)/.tmp/go-build-cache
 
 export GOCACHE
 
-.PHONY: restart stop build start status logs
+.PHONY: restart stop build start status logs card-images card-images-game
+
+card-images:
+	go run ./cmd/cardimages $(ARGS)
+
+card-images-game:
+	go run ./cmd/cardimages -game-cards $(ARGS)
 
 restart: stop build start
 

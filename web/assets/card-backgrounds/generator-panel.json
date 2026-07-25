@@ -1,0 +1,24 @@
+{
+  "description": "The Generator Panel is the clear focal subject in the dormant generator hall. Organic growths—mineral deposits and velvet moss—have spread across it. A sign of reawakening is visible: a low blue pulse traveling through old conductors.",
+  "selection": {
+    "technology": "Generator Panel",
+    "nature_primary": "mineral deposits",
+    "nature_secondary": "velvet moss",
+    "location": "the dormant generator hall",
+    "awakening": "a low blue pulse traveling through old conductors",
+    "lighting": "soft overcast light with deep green shadows"
+  },
+  "prompt": "Card:\nGenerator Panel\n\nScene:\nThe Generator Panel is the clear focal subject in the dormant generator hall. Organic growths—mineral deposits and velvet moss—have spread across it. A sign of reawakening is visible: a low blue pulse traveling through old conductors.\n\nAuthored game context (use as narrative reference; do not render these words):\nGENERATOR ONLINE The tuned regulator holds at 73. Power moves deeper into the room. SLEEPING GENERATOR OUTPUT MUST HOLD AT ## The regulator is missing. A tuned controller could wake it.\n\nCard role and tags:\nworld. Tags: generator, machine, puzzle, inactive.\n\nInterpretation:\nTreat the subject as a persistent part of the environment. Scale it naturally for what it is: architecture should feel imposing, while machinery or found objects should remain physically believable.\n\nStory:\nAn advanced civilization vanished long ago. Nature has reclaimed its technology, but the machinery is quietly beginning to awaken.\n\nComposition:\nVertical 5:7 collectible-card background artwork. Make the named card subject immediately recognizable, with one clear focal point, layered depth, a readable silhouette, and quieter negative space near the upper and lower edges for overlaid card text. Fill the canvas.\n\nVisual direction:\nGrounded fantasy archaeology, believable aged metal, glass, paper, stone, and ceramic as appropriate, damp organic textures, soft overcast light with deep green shadows, restrained green, copper, and amber palette, atmospheric light, detailed painterly realism. Let the authored context influence small environmental storytelling details.\n\nConstraints:\nBackground artwork only. Do not render the card name, authored context, tags, passwords, numbers, or any other readable text. No letters, logos, watermark, decorative card border, frame, overlay interface, modern consumer electronics, or visible people. Physical controls and ancient machine displays are allowed, but they must have no readable symbols.",
+  "deck_id": "generator_room",
+  "card_id": "generator-panel",
+  "card_name": "Generator Panel",
+  "seed": 42,
+  "index": 10,
+  "model": "gpt-image-2",
+  "size": "960x1344",
+  "quality": "medium",
+  "format": "webp",
+  "image_file": "generator-panel.webp",
+  "request_id": "040a95ae-49c5-4bce-8603-5743881d1bc5",
+  "created_at": "2026-07-25T19:43:53.272646487Z"
+}

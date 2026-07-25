@@ -2,6 +2,7 @@ package background
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
@@ -64,6 +65,65 @@ func TestValidateGeneratedRejectsInvalidBackgroundColor(t *testing.T) {
 	issues := configIssues(Config{BackgroundColor: "not-a-color"})
 	if len(issues) != 1 || issues[0].Path != "config.background_color" {
 		t.Fatalf("issues = %#v", issues)
+	}
+}
+
+func TestAssetIDValidation(t *testing.T) {
+	t.Parallel()
+
+	if issues := configIssues(Config{AssetID: "rusted-cell-door", BackgroundColor: "#111827"}); len(issues) != 0 {
+		t.Fatalf("valid asset issues = %#v", issues)
+	}
+	for _, assetID := range []string{
+		"../rusted-cell-door",
+		"Rusted-Cell-Door",
+		"rusted-cell-door.webp",
+		"https://example.com/card",
+		"rusted cell door",
+	} {
+		issues := configIssues(Config{AssetID: assetID, BackgroundColor: "#111827"})
+		if len(issues) == 0 || issues[0].Path != "config.asset_id" {
+			t.Fatalf("asset %q issues = %#v", assetID, issues)
+		}
+	}
+}
+
+func TestAssetURLRejectsUnsafeIDs(t *testing.T) {
+	t.Parallel()
+
+	if got := AssetURL("rusted-cell-door"); got != "/assets/card-backgrounds/rusted-cell-door.webp" {
+		t.Fatalf("AssetURL() = %q", got)
+	}
+	if got := AssetURL("../rusted-cell-door"); got != "" {
+		t.Fatalf("unsafe AssetURL() = %q", got)
+	}
+}
+
+func TestDefinitionRendersFullBleedAssetLayer(t *testing.T) {
+	t.Parallel()
+
+	config, _ := json.Marshal(Config{AssetID: "rusted-cell-door", BackgroundColor: "#201815"})
+	contribution, err := Definition().Render(card.Node{ID: "door-background", ComponentKind: Kind, Config: config}, card.RenderContext{DOMIDPrefix: "world"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(contribution.Layers) != 1 {
+		t.Fatalf("layers = %d", len(contribution.Layers))
+	}
+	body := contribution.Layers[0].Render()
+	for _, marker := range []string{
+		`id="world-door-background-layer"`,
+		`src="/assets/card-backgrounds/rusted-cell-door.webp"`,
+		`alt=""`,
+		`aria-hidden="true"`,
+		`data-component-kind="background"`,
+		`object-fit: cover`,
+		`pointer-events: none`,
+		`z-index: 0`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("render missing %q: %s", marker, body)
+		}
 	}
 }
 
