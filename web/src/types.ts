@@ -223,3 +223,39 @@ export interface GameSessionSnapshot {
   solvedFlags: Record<string, boolean>;
   message?: string;
 }
+
+export type GameEvent =
+  | { sequence: number; type: "sessionReset"; payload?: Record<string, never> }
+  | { sequence: number; type: "cardCycled"; payload: { direction: string; previousCardId: string; activeCardId: string } }
+  | { sequence: number; type: "cardCollected"; payload: { cardId: string; previousWorldIndex: number; activeCardId: string } }
+  | { sequence: number; type: "cardPlayed"; payload: { sourceCardId: string; targetCardId: string; outcome: "resolved" | "conditionsFailed" | "noMatchingRule" } }
+  | { sequence: number; type: "cardConsumed"; payload: { cardId: string } }
+  | { sequence: number; type: "formSubmitted"; payload: { cardId: string; formId: string } }
+  | { sequence: number; type: "componentSelected"; payload: GameComponentEventPayload }
+  | { sequence: number; type: "componentChanged"; payload: GameComponentEventPayload }
+  | { sequence: number; type: "editStarted"; payload: { cardId: string } }
+  | { sequence: number; type: "editComponentInstalled"; payload: { cardId: string; componentCardId: string; componentId: string; componentKind: ComponentKind } }
+  | { sequence: number; type: "editSaved"; payload: { cardId: string } }
+  | { sequence: number; type: "editCanceled"; payload: { cardId: string } }
+  | { sequence: number; type: "flagChanged"; payload: { flag: string; value: boolean } }
+  | { sequence: number; type: "cardStateChanged"; payload: { cardId: string; key: string; value: unknown } }
+  | { sequence: number; type: "cardTagsRemoved"; payload: { cardId: string; tags: string[] } }
+  | { sequence: number; type: "cardVariantChanged"; payload: { cardId: string; variant: string } }
+  | { sequence: number; type: "componentMounted"; payload: { sourceCardId: string; targetCardId: string; componentId: string; componentKind: ComponentKind } }
+  | { sequence: number; type: "deckLoaded"; payload: { deckId: string } }
+  | { sequence: number; type: "actionRejected"; payload: { action: string; outcome: string } }
+  | { sequence: number; type: "message"; message: string };
+
+export interface GameComponentEventPayload {
+  cardId: string;
+  componentId: string;
+  componentKind: ComponentKind;
+  control?: string;
+  scope: "world" | "library" | "edit";
+}
+
+export interface GameResult {
+  revision: number;
+  snapshot: GameSessionSnapshot;
+  events: GameEvent[];
+}

@@ -9,7 +9,7 @@ import type {
   ConfigKind,
   DesignLibraryItem,
   ConfigIssue,
-  GameSessionSnapshot,
+  GameResult,
   GeneratedConfig,
   InteractiveDraftCardResponse,
   LibraryResponse,
@@ -161,23 +161,23 @@ export async function applyLibraryDesign(itemID: string): Promise<ApplyConfigRes
   return await response.json() as ApplyConfigResponse;
 }
 
-export async function fetchGameSession(): Promise<GameSessionSnapshot> {
+export async function fetchGameSession(): Promise<GameResult> {
   const response = await fetch("/api/game/session", { cache: "no-store" });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to load game session."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function resetGameSession(): Promise<GameSessionSnapshot> {
+export async function resetGameSession(): Promise<GameResult> {
   const response = await fetch("/api/game/reset", { method: "POST" });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to reset game session."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function cycleGameCard(direction: "next" | "previous"): Promise<GameSessionSnapshot> {
+export async function cycleGameCard(direction: "next" | "previous"): Promise<GameResult> {
   const response = await fetch("/api/game/cycle", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -186,10 +186,10 @@ export async function cycleGameCard(direction: "next" | "previous"): Promise<Gam
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to cycle card."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function collectGameCard(cardId: string): Promise<GameSessionSnapshot> {
+export async function collectGameCard(cardId: string): Promise<GameResult> {
   const response = await fetch("/api/game/collect", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -198,10 +198,10 @@ export async function collectGameCard(cardId: string): Promise<GameSessionSnapsh
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to collect card."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function playGameCard(sourceCardId: string, targetCardId: string): Promise<GameSessionSnapshot> {
+export async function playGameCard(sourceCardId: string, targetCardId: string): Promise<GameResult> {
   const response = await fetch("/api/game/play-card", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -210,10 +210,10 @@ export async function playGameCard(sourceCardId: string, targetCardId: string): 
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to play card."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function submitGameForm(cardId: string, formId: string, fields: Record<string, string>): Promise<GameSessionSnapshot> {
+export async function submitGameForm(cardId: string, formId: string, fields: Record<string, string>): Promise<GameResult> {
   const response = await fetch("/api/game/submit-form", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -222,10 +222,10 @@ export async function submitGameForm(cardId: string, formId: string, fields: Rec
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to submit form."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function selectGameCardComponent(cardId: string, componentId: string, componentKind: ComponentKind): Promise<GameSessionSnapshot> {
+export async function selectGameCardComponent(cardId: string, componentId: string, componentKind: ComponentKind): Promise<GameResult> {
   const response = await fetch("/api/game/component/select", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -234,10 +234,10 @@ export async function selectGameCardComponent(cardId: string, componentId: strin
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to select component."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function applyGameCardComponentControl(cardId: string, componentId: string, componentKind: ComponentKind, control: string, value: unknown): Promise<GameSessionSnapshot> {
+export async function applyGameCardComponentControl(cardId: string, componentId: string, componentKind: ComponentKind, control: string, value: unknown): Promise<GameResult> {
   const response = await fetch("/api/game/component/control-change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -246,10 +246,10 @@ export async function applyGameCardComponentControl(cardId: string, componentId:
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to update active card."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function startGameEdit(cardId: string): Promise<GameSessionSnapshot> {
+export async function startGameEdit(cardId: string): Promise<GameResult> {
   const response = await fetch("/api/game/edit/start", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -258,10 +258,10 @@ export async function startGameEdit(cardId: string): Promise<GameSessionSnapshot
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to start editing card."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function installGameEditComponent(componentCardId: string): Promise<GameSessionSnapshot> {
+export async function installGameEditComponent(componentCardId: string): Promise<GameResult> {
   const response = await fetch("/api/game/edit/install-component", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -270,10 +270,10 @@ export async function installGameEditComponent(componentCardId: string): Promise
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to install component."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function selectGameEditComponent(componentId: string, componentKind: ComponentKind): Promise<GameSessionSnapshot> {
+export async function selectGameEditComponent(componentId: string, componentKind: ComponentKind): Promise<GameResult> {
   const response = await fetch("/api/game/edit/component/select", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -282,10 +282,10 @@ export async function selectGameEditComponent(componentId: string, componentKind
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to select draft component."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function applyGameEditControl(componentId: string, control: string, value: unknown): Promise<GameSessionSnapshot> {
+export async function applyGameEditControl(componentId: string, control: string, value: unknown): Promise<GameResult> {
   const response = await fetch("/api/game/edit/control-change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -294,10 +294,10 @@ export async function applyGameEditControl(componentId: string, control: string,
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to update draft card."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function applyGameLibraryComponentControl(cardId: string, componentId: string, componentKind: ComponentKind, control: string, value: unknown): Promise<GameSessionSnapshot> {
+export async function applyGameLibraryComponentControl(cardId: string, componentId: string, componentKind: ComponentKind, control: string, value: unknown): Promise<GameResult> {
   const response = await fetch("/api/game/library/component/control-change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -306,23 +306,23 @@ export async function applyGameLibraryComponentControl(cardId: string, component
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to update library card."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function saveGameEdit(): Promise<GameSessionSnapshot> {
+export async function saveGameEdit(): Promise<GameResult> {
   const response = await fetch("/api/game/edit/save", { method: "POST" });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to save edited card."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
-export async function cancelGameEdit(): Promise<GameSessionSnapshot> {
+export async function cancelGameEdit(): Promise<GameResult> {
   const response = await fetch("/api/game/edit/cancel", { method: "POST" });
   if (!response.ok) {
     throw new Error(await readError(response, "Failed to cancel editing."));
   }
-  return await response.json() as GameSessionSnapshot;
+  return await response.json() as GameResult;
 }
 
 export async function addDraftComponent<K extends "text" | "shape" | "image">(componentKind: K, config?: ComponentConfigInput<K>): Promise<TapCardResponse> {

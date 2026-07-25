@@ -127,6 +127,38 @@ Collecting a card moves it from the world deck into the library. A play against 
 
 The main game endpoints are under `/api/game/*`. Draft/designer endpoints are under `/api/draft-card/*`. The frontend bundle is built from `web/src/app.ts` by `internal/webbuild` and committed under `web/dist/`.
 
+### Game mutation boundary
+
+The world-deck runtime exposes two session operations: `View` for a
+non-mutating read at the current revision and `Execute` for typed commands.
+HTTP routes retain their resource-oriented paths, strictly decode their
+existing request shapes, construct commands, and return:
+
+```text
+HTTP request
+→ typed command
+→ Session.Execute
+→ state mutation
+→ ordered semantic events
+→ revisioned domain snapshot
+→ rendered HTTP snapshot
+```
+
+Before dispatch, `Execute` clones every mutable gameplay field and runs the
+command against that working state while holding the session lock. Invalid
+commands, internal rule failures, and domain snapshot failures restore the
+previous state, discard events, and leave the revision unchanged. A valid
+command increments the revision once even when game conditions reject the
+action. Reset restores the seeded gameplay state without restarting the
+revision sequence.
+
+Events are command-local and transient. They are emitted at mutation time,
+including declarative rule effects and the temporary imperative generator
+path, and use contiguous sequence numbers beginning at zero. They are not an
+event store and do not support replay or undo. The web renderer runs after
+the domain transaction commits; a response-rendering or connection failure
+cannot safely roll back an already committed session.
+
 ## Deferred work
 
 - Recursive rendering and real container child policies.

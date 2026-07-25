@@ -107,7 +107,7 @@ func TestSessionUsesInjectedRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := session.Snapshot()
+	snapshot, err := viewSession(session)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,10 +141,10 @@ func TestSliderConditionReadsRegistryProperty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.Collect("source"); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: "source"}); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := session.UseCard("source", "target")
+	snapshot, err := executeSession(session, PlayCardCommand{SourceCardID: "source", TargetCardID: "target"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestCollectMovesCardsOutOfWorldDeckAndPreservesActiveCard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	snapshot, err := session.Collect("later")
+	snapshot, err := executeSession(session, CollectCardCommand{CardID: "later"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestCollectMovesCardsOutOfWorldDeckAndPreservesActiveCard(t *testing.T) {
 		t.Fatalf("snapshot after non-active collect = %#v", snapshot)
 	}
 
-	snapshot, err = session.Collect("first")
+	snapshot, err = executeSession(session, CollectCardCommand{CardID: "first"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestCollectMovesCardsOutOfWorldDeckAndPreservesActiveCard(t *testing.T) {
 	if containsCard(snapshot.WorldDeck, "first") || !containsCard(snapshot.Library, "first") || len(snapshot.Library) != 2 {
 		t.Fatalf("ownership after active collect: world=%v library=%v", cardIDs(snapshot.WorldDeck), cardIDs(snapshot.Library))
 	}
-	if _, err := session.Collect("first"); err == nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: "first"}); err == nil {
 		t.Fatal("collecting an already owned card succeeded")
 	}
 }
@@ -207,7 +207,7 @@ func TestCollectingLastActiveCardWrapsToFirstRemainingCard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := session.Collect("last")
+	snapshot, err := executeSession(session, CollectCardCommand{CardID: "last"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -237,17 +237,17 @@ func TestUseCardConsumesMatchedAttemptButRetainsUnmatchedTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.Collect("source"); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: "source"}); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := session.UseCard("source", "other")
+	snapshot, err := executeSession(session, PlayCardCommand{SourceCardID: "source", TargetCardID: "other"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !containsCard(snapshot.Library, "source") {
 		t.Fatal("unmatched target consumed source")
 	}
-	snapshot, err = session.UseCard("source", "target")
+	snapshot, err = executeSession(session, PlayCardCommand{SourceCardID: "source", TargetCardID: "target"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,27 +283,27 @@ func TestComponentCardEditSaveConvertsBaseAndCancelPreservesLibrary(t *testing.T
 	if containsCard(mustSnapshot(t, session).WorldDeck, "blank-controller") {
 		t.Fatal("generator deck still contains blank controller")
 	}
-	if _, err := session.Collect("slider-component"); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: "slider-component"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.Collect("border-component"); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: "border-component"}); err != nil {
 		t.Fatal(err)
 	}
 
-	started, err := session.StartEdit("slider-component")
+	started, err := executeSession(session, StartEditingCommand{CardID: "slider-component"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if started.EditSession == nil || started.EditSession.SelectedComponentID == "" || findNodeByKind(started.EditSession.DraftCard.Document.Root, card.KindSlider) == nil {
 		t.Fatalf("component base was not installed into draft: %#v", started.EditSession)
 	}
-	if _, err := session.InstallEditComponent("slider-component"); err == nil {
+	if _, err := executeSession(session, InstallEditComponentCommand{ComponentCardID: "slider-component"}); err == nil {
 		t.Fatal("component card installed itself")
 	}
-	if _, err := session.InstallEditComponent("border-component"); err != nil {
+	if _, err := executeSession(session, InstallEditComponentCommand{ComponentCardID: "border-component"}); err != nil {
 		t.Fatal(err)
 	}
-	canceled, err := session.CancelEdit()
+	canceled, err := executeSession(session, CancelEditCommand{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,17 +314,17 @@ func TestComponentCardEditSaveConvertsBaseAndCancelPreservesLibrary(t *testing.T
 		t.Fatal("cancel converted the component base")
 	}
 
-	started, err = session.StartEdit("slider-component")
+	started, err = executeSession(session, StartEditingCommand{CardID: "slider-component"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.ApplyEditControl(started.EditSession.SelectedComponentID, "value", json.RawMessage(`73`)); err != nil {
+	if _, err := executeSession(session, ChangeEditComponentCommand{ComponentID: started.EditSession.SelectedComponentID, Control: "value", Value: json.RawMessage(`73`)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.InstallEditComponent("border-component"); err != nil {
+	if _, err := executeSession(session, InstallEditComponentCommand{ComponentCardID: "border-component"}); err != nil {
 		t.Fatal(err)
 	}
-	saved, err := session.SaveEdit()
+	saved, err := executeSession(session, SaveEditCommand{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestComponentCardEditSaveConvertsBaseAndCancelPreservesLibrary(t *testing.T
 	if findNodeByKind(controller.Document.Root, card.KindSlider) == nil || findNodeByKind(controller.Document.Root, card.KindBorder) == nil {
 		t.Fatalf("controller document = %#v", controller.Document)
 	}
-	if _, err := session.StartEdit("slider-component"); err != nil {
+	if _, err := executeSession(session, StartEditingCommand{CardID: "slider-component"}); err != nil {
 		t.Fatalf("saved controller could not be edited again: %v", err)
 	}
 }
@@ -377,10 +377,10 @@ func TestEveryEmbeddedComponentCardCanBeAnEditBase(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := session.Collect(test.cardID); err != nil {
+			if _, err := executeSession(session, CollectCardCommand{CardID: test.cardID}); err != nil {
 				t.Fatal(err)
 			}
-			snapshot, err := session.StartEdit(test.cardID)
+			snapshot, err := executeSession(session, StartEditingCommand{CardID: test.cardID})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -401,25 +401,25 @@ func TestFailedRegulatorPlayMovesSliderToFieldAndCanRevealArchive(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.Collect("slider-component"); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: "slider-component"}); err != nil {
 		t.Fatal(err)
 	}
-	started, err := session.StartEdit("slider-component")
+	started, err := executeSession(session, StartEditingCommand{CardID: "slider-component"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	sliderID := started.EditSession.SelectedComponentID
-	if _, err := session.SaveEdit(); err != nil {
+	if _, err := executeSession(session, SaveEditCommand{}); err != nil {
 		t.Fatal(err)
 	}
-	failed, err := session.UseCard("slider-component", "generator-panel")
+	failed, err := executeSession(session, PlayCardCommand{SourceCardID: "slider-component", TargetCardID: "generator-panel"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if containsCard(failed.Library, "slider-component") || findNodeByID(failed.ActiveWorldCard.Document.Root, sliderID) == nil {
 		t.Fatalf("failed play did not move controller to field: %#v", failed)
 	}
-	revealed, err := session.ApplyWorldComponentControl("generator-panel", sliderID, card.KindSlider, "value", json.RawMessage(`73`))
+	revealed, err := executeSession(session, ChangeWorldComponentCommand{CardID: "generator-panel", ComponentID: sliderID, ComponentKind: card.KindSlider, Control: "value", Value: json.RawMessage(`73`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,26 +437,26 @@ func TestEmbeddedPuzzleUsesComponentCardsAsControllerBases(t *testing.T) {
 
 	collectAndUse(t, session, "bent-iron-key", "rusted-cell-door")
 	collectAndUse(t, session, "glass-fuse", "sleeping-switch")
-	if _, err := session.Collect("slider-component"); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: "slider-component"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.Collect("border-component"); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: "border-component"}); err != nil {
 		t.Fatal(err)
 	}
-	started, err := session.StartEdit("slider-component")
+	started, err := executeSession(session, StartEditingCommand{CardID: "slider-component"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.ApplyEditControl(started.EditSession.SelectedComponentID, "value", json.RawMessage(`73`)); err != nil {
+	if _, err := executeSession(session, ChangeEditComponentCommand{ComponentID: started.EditSession.SelectedComponentID, Control: "value", Value: json.RawMessage(`73`)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.InstallEditComponent("border-component"); err != nil {
+	if _, err := executeSession(session, InstallEditComponentCommand{ComponentCardID: "border-component"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.SaveEdit(); err != nil {
+	if _, err := executeSession(session, SaveEditCommand{}); err != nil {
 		t.Fatal(err)
 	}
-	generator, err := session.UseCard("slider-component", "generator-panel")
+	generator, err := executeSession(session, PlayCardCommand{SourceCardID: "slider-component", TargetCardID: "generator-panel"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,29 +464,29 @@ func TestEmbeddedPuzzleUsesComponentCardsAsControllerBases(t *testing.T) {
 		t.Fatalf("generator play = active %q library %v", generator.ActiveWorldCardID, cardIDs(generator.Library))
 	}
 
-	if _, err := session.Collect("archive-password-input-component"); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: "archive-password-input-component"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.Collect("archive-submit-button-component"); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: "archive-submit-button-component"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.StartEdit("archive-password-input-component"); err != nil {
+	if _, err := executeSession(session, StartEditingCommand{CardID: "archive-password-input-component"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.InstallEditComponent("archive-submit-button-component"); err != nil {
+	if _, err := executeSession(session, InstallEditComponentCommand{ComponentCardID: "archive-submit-button-component"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := session.SaveEdit(); err != nil {
+	if _, err := executeSession(session, SaveEditCommand{}); err != nil {
 		t.Fatal(err)
 	}
-	mounted, err := session.UseCard("archive-password-input-component", "archive-terminal")
+	mounted, err := executeSession(session, PlayCardCommand{SourceCardID: "archive-password-input-component", TargetCardID: "archive-terminal"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if containsCard(mounted.Library, "archive-password-input-component") || !mounted.SolvedFlags["archiveControllerMounted"] {
 		t.Fatalf("archive controller was not mounted: %#v", mounted)
 	}
-	unlocked, err := session.SubmitForm("archive-terminal", "archive-login", map[string]string{"password": " nightjar "})
+	unlocked, err := executeSession(session, SubmitFormCommand{CardID: "archive-terminal", FormID: "archive-login", Fields: map[string]string{"password": " nightjar "}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -502,17 +502,17 @@ func TestGenericWorldControlEditing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := session.ApplyWorldComponentControl("target", "target-slider", card.KindSlider, "value", json.RawMessage(`8`))
+	snapshot, err := executeSession(session, ChangeWorldComponentCommand{CardID: "target", ComponentID: "target-slider", ComponentKind: card.KindSlider, Control: "value", Value: json.RawMessage(`8`)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(snapshot.ActiveWorldCard.Document.Root.Children[0].Config), `"value":8`) {
 		t.Fatalf("config = %s", snapshot.ActiveWorldCard.Document.Root.Children[0].Config)
 	}
-	if _, err := session.ApplyWorldComponentControl("target", "target-slider", card.KindSlider, "value", json.RawMessage(`999`)); err == nil {
+	if _, err := executeSession(session, ChangeWorldComponentCommand{CardID: "target", ComponentID: "target-slider", ComponentKind: card.KindSlider, Control: "value", Value: json.RawMessage(`999`)}); err == nil {
 		t.Fatal("invalid range edit succeeded")
 	}
-	if _, err := session.ApplyWorldComponentControl("target", "target-slider", card.KindSlider, "legacyValue", json.RawMessage(`5`)); err == nil {
+	if _, err := executeSession(session, ChangeWorldComponentCommand{CardID: "target", ComponentID: "target-slider", ComponentKind: card.KindSlider, Control: "legacyValue", Value: json.RawMessage(`5`)}); err == nil {
 		t.Fatal("legacy control alias succeeded")
 	}
 }
@@ -576,19 +576,29 @@ func cardIDs(cards []Card) []string {
 
 func mustSnapshot(t *testing.T, session *Session) Snapshot {
 	t.Helper()
-	snapshot, err := session.Snapshot()
+	snapshot, err := viewSession(session)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return snapshot
 }
 
+func viewSession(session *Session) (Snapshot, error) {
+	result, err := session.View()
+	return result.Snapshot, err
+}
+
+func executeSession(session *Session, command Command) (Snapshot, error) {
+	result, err := session.Execute(command)
+	return result.Snapshot, err
+}
+
 func collectAndUse(t *testing.T, session *Session, sourceCardID, targetCardID string) {
 	t.Helper()
-	if _, err := session.Collect(sourceCardID); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: sourceCardID}); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := session.UseCard(sourceCardID, targetCardID)
+	snapshot, err := executeSession(session, PlayCardCommand{SourceCardID: sourceCardID, TargetCardID: targetCardID})
 	if err != nil {
 		t.Fatal(err)
 	}

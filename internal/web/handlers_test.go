@@ -204,6 +204,64 @@ func TestGameSessionRendersWithInjectedRegistry(t *testing.T) {
 	}
 }
 
+func TestGameEndpointsReturnRevisionedResults(t *testing.T) {
+	mux := testMux(nil)
+	read := request(t, mux, http.MethodGet, "/api/game/session", "")
+	if read.Code != http.StatusOK {
+		t.Fatalf("read status = %d body=%s", read.Code, read.Body.String())
+	}
+	var initial GameResultResponse
+	if err := json.Unmarshal(read.Body.Bytes(), &initial); err != nil {
+		t.Fatal(err)
+	}
+	if initial.Revision != 0 || len(initial.Events) != 0 || initial.Snapshot.ActiveWorldCardID == "" {
+		t.Fatalf("initial result = %#v", initial)
+	}
+
+	cycled := request(t, mux, http.MethodPost, "/api/game/cycle", `{"direction":"next"}`)
+	if cycled.Code != http.StatusOK {
+		t.Fatalf("cycle status = %d body=%s", cycled.Code, cycled.Body.String())
+	}
+	var result GameResultResponse
+	if err := json.Unmarshal(cycled.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Revision != 1 || len(result.Events) == 0 || result.Events[0].Type != "cardCycled" {
+		t.Fatalf("cycle result = %#v", result)
+	}
+}
+
+func TestInvalidGameRequestsAreStrictAndDoNotAdvanceRevision(t *testing.T) {
+	mux := testMux(nil)
+	for _, body := range []string{
+		`{"direction":"next","legacy":true}`,
+		`{"direction":"next"} {"direction":"next"}`,
+		`{"direction":`,
+	} {
+		recorder := request(t, mux, http.MethodPost, "/api/game/cycle", body)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("body %q status = %d response=%s", body, recorder.Code, recorder.Body.String())
+		}
+	}
+	invalidCommand := request(t, mux, http.MethodPost, "/api/game/collect", `{"cardId":"missing"}`)
+	if invalidCommand.Code != http.StatusBadRequest {
+		t.Fatalf("invalid command status = %d body=%s", invalidCommand.Code, invalidCommand.Body.String())
+	}
+	invalidEmpty := request(t, mux, http.MethodPost, "/api/game/reset", `{"legacy":true}`)
+	if invalidEmpty.Code != http.StatusBadRequest {
+		t.Fatalf("reset body status = %d body=%s", invalidEmpty.Code, invalidEmpty.Body.String())
+	}
+
+	read := request(t, mux, http.MethodGet, "/api/game/session", "")
+	var result GameResultResponse
+	if err := json.Unmarshal(read.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Revision != 0 {
+		t.Fatalf("revision after invalid requests = %d", result.Revision)
+	}
+}
+
 func TestUnknownRoutesAndMethods(t *testing.T) {
 	mux := testMux(nil)
 	if recorder := request(t, mux, http.MethodGet, "/missing", ""); recorder.Code != http.StatusNotFound {

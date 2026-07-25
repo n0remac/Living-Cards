@@ -53,6 +53,7 @@ type EditSession struct {
 
 type Session struct {
 	mu                       sync.Mutex
+	revision                 uint64
 	registry                 *cardcomponent.Registry
 	deckDefinition           DeckDefinition
 	cardDefinitions          map[string]CardDefinition
@@ -113,20 +114,10 @@ func NewSessionFromDeck(registry *cardcomponent.Registry, definition DeckDefinit
 	}, nil
 }
 
-func (s *Session) Snapshot() (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return s.snapshotLocked()
-}
-
-func (s *Session) Reset() (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) resetLocked(events *eventCollector) (Snapshot, error) {
 	next, err := NewSessionFromDeck(s.registry, s.deckDefinition)
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, failExecution(err)
 	}
 	s.cardDefinitions = next.cardDefinitions
 	s.documentVariants = next.documentVariants
@@ -140,21 +131,23 @@ func (s *Session) Reset() (Snapshot, error) {
 	s.editSession = next.editSession
 	s.solvedFlags = next.solvedFlags
 	s.lastMessage = next.lastMessage
-	return s.snapshotLocked()
+	events.emit(EventSessionReset, SessionResetPayload{})
+	events.message(s.lastMessage)
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) Cycle(direction string) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) cycleLocked(direction string, events *eventCollector) (Snapshot, error) {
 	if len(s.worldDeck) == 0 {
 		return Snapshot{}, fmt.Errorf("world deck is empty")
 	}
-	switch strings.TrimSpace(direction) {
+	previousCardID := s.worldDeck[s.activeIndex].ID
+	normalizedDirection := strings.TrimSpace(direction)
+	switch normalizedDirection {
 	case "previous", "prev", "back":
 		s.activeIndex--
 	case "", "next":
 		s.activeIndex++
+		normalizedDirection = "next"
 	default:
 		return Snapshot{}, fmt.Errorf("direction must be next or previous")
 	}
@@ -165,14 +158,16 @@ func (s *Session) Cycle(direction string) (Snapshot, error) {
 		s.activeIndex = 0
 	}
 	s.activeEditingComponentID = ""
-	s.lastMessage = "The next card slides into view."
-	return s.snapshotLocked()
+	events.emit(EventCardCycled, CardCycledPayload{
+		Direction:      normalizedDirection,
+		PreviousCardID: previousCardID,
+		ActiveCardID:   s.worldDeck[s.activeIndex].ID,
+	})
+	s.setMessageLocked("The next card slides into view.", events)
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) Collect(cardID string) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) collectLocked(cardID string, events *eventCollector) (Snapshot, error) {
 	cardID = strings.TrimSpace(cardID)
 	if cardID == "" && len(s.worldDeck) > 0 {
 		cardID = s.worldDeck[s.activeIndex].ID
@@ -197,14 +192,16 @@ func (s *Session) Collect(cardID string) (Snapshot, error) {
 		s.activeIndex = 0
 	}
 	s.activeEditingComponentID = ""
-	s.lastMessage = card.Name + " moved into your library."
-	return s.snapshotLocked()
+	events.emit(EventCardCollected, CardCollectedPayload{
+		CardID:             card.ID,
+		PreviousWorldIndex: index,
+		ActiveCardID:       s.worldDeck[s.activeIndex].ID,
+	})
+	s.setMessageLocked(card.Name+" moved into your library.", events)
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) playCardLocked(sourceCardID, targetCardID string, events *eventCollector) (Snapshot, error) {
 	sourceCardID = strings.TrimSpace(sourceCardID)
 	targetCardID = strings.TrimSpace(targetCardID)
 	sourceIndex := s.libraryCardIndex(sourceCardID)
@@ -220,6 +217,8 @@ func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("target card %q is not in the world deck", targetCardID)
 	}
 	target := s.worldDeck[targetIndex]
+	played := &CardPlayedPayload{SourceCardID: source.ID, TargetCardID: target.ID}
+	events.emit(EventCardPlayed, played)
 	matchedTarget := false
 	for _, rule := range s.useRules {
 		if !s.ruleBaseMatches(rule, source, target) {
@@ -227,38 +226,46 @@ func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
 		}
 		matchedTarget = true
 		if !sourceComponentConditionsMatch(s.registry, rule.SourceComponentConditions, source.Document) {
-			if err := s.applyRuleFailureEffects(rule, source, target); err != nil {
-				return Snapshot{}, err
+			if err := s.applyRuleFailureEffects(rule, source, target, events); err != nil {
+				return Snapshot{}, failExecution(err)
 			}
 			if strings.TrimSpace(rule.FailureMessage) != "" {
-				s.lastMessage = rule.FailureMessage
+				played.Outcome = "conditionsFailed"
+				events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
 				s.removeLibraryCard(source.ID)
+				events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
 				s.activeEditingComponentID = ""
-				return s.snapshotLocked()
+				s.setMessageLocked(rule.FailureMessage, events)
+				return s.commandSnapshotLocked()
 			}
 			continue
 		}
-		if err := s.applyRuleEffects(rule, source, target); err != nil {
-			return Snapshot{}, err
+		played.Outcome = "resolved"
+		if err := s.applyRuleEffects(rule, source, target, events); err != nil {
+			return Snapshot{}, failExecution(err)
 		}
 		s.removeLibraryCard(source.ID)
+		events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
 		s.activeEditingComponentID = ""
-		return s.snapshotLocked()
+		s.ensureMessageEventLocked(events)
+		return s.commandSnapshotLocked()
 	}
 	if matchedTarget {
+		played.Outcome = "conditionsFailed"
+		events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
 		s.removeLibraryCard(source.ID)
+		events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
 		s.activeEditingComponentID = ""
-		s.lastMessage = source.Name + " was played, but its conditions were not met."
-		return s.snapshotLocked()
+		s.setMessageLocked(source.Name+" was played, but its conditions were not met.", events)
+		return s.commandSnapshotLocked()
 	}
-	s.lastMessage = "Nothing on this card responds to " + source.Name + "."
-	return s.snapshotLocked()
+	played.Outcome = "noMatchingRule"
+	events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
+	s.setMessageLocked("Nothing on this card responds to "+source.Name+".", events)
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) SubmitForm(cardID, formID string, fields map[string]string) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) submitFormLocked(cardID, formID string, fields map[string]string, events *eventCollector) (Snapshot, error) {
 	cardID = strings.TrimSpace(cardID)
 	formID = strings.TrimSpace(formID)
 	if cardID == "" || formID == "" {
@@ -280,6 +287,7 @@ func (s *Session) SubmitForm(cardID, formID string, fields map[string]string) (S
 		return Snapshot{}, fmt.Errorf("card %q is not in the world deck", cardID)
 	}
 	target := s.worldDeck[targetIndex]
+	events.emit(EventFormSubmitted, FormSubmittedPayload{CardID: cardID, FormID: formID})
 	for _, rule := range s.formSubmitRules {
 		if strings.TrimSpace(rule.FormID) != formID || !s.formSubmitRuleBaseMatches(rule, target) {
 			continue
@@ -288,26 +296,27 @@ func (s *Session) SubmitForm(cardID, formID string, fields map[string]string) (S
 			return Snapshot{}, fmt.Errorf("form %q is not mounted on %s", formID, target.Name)
 		}
 		if !submittedFieldsMatch(rule.FieldConditions, fields) {
+			events.emit(EventActionRejected, ActionRejectedPayload{Action: "submitForm", Outcome: "conditionsFailed"})
 			if strings.TrimSpace(rule.FailureMessage) != "" {
-				s.lastMessage = rule.FailureMessage
+				s.setMessageLocked(rule.FailureMessage, events)
+			} else {
+				s.ensureMessageEventLocked(events)
 			}
 			s.activeIndex = targetIndex
-			return s.snapshotLocked()
+			return s.commandSnapshotLocked()
 		}
-		if err := s.applyRuleEffects(UseRuleDefinition{Effects: rule.Effects}, Card{}, target); err != nil {
-			return Snapshot{}, err
+		if err := s.applyRuleEffects(UseRuleDefinition{Effects: rule.Effects}, Card{}, target, events); err != nil {
+			return Snapshot{}, failExecution(err)
 		}
 		s.activeIndex = targetIndex
 		s.activeEditingComponentID = ""
-		return s.snapshotLocked()
+		s.ensureMessageEventLocked(events)
+		return s.commandSnapshotLocked()
 	}
 	return Snapshot{}, fmt.Errorf("form %q does not accept submissions for %s", formID, target.Name)
 }
 
-func (s *Session) SelectWorldComponent(cardID, componentID, componentKind string) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) selectWorldComponentLocked(cardID, componentID, componentKind string, events *eventCollector) (Snapshot, error) {
 	index, node, err := s.worldComponentNode(cardID, componentID, componentKind)
 	if err != nil {
 		return Snapshot{}, err
@@ -317,14 +326,17 @@ func (s *Session) SelectWorldComponent(cardID, componentID, componentKind string
 	}
 	s.activeIndex = index
 	s.activeEditingComponentID = node.ID
-	s.lastMessage = componentEditLabel(s.registry, node.ComponentKind) + " edit controls opened."
-	return s.snapshotLocked()
+	events.emit(EventComponentSelected, ComponentPayload{
+		CardID:        s.worldDeck[index].ID,
+		ComponentID:   node.ID,
+		ComponentKind: node.ComponentKind,
+		Scope:         "world",
+	})
+	s.setMessageLocked(componentEditLabel(s.registry, node.ComponentKind)+" edit controls opened.", events)
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) ApplyWorldComponentControl(cardID, componentID, componentKind, control string, value json.RawMessage) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) changeWorldComponentLocked(cardID, componentID, componentKind, control string, value json.RawMessage, events *eventCollector) (Snapshot, error) {
 	index, node, err := s.worldComponentNode(cardID, componentID, componentKind)
 	if err != nil {
 		return Snapshot{}, err
@@ -332,25 +344,30 @@ func (s *Session) ApplyWorldComponentControl(cardID, componentID, componentKind,
 	if err := s.requireWorldComponentEditable(node.ComponentKind); err != nil {
 		return Snapshot{}, err
 	}
-	if err := applyGameComponentControl(s.registry, node, strings.TrimSpace(control), value); err != nil {
+	control = strings.TrimSpace(control)
+	if err := applyGameComponentControl(s.registry, node, control, value); err != nil {
 		return Snapshot{}, err
 	}
 	s.activeIndex = index
 	s.activeEditingComponentID = node.ID
-	powered, err := s.powerGeneratorIfTuned(index, node.ID)
+	events.emit(EventComponentChanged, ComponentPayload{
+		CardID:        s.worldDeck[index].ID,
+		ComponentID:   node.ID,
+		ComponentKind: node.ComponentKind,
+		Control:       control,
+		Scope:         "world",
+	})
+	powered, err := s.powerGeneratorIfTuned(index, node.ID, events)
 	if err != nil {
-		return Snapshot{}, err
+		return Snapshot{}, failExecution(err)
 	}
 	if !powered {
-		s.lastMessage = componentEditLabel(s.registry, node.ComponentKind) + " updated."
+		s.setMessageLocked(componentEditLabel(s.registry, node.ComponentKind)+" updated.", events)
 	}
-	return s.snapshotLocked()
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) StartEdit(cardID string) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) startEditingLocked(cardID string, events *eventCollector) (Snapshot, error) {
 	cardID = strings.TrimSpace(cardID)
 	index := s.libraryCardIndex(cardID)
 	if index < 0 {
@@ -381,14 +398,12 @@ func (s *Session) StartEdit(cardID string) (Snapshot, error) {
 		SelectedComponentID: selectedComponentID,
 	}
 	s.activeEditingComponentID = ""
-	s.lastMessage = "Editing " + card.Name + "."
-	return s.snapshotLocked()
+	events.emit(EventEditStarted, EditPayload{CardID: card.ID})
+	s.setMessageLocked("Editing "+card.Name+".", events)
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) InstallEditComponent(componentCardID string) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) installEditComponentLocked(componentCardID string, events *eventCollector) (Snapshot, error) {
 	if s.editSession == nil {
 		return Snapshot{}, fmt.Errorf("start editing a card first")
 	}
@@ -417,27 +432,33 @@ func (s *Session) InstallEditComponent(componentCardID string) (Snapshot, error)
 	s.editSession.SelectedComponentID = node.ID
 
 	s.editSession.PendingConsumedComponentIDs = append(s.editSession.PendingConsumedComponentIDs, componentCardID)
-	s.lastMessage = component.Name + " added to the draft."
-	return s.snapshotLocked()
+	events.emit(EventEditComponentInstalled, EditComponentInstalledPayload{
+		CardID:          s.editSession.TargetCardID,
+		ComponentCardID: componentCardID,
+		ComponentID:     node.ID,
+		ComponentKind:   node.ComponentKind,
+	})
+	s.setMessageLocked(component.Name+" added to the draft.", events)
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) SelectEditComponent(componentID, componentKind string) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) selectEditComponentLocked(componentID, componentKind string, events *eventCollector) (Snapshot, error) {
 	node, err := s.editComponentNode(componentID, componentKind)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	s.editSession.SelectedComponentID = node.ID
-	s.lastMessage = componentEditLabel(s.registry, node.ComponentKind) + " edit controls opened."
-	return s.snapshotLocked()
+	events.emit(EventComponentSelected, ComponentPayload{
+		CardID:        s.editSession.TargetCardID,
+		ComponentID:   node.ID,
+		ComponentKind: node.ComponentKind,
+		Scope:         "edit",
+	})
+	s.setMessageLocked(componentEditLabel(s.registry, node.ComponentKind)+" edit controls opened.", events)
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) ApplyEditControl(componentID, control string, value json.RawMessage) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) changeEditComponentLocked(componentID, control string, value json.RawMessage, events *eventCollector) (Snapshot, error) {
 	node, err := s.editComponentNode(componentID, "")
 	if err != nil {
 		return Snapshot{}, err
@@ -447,14 +468,18 @@ func (s *Session) ApplyEditControl(componentID, control string, value json.RawMe
 		return Snapshot{}, err
 	}
 	s.editSession.SelectedComponentID = node.ID
-	s.lastMessage = fmt.Sprintf("%s %s updated.", s.editSession.DraftCard.Name, control)
-	return s.snapshotLocked()
+	events.emit(EventComponentChanged, ComponentPayload{
+		CardID:        s.editSession.TargetCardID,
+		ComponentID:   node.ID,
+		ComponentKind: node.ComponentKind,
+		Control:       control,
+		Scope:         "edit",
+	})
+	s.setMessageLocked(fmt.Sprintf("%s %s updated.", s.editSession.DraftCard.Name, control), events)
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) ApplyLibraryComponentControl(cardID, componentID, componentKind, control string, value json.RawMessage) (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) changeLibraryComponentLocked(cardID, componentID, componentKind, control string, value json.RawMessage, events *eventCollector) (Snapshot, error) {
 	cardID = strings.TrimSpace(cardID)
 	index := s.libraryCardIndex(cardID)
 	if index < 0 {
@@ -465,17 +490,22 @@ func (s *Session) ApplyLibraryComponentControl(cardID, componentID, componentKin
 	if err != nil {
 		return Snapshot{}, err
 	}
-	if err := applyGameComponentControl(s.registry, node, strings.TrimSpace(control), value); err != nil {
+	control = strings.TrimSpace(control)
+	if err := applyGameComponentControl(s.registry, node, control, value); err != nil {
 		return Snapshot{}, err
 	}
-	s.lastMessage = componentEditLabel(s.registry, node.ComponentKind) + " updated in " + s.library[index].Name + "."
-	return s.snapshotLocked()
+	events.emit(EventComponentChanged, ComponentPayload{
+		CardID:        s.library[index].ID,
+		ComponentID:   node.ID,
+		ComponentKind: node.ComponentKind,
+		Control:       control,
+		Scope:         "library",
+	})
+	s.setMessageLocked(componentEditLabel(s.registry, node.ComponentKind)+" updated in "+s.library[index].Name+".", events)
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) SaveEdit() (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) saveEditLocked(events *eventCollector) (Snapshot, error) {
 	if s.editSession == nil {
 		return Snapshot{}, fmt.Errorf("start editing a card first")
 	}
@@ -529,6 +559,7 @@ func (s *Session) SaveEdit() (Snapshot, error) {
 	}
 
 	s.library[targetIndex] = card
+	events.emit(EventEditSaved, EditPayload{CardID: card.ID})
 	pending := map[string]bool{}
 	for _, cardID := range s.editSession.PendingConsumedComponentIDs {
 		pending[cardID] = true
@@ -537,28 +568,47 @@ func (s *Session) SaveEdit() (Snapshot, error) {
 		next := make([]Card, 0, len(s.library))
 		for _, candidate := range s.library {
 			if pending[candidate.ID] && candidate.ID != card.ID {
+				events.emit(EventCardConsumed, CardConsumedPayload{CardID: candidate.ID})
 				continue
 			}
 			next = append(next, candidate)
 		}
 		s.library = next
 	}
-	s.lastMessage = card.Name + " saved to your library."
+	s.setMessageLocked(card.Name+" saved to your library.", events)
 	s.editSession = nil
-	return s.snapshotLocked()
+	return s.commandSnapshotLocked()
 }
 
-func (s *Session) CancelEdit() (Snapshot, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
+func (s *Session) cancelEditLocked(events *eventCollector) (Snapshot, error) {
 	if s.editSession == nil {
 		return Snapshot{}, fmt.Errorf("start editing a card first")
 	}
+	cardID := s.editSession.TargetCardID
 	cardName := s.editSession.DraftCard.Name
 	s.editSession = nil
-	s.lastMessage = "Canceled editing " + cardName + "."
-	return s.snapshotLocked()
+	events.emit(EventEditCanceled, EditPayload{CardID: cardID})
+	s.setMessageLocked("Canceled editing "+cardName+".", events)
+	return s.commandSnapshotLocked()
+}
+
+func (s *Session) setMessageLocked(message string, events *eventCollector) {
+	s.lastMessage = message
+	events.message(message)
+}
+
+func (s *Session) ensureMessageEventLocked(events *eventCollector) {
+	if !events.hasMessage() {
+		events.message(s.lastMessage)
+	}
+}
+
+func (s *Session) commandSnapshotLocked() (Snapshot, error) {
+	snapshot, err := s.snapshotLocked()
+	if err != nil {
+		return Snapshot{}, failExecution(err)
+	}
+	return snapshot, nil
 }
 
 func (s *Session) snapshotLocked() (Snapshot, error) {
@@ -881,7 +931,7 @@ func cardMatches(card Card, matcher CardMatcherDefinition) bool {
 	return true
 }
 
-func (s *Session) applyRuleEffects(rule UseRuleDefinition, source Card, target Card) error {
+func (s *Session) applyRuleEffects(rule UseRuleDefinition, source Card, target Card, events *eventCollector) error {
 	for _, effect := range rule.Effects {
 		switch effect.EffectKind {
 		case EffectSetFlag:
@@ -893,7 +943,9 @@ func (s *Session) applyRuleEffects(rule UseRuleDefinition, source Card, target C
 				return fmt.Errorf("%s effect value must be a boolean", EffectSetFlag)
 			}
 			s.solvedFlags[effect.Flag] = value
+			events.emit(EventFlagChanged, FlagChangedPayload{Flag: effect.Flag, Value: value})
 		case EffectSetCardState:
+			cardID := resolvedEffectCardID(effect, CardMatcherDefinition{ID: target.ID})
 			if err := s.updateEffectCard(effect, target, func(card *Card) error {
 				if card.State == nil {
 					card.State = map[string]any{}
@@ -903,7 +955,9 @@ func (s *Session) applyRuleEffects(rule UseRuleDefinition, source Card, target C
 			}); err != nil {
 				return err
 			}
+			events.emit(EventCardStateChanged, CardStateChangedPayload{CardID: cardID, Key: effect.Key, Value: cloneValue(effect.Value)})
 		case EffectRemoveCardTags:
+			cardID := resolvedEffectCardID(effect, CardMatcherDefinition{ID: target.ID})
 			if err := s.updateEffectCard(effect, target, func(card *Card) error {
 				for _, tag := range effect.Tags {
 					card.Tags = removeString(card.Tags, tag)
@@ -912,7 +966,9 @@ func (s *Session) applyRuleEffects(rule UseRuleDefinition, source Card, target C
 			}); err != nil {
 				return err
 			}
+			events.emit(EventCardTagsRemoved, CardTagsRemovedPayload{CardID: cardID, Tags: append([]string(nil), effect.Tags...)})
 		case EffectSetDocumentVariant:
+			cardID := resolvedEffectCardID(effect, CardMatcherDefinition{ID: target.ID})
 			if err := s.updateEffectCard(effect, target, func(card *Card) error {
 				variants := s.documentVariants[card.ID]
 				document, ok := variants[effect.Variant]
@@ -924,16 +980,23 @@ func (s *Session) applyRuleEffects(rule UseRuleDefinition, source Card, target C
 			}); err != nil {
 				return err
 			}
+			events.emit(EventCardVariantChanged, CardVariantChangedPayload{CardID: cardID, Variant: effect.Variant})
 		case EffectSetMessage:
-			s.lastMessage = effect.Message
+			s.setMessageLocked(effect.Message, events)
 		case EffectLoadDeck:
-			if err := s.loadDeck(effect.DeckID); err != nil {
+			loaded, err := s.loadDeck(effect.DeckID)
+			if err != nil {
 				return err
+			}
+			if loaded {
+				events.emit(EventDeckLoaded, DeckLoadedPayload{DeckID: effect.DeckID})
 			}
 		case EffectCopySourceComponent:
-			if err := s.copySourceComponentToEffectCard(effect, source, target); err != nil {
+			mounted, err := s.copySourceComponentToEffectCard(effect, source, target)
+			if err != nil {
 				return err
 			}
+			events.emit(EventComponentMounted, mounted)
 		default:
 			return fmt.Errorf("unsupported effect kind %q", effect.EffectKind)
 		}
@@ -941,54 +1004,68 @@ func (s *Session) applyRuleEffects(rule UseRuleDefinition, source Card, target C
 	return nil
 }
 
-func (s *Session) applyRuleFailureEffects(rule UseRuleDefinition, source Card, target Card) error {
+func (s *Session) applyRuleFailureEffects(rule UseRuleDefinition, source Card, target Card, events *eventCollector) error {
 	for _, effect := range rule.Effects {
 		if effect.EffectKind != EffectCopySourceComponent || !effect.ApplyOnFailure {
 			continue
 		}
-		if err := s.copySourceComponentToEffectCard(effect, source, target); err != nil {
+		mounted, err := s.copySourceComponentToEffectCard(effect, source, target)
+		if err != nil {
 			return err
 		}
+		events.emit(EventComponentMounted, mounted)
 	}
 	return nil
 }
 
-func (s *Session) copySourceComponentToEffectCard(effect RuleEffectDefinition, source Card, target Card) error {
+func (s *Session) copySourceComponentToEffectCard(effect RuleEffectDefinition, source Card, target Card) (ComponentMountedPayload, error) {
 	componentKind := strings.TrimSpace(effect.ComponentKind)
 	definition, ok := s.registry.Lookup(componentKind)
 	if !ok {
-		return fmt.Errorf("%s effect requires a registered component_kind", EffectCopySourceComponent)
+		return ComponentMountedPayload{}, fmt.Errorf("%s effect requires a registered component_kind", EffectCopySourceComponent)
 	}
 	if _, ok := definition.Install(); !ok {
-		return fmt.Errorf("%s effect requires an installable component_kind", EffectCopySourceComponent)
+		return ComponentMountedPayload{}, fmt.Errorf("%s effect requires an installable component_kind", EffectCopySourceComponent)
 	}
 	var sourceNode *cardcomponent.Node
 	if sourceComponentID := strings.TrimSpace(effect.SourceComponentID); sourceComponentID != "" {
 		sourceNode = findNodeByID(source.Document.Root, sourceComponentID)
 		if sourceNode != nil && sourceNode.ComponentKind != componentKind {
-			return fmt.Errorf("%s source component %q is %s, not %s", EffectCopySourceComponent, sourceComponentID, sourceNode.ComponentKind, componentKind)
+			return ComponentMountedPayload{}, fmt.Errorf("%s source component %q is %s, not %s", EffectCopySourceComponent, sourceComponentID, sourceNode.ComponentKind, componentKind)
 		}
 	} else {
 		sourceNode = findNodeByKind(source.Document.Root, componentKind)
 	}
 	if sourceNode == nil {
-		return fmt.Errorf("%s source card %q has no %s component", EffectCopySourceComponent, source.ID, componentKind)
+		return ComponentMountedPayload{}, fmt.Errorf("%s source card %q has no %s component", EffectCopySourceComponent, source.ID, componentKind)
 	}
 	template := cardcomponent.ComponentTemplate{ComponentKind: componentKind, ComponentID: sourceNode.ID, Config: append(json.RawMessage(nil), sourceNode.Config...)}
 	if componentID := strings.TrimSpace(effect.ComponentID); componentID != "" {
 		template.ComponentID = componentID
 	}
-	return s.updateEffectCard(effect, target, func(card *Card) error {
-		document, _, err := s.registry.InstallTemplate(card.Document, template)
+	targetCardID := resolvedEffectCardID(effect, CardMatcherDefinition{ID: target.ID})
+	var installedID string
+	err := s.updateEffectCard(effect, target, func(card *Card) error {
+		document, node, err := s.registry.InstallTemplate(card.Document, template)
 		if err != nil {
 			return err
 		}
 		card.Document = document
+		installedID = node.ID
 		return nil
 	})
+	if err != nil {
+		return ComponentMountedPayload{}, err
+	}
+	return ComponentMountedPayload{
+		SourceCardID:  source.ID,
+		TargetCardID:  targetCardID,
+		ComponentID:   installedID,
+		ComponentKind: componentKind,
+	}, nil
 }
 
-func (s *Session) powerGeneratorIfTuned(cardIndex int, selectedComponentID string) (bool, error) {
+func (s *Session) powerGeneratorIfTuned(cardIndex int, selectedComponentID string, events *eventCollector) (bool, error) {
 	if cardIndex < 0 || cardIndex >= len(s.worldDeck) {
 		return false, nil
 	}
@@ -1028,42 +1105,51 @@ func (s *Session) powerGeneratorIfTuned(cardIndex int, selectedComponentID strin
 	}
 	card.Document = cloneValue(activeDocument)
 	appendOrReplaceRootChild(&card.Document.Root, mountedSlider)
+	events.emit(EventCardVariantChanged, CardVariantChangedPayload{CardID: card.ID, Variant: "active"})
 	if card.State == nil {
 		card.State = map[string]any{}
 	}
 	card.State["powered"] = true
+	events.emit(EventCardStateChanged, CardStateChangedPayload{CardID: card.ID, Key: "powered", Value: true})
 	card.State["useful"] = true
+	events.emit(EventCardStateChanged, CardStateChangedPayload{CardID: card.ID, Key: "useful", Value: true})
 	card.Tags = removeString(card.Tags, "inactive")
+	events.emit(EventCardTagsRemoved, CardTagsRemovedPayload{CardID: card.ID, Tags: []string{"inactive"}})
 	if s.solvedFlags == nil {
 		s.solvedFlags = map[string]bool{}
 	}
 	s.solvedFlags[GeneratorPoweredFlag] = true
+	events.emit(EventFlagChanged, FlagChangedPayload{Flag: GeneratorPoweredFlag, Value: true})
 	if strings.TrimSpace(selectedComponentID) != "" {
 		s.activeEditingComponentID = selectedComponentID
 	}
-	if err := s.loadDeck(ArchiveTerminalDefinition); err != nil {
+	loaded, err := s.loadDeck(ArchiveTerminalDefinition)
+	if err != nil {
 		return false, err
 	}
+	if loaded {
+		events.emit(EventDeckLoaded, DeckLoadedPayload{DeckID: ArchiveTerminalDefinition})
+	}
 	s.activeEditingComponentID = ""
-	s.lastMessage = "The regulator locks at 73. The generator comes fully online."
+	s.setMessageLocked("The regulator locks at 73. The generator comes fully online.", events)
 	return true, nil
 }
 
-func (s *Session) loadDeck(deckID string) error {
+func (s *Session) loadDeck(deckID string) (bool, error) {
 	deckID = strings.TrimSpace(deckID)
 	if s.loadedDecks[deckID] {
-		return nil
+		return false, nil
 	}
 	definition, err := LoadEmbeddedDeck(s.registry, deckID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if err := ValidateDeckPackDefinition(s.registry, definition, s.cardDefinitions); err != nil {
-		return err
+		return false, err
 	}
 	worldDeck, documentVariants, cardDefinitions, activeIndex, err := materializeDeck(definition)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if s.solvedFlags == nil {
 		s.solvedFlags = map[string]bool{}
@@ -1094,7 +1180,7 @@ func (s *Session) loadDeck(deckID string) error {
 	}
 	s.loadedDecks[definition.ID] = true
 	s.activeIndex = startIndex + activeIndex
-	return nil
+	return true, nil
 }
 
 func (s *Session) updateEffectCard(effect RuleEffectDefinition, target Card, update func(*Card) error) error {

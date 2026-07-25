@@ -2,8 +2,10 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"strings"
 	"unicode"
@@ -45,6 +47,12 @@ type RenderedGameEditSession struct {
 	EditingOverlay              *ComponentOverlay `json:"editingOverlay,omitempty"`
 }
 
+type GameResultResponse struct {
+	Revision uint64              `json:"revision"`
+	Snapshot GameSessionSnapshot `json:"snapshot"`
+	Events   []game.Event        `json:"events"`
+}
+
 func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/game"), "/")
@@ -54,15 +62,19 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			snapshot, err := state.Snapshot()
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.View()
+			writeGameResult(registry, w, result, err)
 		case "reset":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			snapshot, err := state.Reset()
-			writeGameSnapshot(registry, w, snapshot, err)
+			if err := decodeEmptyGameCommand(w, r); err != nil {
+				writeInvalidGameRequest(w)
+				return
+			}
+			result, err := state.Execute(game.ResetCommand{})
+			writeGameResult(registry, w, result, err)
 		case "cycle":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -71,12 +83,12 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 			var request struct {
 				Direction string `json:"direction"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.Cycle(request.Direction)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.CycleCardCommand{Direction: request.Direction})
+			writeGameResult(registry, w, result, err)
 		case "collect":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -85,12 +97,12 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 			var request struct {
 				CardID string `json:"cardId"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.Collect(request.CardID)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.CollectCardCommand{CardID: request.CardID})
+			writeGameResult(registry, w, result, err)
 		case "play-card":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -100,31 +112,28 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				SourceCardID string `json:"sourceCardId"`
 				TargetCardID string `json:"targetCardId"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.UseCard(request.SourceCardID, request.TargetCardID)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.PlayCardCommand{SourceCardID: request.SourceCardID, TargetCardID: request.TargetCardID})
+			writeGameResult(registry, w, result, err)
 		case "submit-form":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
 			var request struct {
 				CardID string            `json:"cardId"`
 				FormID string            `json:"formId"`
 				Fields map[string]string `json:"fields"`
 			}
-			decoder := json.NewDecoder(r.Body)
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.SubmitForm(request.CardID, request.FormID, request.Fields)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.SubmitFormCommand{CardID: request.CardID, FormID: request.FormID, Fields: request.Fields})
+			writeGameResult(registry, w, result, err)
 		case "component/select":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -135,14 +144,12 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				ComponentID   string `json:"componentId"`
 				ComponentKind string `json:"componentKind"`
 			}
-			decoder := json.NewDecoder(r.Body)
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.SelectWorldComponent(request.CardID, request.ComponentID, request.ComponentKind)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.SelectWorldComponentCommand{CardID: request.CardID, ComponentID: request.ComponentID, ComponentKind: request.ComponentKind})
+			writeGameResult(registry, w, result, err)
 		case "component/control-change":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -155,14 +162,12 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				Control       string          `json:"control"`
 				Value         json.RawMessage `json:"value"`
 			}
-			decoder := json.NewDecoder(r.Body)
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.ApplyWorldComponentControl(request.CardID, request.ComponentID, request.ComponentKind, request.Control, request.Value)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.ChangeWorldComponentCommand{CardID: request.CardID, ComponentID: request.ComponentID, ComponentKind: request.ComponentKind, Control: request.Control, Value: request.Value})
+			writeGameResult(registry, w, result, err)
 		case "edit/start":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -171,12 +176,12 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 			var request struct {
 				CardID string `json:"cardId"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.StartEdit(request.CardID)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.StartEditingCommand{CardID: request.CardID})
+			writeGameResult(registry, w, result, err)
 		case "edit/install-component":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -185,12 +190,12 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 			var request struct {
 				ComponentCardID string `json:"componentCardId"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.InstallEditComponent(request.ComponentCardID)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.InstallEditComponentCommand{ComponentCardID: request.ComponentCardID})
+			writeGameResult(registry, w, result, err)
 		case "edit/component/select":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -200,14 +205,12 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				ComponentID   string `json:"componentId"`
 				ComponentKind string `json:"componentKind"`
 			}
-			decoder := json.NewDecoder(r.Body)
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.SelectEditComponent(request.ComponentID, request.ComponentKind)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.SelectEditComponentCommand{ComponentID: request.ComponentID, ComponentKind: request.ComponentKind})
+			writeGameResult(registry, w, result, err)
 		case "edit/control-change":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -218,14 +221,12 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				Control     string          `json:"control"`
 				Value       json.RawMessage `json:"value"`
 			}
-			decoder := json.NewDecoder(r.Body)
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.ApplyEditControl(request.ComponentID, request.Control, request.Value)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.ChangeEditComponentCommand{ComponentID: request.ComponentID, Control: request.Control, Value: request.Value})
+			writeGameResult(registry, w, result, err)
 		case "library/component/control-change":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -238,45 +239,100 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				Control       string          `json:"control"`
 				Value         json.RawMessage `json:"value"`
 			}
-			decoder := json.NewDecoder(r.Body)
-			decoder.DisallowUnknownFields()
-			if err := decoder.Decode(&request); err != nil {
-				http.Error(w, "invalid request body", http.StatusBadRequest)
+			if err := decodeGameCommand(w, r, &request); err != nil {
+				writeInvalidGameRequest(w)
 				return
 			}
-			snapshot, err := state.ApplyLibraryComponentControl(request.CardID, request.ComponentID, request.ComponentKind, request.Control, request.Value)
-			writeGameSnapshot(registry, w, snapshot, err)
+			result, err := state.Execute(game.ChangeLibraryComponentCommand{CardID: request.CardID, ComponentID: request.ComponentID, ComponentKind: request.ComponentKind, Control: request.Control, Value: request.Value})
+			writeGameResult(registry, w, result, err)
 		case "edit/save":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			snapshot, err := state.SaveEdit()
-			writeGameSnapshot(registry, w, snapshot, err)
+			if err := decodeEmptyGameCommand(w, r); err != nil {
+				writeInvalidGameRequest(w)
+				return
+			}
+			result, err := state.Execute(game.SaveEditCommand{})
+			writeGameResult(registry, w, result, err)
 		case "edit/cancel":
 			if r.Method != http.MethodPost {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 				return
 			}
-			snapshot, err := state.CancelEdit()
-			writeGameSnapshot(registry, w, snapshot, err)
+			if err := decodeEmptyGameCommand(w, r); err != nil {
+				writeInvalidGameRequest(w)
+				return
+			}
+			result, err := state.Execute(game.CancelEditCommand{})
+			writeGameResult(registry, w, result, err)
 		default:
 			http.NotFound(w, r)
 		}
 	}
 }
 
-func writeGameSnapshot(registry *cardcomponent.Registry, w http.ResponseWriter, snapshot game.Snapshot, err error) {
+func writeGameResult(registry *cardcomponent.Registry, w http.ResponseWriter, result game.Result, err error) {
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		status := http.StatusInternalServerError
+		if game.IsInvalidCommand(err) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
 		return
 	}
-	response, err := renderGameSessionSnapshot(registry, snapshot)
+	snapshot, err := renderGameSessionSnapshot(registry, result.Snapshot)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSONResponse(w, response)
+	writeJSONResponse(w, GameResultResponse{
+		Revision: result.Revision,
+		Snapshot: snapshot,
+		Events:   result.Events,
+	})
+}
+
+func decodeGameCommand(w http.ResponseWriter, r *http.Request, target any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return err
+	}
+	return nil
+}
+
+func decodeEmptyGameCommand(w http.ResponseWriter, r *http.Request) error {
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	var body struct{}
+	err := decoder.Decode(&body)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return err
+	}
+	return nil
+}
+
+func writeInvalidGameRequest(w http.ResponseWriter) {
+	http.Error(w, "invalid request body", http.StatusBadRequest)
 }
 
 func renderGameSessionSnapshot(registry *cardcomponent.Registry, snapshot game.Snapshot) (GameSessionSnapshot, error) {

@@ -916,6 +916,8 @@ function hexOrFallback(value) {
 
 // web/src/game/GameController.ts
 var latestSession = null;
+var latestRevision = -1;
+var lastPresentedRevision = -1;
 var busy = false;
 var controlBusy = false;
 var activePressState = null;
@@ -1086,18 +1088,18 @@ async function commitSliderInputValue(scope, input) {
   try {
     if (scope === "edit") {
       if (!latestSession?.editSession) return;
-      renderSession(await applyGameEditControl(componentId, "value", value));
+      applyGameResult(await applyGameEditControl(componentId, "value", value));
       return;
     }
     if (scope === "library") {
       const cardId2 = input.closest(".game-library-card")?.dataset.cardId || input.closest("[data-card-id]")?.dataset.cardId || "";
       if (!cardId2) return;
-      renderSession(await applyGameLibraryComponentControl(cardId2, componentId, "slider", "value", value));
+      applyGameResult(await applyGameLibraryComponentControl(cardId2, componentId, "slider", "value", value));
       return;
     }
     const cardId = latestSession?.activeWorldCardId || activeCardPreview()?.dataset.cardId || "";
     if (!cardId) return;
-    renderSession(await applyGameCardComponentControl(cardId, componentId, "slider", "value", value));
+    applyGameResult(await applyGameCardComponentControl(cardId, componentId, "slider", "value", value));
   } catch (error) {
     if (scope === "edit") {
       setEditStatus(errorMessage(error), true);
@@ -1437,7 +1439,7 @@ function clampDragPercent(value) {
 async function loadSession() {
   setStatus("Loading scene...");
   try {
-    renderSession(await fetchGameSession());
+    applyGameResult(await fetchGameSession());
   } catch (error) {
     setStatus(errorMessage(error), true);
   }
@@ -1448,7 +1450,7 @@ async function reset() {
   closeComponentOverlay(overlayRoot());
   setStatus("Resetting scene...");
   try {
-    renderSession(await resetGameSession());
+    applyGameResult(await resetGameSession());
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
@@ -1460,7 +1462,7 @@ async function cycle(direction) {
   busy = true;
   closeComponentOverlay(overlayRoot());
   try {
-    renderSession(await cycleGameCard(direction));
+    applyGameResult(await cycleGameCard(direction));
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
@@ -1472,7 +1474,7 @@ async function collect(cardId) {
   busy = true;
   closeComponentOverlay(overlayRoot());
   try {
-    renderSession(await collectGameCard(cardId));
+    applyGameResult(await collectGameCard(cardId));
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
@@ -1484,7 +1486,7 @@ async function play(sourceCardId, targetCardId) {
   busy = true;
   closeComponentOverlay(overlayRoot());
   try {
-    renderSession(await playGameCard(sourceCardId, targetCardId));
+    applyGameResult(await playGameCard(sourceCardId, targetCardId));
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
@@ -1507,7 +1509,7 @@ async function submitActiveForm(form) {
   });
   setStatus("Submitting...");
   try {
-    renderSession(await submitGameForm(cardId, formId, fields));
+    applyGameResult(await submitGameForm(cardId, formId, fields));
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
@@ -1521,7 +1523,7 @@ async function selectActiveComponent(hit) {
   if (busy || latestSession?.editSession) return;
   busy = true;
   try {
-    renderSession(await selectGameCardComponent(hit.cardId, hit.componentId, hit.componentKind), { openActiveOverlay: true });
+    applyGameResult(await selectGameCardComponent(hit.cardId, hit.componentId, hit.componentKind), { openActiveOverlay: true });
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
@@ -1532,7 +1534,7 @@ async function applyActivePosition(hit, x, y) {
   if (busy || latestSession?.editSession) return;
   busy = true;
   try {
-    renderSession(await applyGameCardComponentControl(hit.cardId, hit.componentId, hit.componentKind, "position", { x, y }));
+    applyGameResult(await applyGameCardComponentControl(hit.cardId, hit.componentId, hit.componentKind, "position", { x, y }));
   } catch (error) {
     if (latestSession) {
       renderSession(latestSession);
@@ -1546,7 +1548,7 @@ async function selectEditComponent(hit) {
   if (busy || !latestSession?.editSession) return;
   busy = true;
   try {
-    renderSession(await selectGameEditComponent(hit.componentId, hit.componentKind), { openOverlay: true });
+    applyGameResult(await selectGameEditComponent(hit.componentId, hit.componentKind), { openOverlay: true });
   } catch (error) {
     setEditStatus(errorMessage(error), true);
   } finally {
@@ -1557,7 +1559,7 @@ async function applyEditPosition(hit, x, y) {
   if (busy || !latestSession?.editSession) return;
   busy = true;
   try {
-    renderSession(await applyGameEditControl(hit.componentId, "position", { x, y }));
+    applyGameResult(await applyGameEditControl(hit.componentId, "position", { x, y }));
   } catch (error) {
     if (latestSession) {
       renderSession(latestSession);
@@ -1572,7 +1574,7 @@ async function startEdit(cardId) {
   busy = true;
   closeComponentOverlay(overlayRoot());
   try {
-    renderSession(await startGameEdit(cardId), { openOverlay: true });
+    applyGameResult(await startGameEdit(cardId), { openOverlay: true });
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
@@ -1585,7 +1587,7 @@ async function installEditComponent(componentCardId) {
   if (!card || !componentKindForCard(card) || pendingComponentIds().has(componentCardId)) return;
   busy = true;
   try {
-    renderSession(await installGameEditComponent(componentCardId), { openOverlay: true });
+    applyGameResult(await installGameEditComponent(componentCardId), { openOverlay: true });
   } catch (error) {
     setEditStatus(errorMessage(error), true);
   } finally {
@@ -1597,7 +1599,7 @@ async function saveEdit() {
   busy = true;
   closeComponentOverlay(overlayRoot());
   try {
-    renderSession(await saveGameEdit());
+    applyGameResult(await saveGameEdit());
   } catch (error) {
     setEditStatus(errorMessage(error), true);
   } finally {
@@ -1609,7 +1611,7 @@ async function cancelEdit() {
   busy = true;
   closeComponentOverlay(overlayRoot());
   try {
-    renderSession(await cancelGameEdit());
+    applyGameResult(await cancelGameEdit());
   } catch (error) {
     setEditStatus(errorMessage(error), true);
   } finally {
@@ -1642,6 +1644,19 @@ function renderSession(session, options = {}) {
   if (options.openOverlay) {
     openEditingOverlay(session.editSession.editingOverlay);
   }
+}
+function applyGameResult(result, options = {}) {
+  if (result.revision < latestRevision) return;
+  latestRevision = result.revision;
+  renderSession(result.snapshot, options);
+  if (result.events.length > 0 && result.revision > lastPresentedRevision) {
+    presentGameEvents(result.events, result.snapshot);
+    lastPresentedRevision = result.revision;
+  }
+}
+function presentGameEvents(events, snapshot) {
+  const message = events.slice().reverse().find((event) => event.type === "message")?.message;
+  setStatus(message || snapshot.message || "");
 }
 function renderActiveCard(card) {
   const root = byID("game-world-card");
@@ -1839,8 +1854,8 @@ async function applyActiveControl(overlay, control, value) {
   if (!cardId) return;
   controlBusy = true;
   try {
-    const snapshot = await applyGameCardComponentControl(cardId, overlay.componentId, overlay.componentKind, control.control, value);
-    renderSession(snapshot, { openActiveOverlay: true });
+    const result = await applyGameCardComponentControl(cardId, overlay.componentId, overlay.componentKind, control.control, value);
+    applyGameResult(result, { openActiveOverlay: true });
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
@@ -1851,8 +1866,8 @@ async function applyEditControl(overlay, control, value) {
   if (controlBusy) return;
   controlBusy = true;
   try {
-    const snapshot = await applyGameEditControl(overlay.componentId, control.control, value);
-    renderSession(snapshot, { openOverlay: true });
+    const result = await applyGameEditControl(overlay.componentId, control.control, value);
+    applyGameResult(result, { openOverlay: true });
   } catch (error) {
     setEditStatus(errorMessage(error), true);
   } finally {

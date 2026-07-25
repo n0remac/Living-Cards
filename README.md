@@ -141,11 +141,36 @@ World deck:
 - `POST /api/game/collect`
 - `POST /api/game/play-card`
 - `POST /api/game/submit-form`
+- `POST /api/game/component/select`
+- `POST /api/game/component/control-change`
 - `POST /api/game/edit/start`
 - `POST /api/game/edit/install-component`
+- `POST /api/game/edit/component/select`
 - `POST /api/game/edit/control-change`
+- `POST /api/game/library/component/control-change`
 - `POST /api/game/edit/save`
 - `POST /api/game/edit/cancel`
+
+Every world-deck endpoint returns the same result envelope:
+
+```json
+{
+  "revision": 4,
+  "snapshot": {},
+  "events": []
+}
+```
+
+`GET /api/game/session` does not advance the revision and returns an empty
+event list. Each accepted command advances the in-memory session revision
+exactly once, including valid actions rejected by the game world. Malformed
+or invalid commands do not advance it. Commands execute transactionally:
+rule or snapshot failures restore the previous session state and discard the
+command's events.
+
+Events are ordered semantic facts for one command. Their `sequence` starts at
+zero for each result. The browser ignores stale snapshots and presents a
+revision's events at most once; events are not persisted or replayed.
 
 Draft card/designer:
 
