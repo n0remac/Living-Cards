@@ -123,6 +123,8 @@ The registry has no dependency on Ollama, HTTP handlers, or model clients. Repai
 
 The game loads the seeded world plus fuse-room, generator-room, and archive-terminal packs from embedded JSON. Deck decoding rejects unknown fields and runs every card document through the component registry. Rules can inspect declared properties, discover form participants through roles, install component templates, and render cards without leaf-package imports.
 
+Collecting a card moves it from the world deck into the library. A play against a matching target consumes the library card after its success or failure effects complete. Component cards are editable bases: editing installs their own template into the draft, and saving converts the base into an editable controller while consuming any added component cards.
+
 The main game endpoints are under `/api/game/*`. Draft/designer endpoints are under `/api/draft-card/*`. The frontend bundle is built from `web/src/app.ts` by `internal/webbuild` and committed under `web/dist/`.
 
 ## Deferred work

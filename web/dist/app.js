@@ -1572,7 +1572,7 @@ async function startEdit(cardId) {
   busy = true;
   closeComponentOverlay(overlayRoot());
   try {
-    renderSession(await startGameEdit(cardId));
+    renderSession(await startGameEdit(cardId), { openOverlay: true });
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
@@ -1625,7 +1625,7 @@ function renderSession(session, options = {}) {
   setStatus(session.message || "");
   const progress = byID("game-progress");
   if (progress) {
-    progress.textContent = `${session.library.length} cards in library`;
+    progress.textContent = `${session.worldDeck.length} in deck \xB7 ${session.library.length} in library`;
   }
   const count = byID("game-library-count");
   if (count) {
@@ -1756,7 +1756,8 @@ function renderComponentTray(cards) {
   if (!root) return;
   root.innerHTML = "";
   const pending = pendingComponentIds();
-  const components = cards.filter((card) => componentKindForCard(card));
+  const targetCardId = latestSession?.editSession?.targetCardId || "";
+  const components = cards.filter((card) => card.id !== targetCardId && componentKindForCard(card));
   if (count) {
     count.textContent = components.length ? `${components.length} component${components.length === 1 ? "" : "s"}` : "Empty";
   }
@@ -1859,7 +1860,7 @@ async function applyEditControl(overlay, control, value) {
   }
 }
 function isEditableCard(card) {
-  return Boolean(card.state?.editable);
+  return Boolean(card.state?.editable || componentKindForCard(card));
 }
 function componentKindForCard(card) {
   return card.state?.component_template?.component_kind || "";

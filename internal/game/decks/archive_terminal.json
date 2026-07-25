@@ -547,9 +547,11 @@
   ],
   "useRules": [
     {
-      "id": "blank-controller-mounts-archive-login",
+      "id": "controller-mounts-archive-login",
       "source": {
-        "id": "blank-controller"
+        "tags": [
+          "controller"
+        ]
       },
       "target": {
         "id": "archive-terminal"

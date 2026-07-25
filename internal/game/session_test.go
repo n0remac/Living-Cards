@@ -86,6 +86,348 @@ func TestSliderConditionReadsRegistryProperty(t *testing.T) {
 	if snapshot.Message != "matched through property" {
 		t.Fatalf("message = %q", snapshot.Message)
 	}
+	if containsCard(snapshot.Library, "source") {
+		t.Fatal("successfully played source remained in library")
+	}
+}
+
+func TestCollectMovesCardsOutOfWorldDeckAndPreservesActiveCard(t *testing.T) {
+	registry := catalog.MustNew()
+	definition := DeckDefinition{
+		ID: "collection-test", Name: "Collection Test", InitialActiveCardID: "first",
+		Cards: []CardDefinition{
+			{ID: "first", Name: "First", Kind: KindItem, Collectible: true, InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("first")}},
+			{ID: "anchor", Name: "Anchor", Kind: KindWorld, InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("anchor")}},
+			{ID: "later", Name: "Later", Kind: KindItem, Collectible: true, InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("later")}},
+		},
+	}
+	session, err := NewSessionFromDeck(registry, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := session.Collect("later")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ActiveWorldCardID != "first" || containsCard(snapshot.WorldDeck, "later") || !containsCard(snapshot.Library, "later") {
+		t.Fatalf("snapshot after non-active collect = %#v", snapshot)
+	}
+
+	snapshot, err = session.Collect("first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ActiveWorldCardID != "anchor" || snapshot.ActiveIndex != 0 {
+		t.Fatalf("active card after collection = %q at %d", snapshot.ActiveWorldCardID, snapshot.ActiveIndex)
+	}
+	if containsCard(snapshot.WorldDeck, "first") || !containsCard(snapshot.Library, "first") || len(snapshot.Library) != 2 {
+		t.Fatalf("ownership after active collect: world=%v library=%v", cardIDs(snapshot.WorldDeck), cardIDs(snapshot.Library))
+	}
+	if _, err := session.Collect("first"); err == nil {
+		t.Fatal("collecting an already owned card succeeded")
+	}
+}
+
+func TestCollectingLastActiveCardWrapsToFirstRemainingCard(t *testing.T) {
+	registry := catalog.MustNew()
+	definition := DeckDefinition{
+		ID: "collection-wrap", Name: "Collection Wrap", InitialActiveCardID: "last",
+		Cards: []CardDefinition{
+			{ID: "anchor", Name: "Anchor", Kind: KindWorld, InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("anchor")}},
+			{ID: "last", Name: "Last", Kind: KindItem, Collectible: true, InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("last")}},
+		},
+	}
+	session, err := NewSessionFromDeck(registry, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := session.Collect("last")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ActiveWorldCardID != "anchor" || snapshot.ActiveIndex != 0 {
+		t.Fatalf("active card = %q at %d", snapshot.ActiveWorldCardID, snapshot.ActiveIndex)
+	}
+}
+
+func TestUseCardConsumesMatchedAttemptButRetainsUnmatchedTarget(t *testing.T) {
+	registry := catalog.MustNew()
+	requiredValue := 7
+	definition := DeckDefinition{
+		ID: "play-test", Name: "Play Test", InitialActiveCardID: "target",
+		Cards: []CardDefinition{
+			{ID: "target", Name: "Target", Kind: KindWorld, InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("target")}},
+			{ID: "other", Name: "Other", Kind: KindWorld, InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("other")}},
+			{ID: "source", Name: "Source", Kind: KindItem, Collectible: true, InitialDocument: "default", Documents: map[string]card.Document{"default": sliderDocument("source", 3)}},
+		},
+		UseRules: []UseRuleDefinition{{
+			ID: "conditional", Source: CardMatcherDefinition{ID: "source"}, Target: CardMatcherDefinition{ID: "target"},
+			SourceComponentConditions: []ComponentConditionDefinition{{ComponentKind: card.KindSlider, ValueEquals: &requiredValue}},
+			FailureMessage:            "The value is wrong.",
+			Effects:                   []RuleEffectDefinition{{EffectKind: EffectSetMessage, Message: "matched"}},
+		}},
+	}
+	session, err := NewSessionFromDeck(registry, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Collect("source"); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := session.UseCard("source", "other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsCard(snapshot.Library, "source") {
+		t.Fatal("unmatched target consumed source")
+	}
+	snapshot, err = session.UseCard("source", "target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsCard(snapshot.Library, "source") || snapshot.Message != "The value is wrong." {
+		t.Fatalf("matched failure snapshot = %#v", snapshot)
+	}
+}
+
+func TestDeckRequiresPersistentWorldCard(t *testing.T) {
+	registry := catalog.MustNew()
+	definition := DeckDefinition{
+		ID: "collectible-only", Name: "Collectible Only", InitialActiveCardID: "only",
+		Cards: []CardDefinition{{
+			ID: "only", Name: "Only", Kind: KindItem, Collectible: true,
+			InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("only")},
+		}},
+	}
+	if err := ValidateDeckDefinition(registry, definition); err == nil || !strings.Contains(err.Error(), "non-collectible") {
+		t.Fatalf("ValidateDeckDefinition() error = %v", err)
+	}
+}
+
+func TestComponentCardEditSaveConvertsBaseAndCancelPreservesLibrary(t *testing.T) {
+	registry := catalog.MustNew()
+	definition, err := LoadEmbeddedDeck(registry, GeneratorDeckDefinition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewSessionFromDeck(registry, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsCard(mustSnapshot(t, session).WorldDeck, "blank-controller") {
+		t.Fatal("generator deck still contains blank controller")
+	}
+	if _, err := session.Collect("slider-component"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Collect("border-component"); err != nil {
+		t.Fatal(err)
+	}
+
+	started, err := session.StartEdit("slider-component")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.EditSession == nil || started.EditSession.SelectedComponentID == "" || findNodeByKind(started.EditSession.DraftCard.Document.Root, card.KindSlider) == nil {
+		t.Fatalf("component base was not installed into draft: %#v", started.EditSession)
+	}
+	if _, err := session.InstallEditComponent("slider-component"); err == nil {
+		t.Fatal("component card installed itself")
+	}
+	if _, err := session.InstallEditComponent("border-component"); err != nil {
+		t.Fatal(err)
+	}
+	canceled, err := session.CancelEdit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(canceled.Library) != 2 || !containsCard(canceled.Library, "slider-component") || !containsCard(canceled.Library, "border-component") {
+		t.Fatalf("cancel consumed cards: %v", cardIDs(canceled.Library))
+	}
+	if _, declared := canceled.Library[0].State[componentTemplateStateKey]; !declared {
+		t.Fatal("cancel converted the component base")
+	}
+
+	started, err = session.StartEdit("slider-component")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ApplyEditControl(started.EditSession.SelectedComponentID, "value", json.RawMessage(`73`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.InstallEditComponent("border-component"); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := session.SaveEdit()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Library) != 1 || saved.Library[0].ID != "slider-component" || saved.Library[0].Name != "Slider Component" {
+		t.Fatalf("saved library = %#v", saved.Library)
+	}
+	controller := saved.Library[0]
+	if _, declared := controller.State[componentTemplateStateKey]; declared {
+		t.Fatal("saved controller retained component template")
+	}
+	if !stateBool(controller.State, "editable") || !stateBool(controller.State, "built") || !hasTag(controller, "controller") {
+		t.Fatalf("controller metadata = %#v tags=%v", controller.State, controller.Tags)
+	}
+	for _, unwanted := range []string{"component", "slider-component"} {
+		if hasTag(controller, unwanted) {
+			t.Fatalf("controller retained component tag %q: %v", unwanted, controller.Tags)
+		}
+	}
+	installed := appendStateStringOnce(controller.State["installedComponents"], "")
+	if !stringInSlice(installed, card.KindSlider) || !stringInSlice(installed, card.KindBorder) {
+		t.Fatalf("installed components = %v", installed)
+	}
+	if findNodeByKind(controller.Document.Root, card.KindSlider) == nil || findNodeByKind(controller.Document.Root, card.KindBorder) == nil {
+		t.Fatalf("controller document = %#v", controller.Document)
+	}
+	if _, err := session.StartEdit("slider-component"); err != nil {
+		t.Fatalf("saved controller could not be edited again: %v", err)
+	}
+}
+
+func TestEveryEmbeddedComponentCardCanBeAnEditBase(t *testing.T) {
+	registry := catalog.MustNew()
+	tests := []struct {
+		deckID        string
+		cardID        string
+		componentKind string
+	}{
+		{GeneratorDeckDefinition, "slider-component", card.KindSlider},
+		{GeneratorDeckDefinition, "border-component", card.KindBorder},
+		{ArchiveTerminalDefinition, "archive-password-input-component", card.KindTextInput},
+		{ArchiveTerminalDefinition, "archive-submit-button-component", card.KindButton},
+	}
+	for _, test := range tests {
+		t.Run(test.cardID, func(t *testing.T) {
+			definition, err := LoadEmbeddedDeck(registry, test.deckID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := NewSessionFromDeck(registry, definition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := session.Collect(test.cardID); err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := session.StartEdit(test.cardID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if snapshot.EditSession == nil || snapshot.EditSession.SelectedComponentID == "" || findNodeByKind(snapshot.EditSession.DraftCard.Document.Root, test.componentKind) == nil {
+				t.Fatalf("%s was not installed as the edit base", test.componentKind)
+			}
+		})
+	}
+}
+
+func TestFailedRegulatorPlayMovesSliderToFieldAndCanRevealArchive(t *testing.T) {
+	registry := catalog.MustNew()
+	definition, err := LoadEmbeddedDeck(registry, GeneratorDeckDefinition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewSessionFromDeck(registry, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Collect("slider-component"); err != nil {
+		t.Fatal(err)
+	}
+	started, err := session.StartEdit("slider-component")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sliderID := started.EditSession.SelectedComponentID
+	if _, err := session.SaveEdit(); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := session.UseCard("slider-component", "generator-panel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsCard(failed.Library, "slider-component") || findNodeByID(failed.ActiveWorldCard.Document.Root, sliderID) == nil {
+		t.Fatalf("failed play did not move controller to field: %#v", failed)
+	}
+	revealed, err := session.ApplyWorldComponentControl("generator-panel", sliderID, card.KindSlider, "value", json.RawMessage(`73`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !revealed.SolvedFlags[GeneratorPoweredFlag] || !containsCard(revealed.WorldDeck, "archive-terminal") || revealed.ActiveWorldCardID != "archive-terminal" {
+		t.Fatalf("archive was not revealed: active=%q flags=%v world=%v", revealed.ActiveWorldCardID, revealed.SolvedFlags, cardIDs(revealed.WorldDeck))
+	}
+}
+
+func TestEmbeddedPuzzleUsesComponentCardsAsControllerBases(t *testing.T) {
+	registry := catalog.MustNew()
+	session, err := NewSessionFromEmbeddedDeck(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	collectAndUse(t, session, "bent-iron-key", "rusted-cell-door")
+	collectAndUse(t, session, "glass-fuse", "sleeping-switch")
+	if _, err := session.Collect("slider-component"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Collect("border-component"); err != nil {
+		t.Fatal(err)
+	}
+	started, err := session.StartEdit("slider-component")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.ApplyEditControl(started.EditSession.SelectedComponentID, "value", json.RawMessage(`73`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.InstallEditComponent("border-component"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.SaveEdit(); err != nil {
+		t.Fatal(err)
+	}
+	generator, err := session.UseCard("slider-component", "generator-panel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsCard(generator.Library, "slider-component") || generator.ActiveWorldCardID != "archive-terminal" {
+		t.Fatalf("generator play = active %q library %v", generator.ActiveWorldCardID, cardIDs(generator.Library))
+	}
+
+	if _, err := session.Collect("archive-password-input-component"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.Collect("archive-submit-button-component"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.StartEdit("archive-password-input-component"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.InstallEditComponent("archive-submit-button-component"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.SaveEdit(); err != nil {
+		t.Fatal(err)
+	}
+	mounted, err := session.UseCard("archive-password-input-component", "archive-terminal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsCard(mounted.Library, "archive-password-input-component") || !mounted.SolvedFlags["archiveControllerMounted"] {
+		t.Fatalf("archive controller was not mounted: %#v", mounted)
+	}
+	unlocked, err := session.SubmitForm("archive-terminal", "archive-login", map[string]string{"password": " nightjar "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !unlocked.SolvedFlags["archiveUnlocked"] || unlocked.Message != "NIGHTJAR accepted. The archive opens." {
+		t.Fatalf("archive unlock = flags %v message %q", unlocked.SolvedFlags, unlocked.Message)
+	}
 }
 
 func TestGenericWorldControlEditing(t *testing.T) {
@@ -148,4 +490,44 @@ func sliderDocument(id string, value int) card.Document {
 func jsonNumber(value int) string {
 	raw, _ := json.Marshal(value)
 	return string(raw)
+}
+
+func containsCard(cards []Card, cardID string) bool {
+	for _, candidate := range cards {
+		if candidate.ID == cardID {
+			return true
+		}
+	}
+	return false
+}
+
+func cardIDs(cards []Card) []string {
+	ids := make([]string, 0, len(cards))
+	for _, candidate := range cards {
+		ids = append(ids, candidate.ID)
+	}
+	return ids
+}
+
+func mustSnapshot(t *testing.T, session *Session) Snapshot {
+	t.Helper()
+	snapshot, err := session.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snapshot
+}
+
+func collectAndUse(t *testing.T, session *Session, sourceCardID, targetCardID string) {
+	t.Helper()
+	if _, err := session.Collect(sourceCardID); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := session.UseCard(sourceCardID, targetCardID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsCard(snapshot.Library, sourceCardID) {
+		t.Fatalf("%s remained in library after play", sourceCardID)
+	}
 }

@@ -779,7 +779,7 @@ async function startEdit(cardId: string): Promise<void> {
   busy = true;
   closeComponentOverlay(overlayRoot());
   try {
-    renderSession(await startGameEdit(cardId));
+    renderSession(await startGameEdit(cardId), { openOverlay: true });
   } catch (error) {
     setStatus(errorMessage(error), true);
   } finally {
@@ -837,7 +837,7 @@ function renderSession(session: GameSessionSnapshot, options: RenderOptions = {}
 
   const progress = byID<HTMLElement>("game-progress");
   if (progress) {
-    progress.textContent = `${session.library.length} cards in library`;
+    progress.textContent = `${session.worldDeck.length} in deck · ${session.library.length} in library`;
   }
   const count = byID<HTMLElement>("game-library-count");
   if (count) {
@@ -981,7 +981,8 @@ function renderComponentTray(cards: RenderedGameCard[]): void {
   if (!root) return;
   root.innerHTML = "";
   const pending = pendingComponentIds();
-  const components = cards.filter((card) => componentKindForCard(card));
+  const targetCardId = latestSession?.editSession?.targetCardId || "";
+  const components = cards.filter((card) => card.id !== targetCardId && componentKindForCard(card));
   if (count) {
     count.textContent = components.length ? `${components.length} component${components.length === 1 ? "" : "s"}` : "Empty";
   }
@@ -1093,7 +1094,7 @@ async function applyEditControl(overlay: ComponentOverlay, control: ControlDescr
 }
 
 function isEditableCard(card: RenderedGameCard): boolean {
-  return Boolean(card.state?.editable);
+  return Boolean(card.state?.editable || componentKindForCard(card));
 }
 
 function componentKindForCard(card: RenderedGameCard): ComponentKind | "" {

@@ -18,9 +18,7 @@ const (
 
 	DoorUnlockedFlag = "doorUnlocked"
 
-	BlankControllerCardID = "blank-controller"
-	SliderComponentCardID = "slider-component"
-	GeneratorPoweredFlag  = "generatorPowered"
+	GeneratorPoweredFlag = "generatorPowered"
 )
 
 type Card struct {
@@ -187,17 +185,17 @@ func (s *Session) Collect(cardID string) (Snapshot, error) {
 	if !card.Collectible {
 		return Snapshot{}, fmt.Errorf("%s cannot be collected", card.Name)
 	}
-	if card.Collected {
-		s.lastMessage = card.Name + " is already in your library."
-		return s.snapshotLocked()
-	}
-	card.Collected = true
-	card.Collectible = false
-	s.worldDeck[index] = card
 	libraryCard := cloneValue(card)
 	libraryCard.Collectible = false
 	libraryCard.Collected = true
 	s.library = append(s.library, libraryCard)
+	s.worldDeck = append(s.worldDeck[:index], s.worldDeck[index+1:]...)
+	switch {
+	case index < s.activeIndex:
+		s.activeIndex--
+	case s.activeIndex >= len(s.worldDeck):
+		s.activeIndex = 0
+	}
 	s.activeEditingComponentID = ""
 	s.lastMessage = card.Name + " moved into your library."
 	return s.snapshotLocked()
@@ -209,10 +207,11 @@ func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
 
 	sourceCardID = strings.TrimSpace(sourceCardID)
 	targetCardID = strings.TrimSpace(targetCardID)
-	source := s.libraryCard(sourceCardID)
-	if source == nil {
+	sourceIndex := s.libraryCardIndex(sourceCardID)
+	if sourceIndex < 0 {
 		return Snapshot{}, fmt.Errorf("card %q is not in your library", sourceCardID)
 	}
+	source := cloneValue(s.library[sourceIndex])
 	if targetCardID == "" && len(s.worldDeck) > 0 {
 		targetCardID = s.worldDeck[s.activeIndex].ID
 	}
@@ -221,24 +220,35 @@ func (s *Session) UseCard(sourceCardID, targetCardID string) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("target card %q is not in the world deck", targetCardID)
 	}
 	target := s.worldDeck[targetIndex]
+	matchedTarget := false
 	for _, rule := range s.useRules {
-		if !s.ruleBaseMatches(rule, *source, target) {
+		if !s.ruleBaseMatches(rule, source, target) {
 			continue
 		}
+		matchedTarget = true
 		if !sourceComponentConditionsMatch(s.registry, rule.SourceComponentConditions, source.Document) {
-			if err := s.applyRuleFailureEffects(rule, *source, target); err != nil {
+			if err := s.applyRuleFailureEffects(rule, source, target); err != nil {
 				return Snapshot{}, err
 			}
 			if strings.TrimSpace(rule.FailureMessage) != "" {
 				s.lastMessage = rule.FailureMessage
+				s.removeLibraryCard(source.ID)
+				s.activeEditingComponentID = ""
 				return s.snapshotLocked()
 			}
 			continue
 		}
-		if err := s.applyRuleEffects(rule, *source, target); err != nil {
+		if err := s.applyRuleEffects(rule, source, target); err != nil {
 			return Snapshot{}, err
 		}
+		s.removeLibraryCard(source.ID)
 		s.activeEditingComponentID = ""
+		return s.snapshotLocked()
+	}
+	if matchedTarget {
+		s.removeLibraryCard(source.ID)
+		s.activeEditingComponentID = ""
+		s.lastMessage = source.Name + " was played, but its conditions were not met."
 		return s.snapshotLocked()
 	}
 	s.lastMessage = "Nothing on this card responds to " + source.Name + "."
@@ -347,12 +357,28 @@ func (s *Session) StartEdit(cardID string) (Snapshot, error) {
 		return Snapshot{}, fmt.Errorf("card %q is not in your library", cardID)
 	}
 	card := s.library[index]
-	if !stateBool(card.State, "editable") {
+	_, isComponentCard := card.State[componentTemplateStateKey]
+	if !stateBool(card.State, "editable") && !isComponentCard {
 		return Snapshot{}, fmt.Errorf("%s cannot be edited", card.Name)
 	}
+	draft := cloneValue(card)
+	selectedComponentID := ""
+	if isComponentCard {
+		template, err := componentTemplateFromCard(s.registry, card)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		document, node, err := s.registry.InstallTemplate(draft.Document, template)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		draft.Document = document
+		selectedComponentID = node.ID
+	}
 	s.editSession = &EditSession{
-		TargetCardID: card.ID,
-		DraftCard:    cloneValue(card),
+		TargetCardID:        card.ID,
+		DraftCard:           draft,
+		SelectedComponentID: selectedComponentID,
 	}
 	s.activeEditingComponentID = ""
 	s.lastMessage = "Editing " + card.Name + "."
@@ -472,6 +498,15 @@ func (s *Session) SaveEdit() (Snapshot, error) {
 	for _, value := range appendStateStringOnce(card.State["installedComponents"], "") {
 		installedKinds[value] = true
 	}
+	if _, isComponentCard := card.State[componentTemplateStateKey]; isComponentCard {
+		template, err := componentTemplateFromCard(s.registry, card)
+		if err != nil {
+			return Snapshot{}, err
+		}
+		installedKinds[template.ComponentKind] = true
+		delete(card.State, componentTemplateStateKey)
+		card.Tags = removeComponentCardTags(card.Tags)
+	}
 	for _, componentCardID := range s.editSession.PendingConsumedComponentIDs {
 		if componentCard := s.libraryCard(componentCardID); componentCard != nil {
 			if template, err := componentTemplateFromCard(s.registry, *componentCard); err == nil {
@@ -491,10 +526,6 @@ func (s *Session) SaveEdit() (Snapshot, error) {
 	if len(installedKinds) > 0 {
 		card.Tags = appendStringOnce(card.Tags, "controller")
 		card.State["built"] = true
-	}
-	if card.ID == BlankControllerCardID {
-		card.Name = "Blank Controller"
-		card.Document.Name = "Blank Controller"
 	}
 
 	s.library[targetIndex] = card
@@ -653,6 +684,15 @@ func (s *Session) libraryCardIndex(cardID string) int {
 		}
 	}
 	return -1
+}
+
+func (s *Session) removeLibraryCard(cardID string) bool {
+	index := s.libraryCardIndex(cardID)
+	if index < 0 {
+		return false
+	}
+	s.library = append(s.library[:index], s.library[index+1:]...)
+	return true
 }
 
 func materializeDeck(definition DeckDefinition) ([]Card, map[string]map[string]cardcomponent.Document, map[string]CardDefinition, int, error) {
@@ -1001,6 +1041,10 @@ func (s *Session) powerGeneratorIfTuned(cardIndex int, selectedComponentID strin
 	if strings.TrimSpace(selectedComponentID) != "" {
 		s.activeEditingComponentID = selectedComponentID
 	}
+	if err := s.loadDeck(ArchiveTerminalDefinition); err != nil {
+		return false, err
+	}
+	s.activeEditingComponentID = ""
 	s.lastMessage = "The regulator locks at 73. The generator comes fully online."
 	return true, nil
 }
@@ -1085,6 +1129,17 @@ func removeString(values []string, value string) []string {
 		if candidate != value {
 			out = append(out, candidate)
 		}
+	}
+	return out
+}
+
+func removeComponentCardTags(values []string) []string {
+	out := values[:0]
+	for _, candidate := range values {
+		if candidate == "component" || strings.HasSuffix(candidate, "-component") {
+			continue
+		}
+		out = append(out, candidate)
 	}
 	return out
 }

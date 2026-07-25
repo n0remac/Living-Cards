@@ -40,7 +40,7 @@ func gameStageView() *Node {
 			Div(
 				Class("game-title-block"),
 				H1(Class("game-title"), T("Living Card")),
-				Div(Id("game-progress"), Class("game-progress"), T("0 cards collected")),
+				Div(Id("game-progress"), Class("game-progress"), T("Loading deck...")),
 			),
 			Button(
 				Id("reset-draft-btn"),

@@ -228,6 +228,7 @@ func validateDeckCards(registry *cardcomponent.Registry, definition DeckDefiniti
 		return nil, fmt.Errorf("deck %q must contain at least one card", definition.ID)
 	}
 	cardsByID := make(map[string]CardDefinition, len(definition.Cards))
+	hasPersistentCard := false
 	for index, card := range definition.Cards {
 		if strings.TrimSpace(card.ID) == "" {
 			return nil, fmt.Errorf("card at index %d must have an id", index)
@@ -261,7 +262,13 @@ func validateDeckCards(registry *cardcomponent.Registry, definition DeckDefiniti
 		if err := validateComponentCardState(registry, card.ID, card.State); err != nil {
 			return nil, err
 		}
+		if !card.Collectible {
+			hasPersistentCard = true
+		}
 		cardsByID[card.ID] = card
+	}
+	if !hasPersistentCard {
+		return nil, fmt.Errorf("deck %q must contain at least one non-collectible card", definition.ID)
 	}
 	if _, exists := cardsByID[definition.InitialActiveCardID]; !exists {
 		return nil, fmt.Errorf("initial active card %q does not exist", definition.InitialActiveCardID)
