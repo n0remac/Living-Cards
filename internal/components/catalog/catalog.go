@@ -1,5 +1,7 @@
 // Package catalog is the only production composition root for component
 // definitions. Adding a component to the backend requires one entry here.
+//
+//go:generate go run ../../../cmd/cardtypes
 package catalog
 
 import (

@@ -1,11 +1,14 @@
 import type {
+  AIGeneratableComponentKind,
   ApplyConfigResponse,
   CardDocument,
   CardHitZone,
   ComponentTarget,
+  ComponentConfigInput,
+  ComponentKind,
+  ConfigKind,
   DesignLibraryItem,
   ConfigIssue,
-  ConfigJSON,
   GameSessionSnapshot,
   GeneratedConfig,
   InteractiveDraftCardResponse,
@@ -104,7 +107,7 @@ export async function randomizeComponent(componentId: string, trait = "", scope 
   return await response.json() as TapCardResponse;
 }
 
-export async function generateConfig(componentKind: string, instruction: string, update = false): Promise<GeneratedConfig> {
+export async function generateConfig(componentKind: AIGeneratableComponentKind, instruction: string, update = false): Promise<GeneratedConfig> {
   const response = await fetch("/api/draft-card/configs/" + encodeURIComponent(componentKind), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -128,7 +131,7 @@ export async function applyDraftConfig(generatedConfig: GeneratedConfig): Promis
   return await response.json() as ApplyConfigResponse;
 }
 
-export async function fetchDesignLibrary(componentKind = ""): Promise<DesignLibraryItem[]> {
+export async function fetchDesignLibrary(componentKind: ConfigKind | "" = ""): Promise<DesignLibraryItem[]> {
   const suffix = componentKind ? "?componentKind=" + encodeURIComponent(componentKind) : "";
   const response = await fetch("/api/draft-card/library" + suffix, { cache: "no-store" });
   if (!response.ok) {
@@ -222,7 +225,7 @@ export async function submitGameForm(cardId: string, formId: string, fields: Rec
   return await response.json() as GameSessionSnapshot;
 }
 
-export async function selectGameCardComponent(cardId: string, componentId: string, componentKind: string): Promise<GameSessionSnapshot> {
+export async function selectGameCardComponent(cardId: string, componentId: string, componentKind: ComponentKind): Promise<GameSessionSnapshot> {
   const response = await fetch("/api/game/component/select", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -234,7 +237,7 @@ export async function selectGameCardComponent(cardId: string, componentId: strin
   return await response.json() as GameSessionSnapshot;
 }
 
-export async function applyGameCardComponentControl(cardId: string, componentId: string, componentKind: string, control: string, value: unknown): Promise<GameSessionSnapshot> {
+export async function applyGameCardComponentControl(cardId: string, componentId: string, componentKind: ComponentKind, control: string, value: unknown): Promise<GameSessionSnapshot> {
   const response = await fetch("/api/game/component/control-change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -270,7 +273,7 @@ export async function installGameEditComponent(componentCardId: string): Promise
   return await response.json() as GameSessionSnapshot;
 }
 
-export async function selectGameEditComponent(componentId: string, componentKind: string): Promise<GameSessionSnapshot> {
+export async function selectGameEditComponent(componentId: string, componentKind: ComponentKind): Promise<GameSessionSnapshot> {
   const response = await fetch("/api/game/edit/component/select", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -294,7 +297,7 @@ export async function applyGameEditControl(componentId: string, control: string,
   return await response.json() as GameSessionSnapshot;
 }
 
-export async function applyGameLibraryComponentControl(cardId: string, componentId: string, componentKind: string, control: string, value: unknown): Promise<GameSessionSnapshot> {
+export async function applyGameLibraryComponentControl(cardId: string, componentId: string, componentKind: ComponentKind, control: string, value: unknown): Promise<GameSessionSnapshot> {
   const response = await fetch("/api/game/library/component/control-change", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -322,7 +325,7 @@ export async function cancelGameEdit(): Promise<GameSessionSnapshot> {
   return await response.json() as GameSessionSnapshot;
 }
 
-export async function addDraftComponent(componentKind: "text" | "shape" | "image", config?: ConfigJSON): Promise<TapCardResponse> {
+export async function addDraftComponent<K extends "text" | "shape" | "image">(componentKind: K, config?: ComponentConfigInput<K>): Promise<TapCardResponse> {
   const response = await fetch("/api/draft-card/components", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

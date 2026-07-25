@@ -72,20 +72,19 @@ func normalizeRootConfig(config RootConfig) RootConfig {
 }
 
 func validateRootConfig(config RootConfig) []schema.Issue {
-	var issues []schema.Issue
-	if config.PaddingPX < 0 || config.PaddingPX > 48 {
-		issues = append(issues, schema.Issue{Path: "config.padding_px", Code: "out_of_range", Message: "padding_px must be between 0 and 48", Actual: config.PaddingPX})
-	}
 	if config.Shadow != "" {
-		issues = append(issues, schema.ValidateInlineCSS("config.shadow", "box-shadow: "+config.Shadow+";", map[string]struct{}{"box-shadow": {}})...)
+		return schema.ValidateInlineCSS("config.shadow", "box-shadow: "+config.Shadow+";", map[string]struct{}{"box-shadow": {}})
 	}
-	return issues
+	return nil
 }
 
 func RootDefinition() Definition {
 	return MustDefine(TypedDefinition[RootConfig]{
 		Kind: Kind, Label: "Card", Structure: StructureRoot,
 		Default: DefaultRootConfig, Normalize: normalizeRootConfig, Validate: validateRootConfig,
+		ConfigRules: []schema.FieldRule{
+			schema.IntegerRange("padding_px", 0, 48),
+		},
 		Render: func(_ Node, config RootConfig, _ RenderContext) (Contribution, error) {
 			styles := map[string]string{"padding": fmt.Sprintf("%dpx", config.PaddingPX)}
 			if config.Shadow != "" {
@@ -94,8 +93,8 @@ func RootDefinition() Definition {
 			return Contribution{ShellStyle: styles}, nil
 		},
 		Controls: []Control[RootConfig]{
-			IntControl("padding_px", "padding", "range", "Padding", "padding", 0, 48, 1, func(c RootConfig) int { return c.PaddingPX }, func(c *RootConfig, v int) { c.PaddingPX = v }),
-			StringControl("shadow", "shadow", "select", "Shadow", "box-shadow", func(c RootConfig) string { return c.Shadow }, func(c *RootConfig, v string) { c.Shadow = v },
+			IntControl("padding_px", "padding", "range", "Padding", "padding", 1, func(c RootConfig) int { return c.PaddingPX }, func(c *RootConfig, v int) { c.PaddingPX = v }),
+			WithSuggestions(StringControl("shadow", "shadow", "select", "Shadow", "box-shadow", func(c RootConfig) string { return c.Shadow }, func(c *RootConfig, v string) { c.Shadow = v }),
 				Option("None", ""), Option("Soft", "0 16px 40px rgba(15,23,42,0.25)"), Option("Deep", "0 28px 70px rgba(15,23,42,0.45)")),
 		},
 		Generation: &TypedGenerationDefinition[RootConfig]{Random: func(seed int64, _ int) schema.GeneratedConfig[RootConfig] {

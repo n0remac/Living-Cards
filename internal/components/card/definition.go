@@ -12,25 +12,25 @@ import (
 	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
-type ComponentStructure string
+type ComponentStructure = schema.ComponentStructure
 
 const (
-	StructureRoot ComponentStructure = "root"
-	StructureLeaf ComponentStructure = "leaf"
+	StructureRoot = schema.StructureRoot
+	StructureLeaf = schema.StructureLeaf
 )
 
-type ComponentRole string
+type ComponentRole = schema.ComponentRole
 
 const (
-	RoleFormField     ComponentRole = "form_field"
-	RoleFormSubmitter ComponentRole = "form_submitter"
+	RoleFormField     = schema.RoleFormField
+	RoleFormSubmitter = schema.RoleFormSubmitter
 )
 
-type InstallPolicy string
+type InstallPolicy = schema.InstallPolicy
 
 const (
-	InstallAppend      InstallPolicy = "append"
-	InstallReplaceKind InstallPolicy = "replace_kind"
+	InstallAppend      = schema.InstallAppend
+	InstallReplaceKind = schema.InstallReplaceKind
 )
 
 var ErrUnsupportedOperation = errors.New("component operation is not supported")
@@ -80,10 +80,14 @@ type ControlDescriptor struct {
 }
 
 type Control[T any] struct {
-	ID         string
-	Descriptor ControlDescriptor
-	Read       func(T) json.RawMessage
-	Apply      func(*T, json.RawMessage) error
+	ID           string
+	ConfigPath   string
+	ValueSchema  schema.ValueSchema
+	OptionLabels map[string]string
+	Suggestions  []ControlOption
+	Descriptor   ControlDescriptor
+	Read         func(T) json.RawMessage
+	Apply        func(*T, json.RawMessage) error
 }
 
 type Property[T any] struct {
@@ -103,19 +107,20 @@ type TypedGenerationDefinition[T any] struct {
 }
 
 type TypedDefinition[T any] struct {
-	Kind       string
-	Label      string
-	Structure  ComponentStructure
-	Default    func() T
-	Normalize  func(T) T
-	Validate   func(T) []schema.Issue
-	Render     func(Node, T, RenderContext) (Contribution, error)
-	Controls   []Control[T]
-	Properties []Property[T]
-	Roles      []ComponentRole
-	Install    *InstallSpec
-	Presets    []TypedPreset[T]
-	Generation *TypedGenerationDefinition[T]
+	Kind        string
+	Label       string
+	Structure   ComponentStructure
+	Default     func() T
+	Normalize   func(T) T
+	Validate    func(T) []schema.Issue
+	Render      func(Node, T, RenderContext) (Contribution, error)
+	ConfigRules []schema.FieldRule
+	Controls    []Control[T]
+	Properties  []Property[T]
+	Roles       []ComponentRole
+	Install     *InstallSpec
+	Presets     []TypedPreset[T]
+	Generation  *TypedGenerationDefinition[T]
 }
 
 type GenerationDefinition struct {
@@ -155,6 +160,7 @@ type Definition struct {
 	install            *InstallSpec
 	presets            []LibraryItem
 	generation         *GenerationDefinition
+	componentSchema    schema.ComponentSchema
 }
 
 func (d Definition) Kind() string                  { return d.kind }
@@ -164,6 +170,9 @@ func (d Definition) ConfigType() reflect.Type      { return d.configType }
 func (d Definition) Roles() []ComponentRole        { return append([]ComponentRole(nil), d.roles...) }
 func (d Definition) ControlIDs() []string          { return append([]string(nil), d.controlIDs...) }
 func (d Definition) PropertyIDs() []string         { return append([]string(nil), d.propertyIDs...) }
+func (d Definition) Schema() schema.ComponentSchema {
+	return schema.CloneComponent(d.componentSchema)
+}
 func (d Definition) CanonicalizeConfig(raw RawConfig) (json.RawMessage, []schema.Issue) {
 	return d.canonicalizeConfig(raw)
 }
@@ -219,8 +228,8 @@ func Define[T any](typed TypedDefinition[T]) (Definition, error) {
 	if typed.Structure != StructureRoot && typed.Structure != StructureLeaf {
 		return Definition{}, fmt.Errorf("component %q has invalid structure %q", typed.Kind, typed.Structure)
 	}
-	if typed.Default == nil || typed.Validate == nil || typed.Render == nil {
-		return Definition{}, fmt.Errorf("component %q requires default, validation, and rendering", typed.Kind)
+	if typed.Default == nil || typed.Render == nil {
+		return Definition{}, fmt.Errorf("component %q requires defaults and rendering", typed.Kind)
 	}
 	configType := reflect.TypeOf((*T)(nil)).Elem()
 	if configType.Kind() != reflect.Struct {
@@ -228,6 +237,13 @@ func Define[T any](typed TypedDefinition[T]) (Definition, error) {
 	}
 	if typed.Normalize == nil {
 		typed.Normalize = func(value T) T { return value }
+	}
+	if typed.Validate == nil {
+		typed.Validate = func(T) []schema.Issue { return nil }
+	}
+	configSchema, err := deriveConfigSchema(configType, typed.ConfigRules)
+	if err != nil {
+		return Definition{}, fmt.Errorf("component %q config schema: %w", typed.Kind, err)
 	}
 
 	controls := make(map[string]Control[T], len(typed.Controls))
@@ -239,6 +255,9 @@ func Define[T any](typed TypedDefinition[T]) (Definition, error) {
 		}
 		if _, exists := controls[control.ID]; exists {
 			return Definition{}, fmt.Errorf("component %q has duplicate control %q", typed.Kind, control.ID)
+		}
+		if err := prepareControl(&control, configSchema); err != nil {
+			return Definition{}, fmt.Errorf("component %q control %q: %w", typed.Kind, control.ID, err)
 		}
 		control.Descriptor.Control = control.ID
 		control.Descriptor = cloneControlDescriptor(control.Descriptor)
@@ -282,6 +301,19 @@ func Define[T any](typed TypedDefinition[T]) (Definition, error) {
 		}
 	}
 
+	validateAndEncode := func(config T) (json.RawMessage, []schema.Issue) {
+		config = typed.Normalize(config)
+		raw, err := json.Marshal(config)
+		if err != nil {
+			return nil, []schema.Issue{{Path: "config", Code: "encode_failed", Message: err.Error()}}
+		}
+		issues := schema.ValidateCanonicalJSON(raw, configSchema, "config")
+		issues = append(issues, typed.Validate(config)...)
+		if len(issues) > 0 {
+			return nil, cloneIssues(issues)
+		}
+		return raw, nil
+	}
 	canonicalize := func(input RawConfig) (json.RawMessage, []schema.Issue) {
 		config := typed.Default()
 		if input.Present {
@@ -292,19 +324,14 @@ func Define[T any](typed TypedDefinition[T]) (Definition, error) {
 			if len(trimmed) == 0 {
 				return nil, []schema.Issue{{Path: "config", Code: "invalid_json", Message: "config must be a JSON object"}}
 			}
+			if issues := schema.ValidateJSONStructure(trimmed, configSchema, "config"); len(issues) > 0 {
+				return nil, cloneIssues(issues)
+			}
 			if err := decodeStrict(trimmed, &config); err != nil {
 				return nil, []schema.Issue{{Path: "config", Code: "invalid_config", Message: err.Error()}}
 			}
 		}
-		config = typed.Normalize(config)
-		if issues := typed.Validate(config); len(issues) > 0 {
-			return nil, cloneIssues(issues)
-		}
-		raw, err := json.Marshal(config)
-		if err != nil {
-			return nil, []schema.Issue{{Path: "config", Code: "encode_failed", Message: err.Error()}}
-		}
-		return raw, nil
+		return validateAndEncode(config)
 	}
 	decodeCanonical := func(raw json.RawMessage) (T, []schema.Issue) {
 		canonical, issues := canonicalize(RawConfig{Present: true, Value: raw})
@@ -354,15 +381,7 @@ func Define[T any](typed TypedDefinition[T]) (Definition, error) {
 		if err := control.Apply(&value, input); err != nil {
 			return nil, []schema.Issue{{Path: "control." + control.ID, Code: "invalid_value", Message: err.Error()}}
 		}
-		value = typed.Normalize(value)
-		if issues := typed.Validate(value); len(issues) > 0 {
-			return nil, cloneIssues(issues)
-		}
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return nil, []schema.Issue{{Path: "config", Code: "encode_failed", Message: err.Error()}}
-		}
-		return encoded, nil
+		return validateAndEncode(value)
 	}
 	d.readProperty = func(raw json.RawMessage, id string) (schema.PropertyValue, bool, []schema.Issue) {
 		value, issues := decodeCanonical(raw)
@@ -434,11 +453,51 @@ func Define[T any](typed TypedDefinition[T]) (Definition, error) {
 		if len(descriptor.Value) == 0 || !json.Valid(descriptor.Value) {
 			return Definition{}, fmt.Errorf("component %q control %q returned invalid JSON", typed.Kind, descriptor.Control)
 		}
+		control := controls[descriptor.Control]
+		if controlIssues := schema.ValidateCanonicalJSON(descriptor.Value, control.ValueSchema, "control."+descriptor.Control+".value"); len(controlIssues) > 0 {
+			return Definition{}, fmt.Errorf("component %q control %q default is invalid: %s", typed.Kind, descriptor.Control, controlIssues[0].Message)
+		}
 	}
 	for _, propertyID := range propertyIDs {
 		if _, _, propertyIssues := d.ReadProperty(defaultRaw, propertyID); len(propertyIssues) > 0 {
 			return Definition{}, fmt.Errorf("component %q property %q is invalid: %w", typed.Kind, propertyID, issuesError(typed.Kind, propertyIssues))
 		}
+	}
+	descriptorByID := make(map[string]ControlDescriptor, len(descriptors))
+	for _, descriptor := range descriptors {
+		descriptorByID[descriptor.Control] = descriptor
+	}
+	componentControls := make([]schema.ControlSchema, 0, len(controlIDs))
+	for _, controlID := range controlIDs {
+		componentControls = append(componentControls, exportControlSchema(controls[controlID], descriptorByID[controlID]))
+	}
+	componentProperties := make([]schema.PropertySchema, 0, len(propertyIDs))
+	for _, propertyID := range propertyIDs {
+		componentProperties = append(componentProperties, schema.PropertySchema{ID: propertyID, Kind: properties[propertyID].Kind})
+	}
+	componentPresets := make([]schema.PresetSchema, 0, len(d.presets))
+	for _, preset := range d.presets {
+		componentPresets = append(componentPresets, schema.PresetSchema{
+			ID: preset.ID, Name: preset.Name, Description: preset.Description,
+			Config: append(json.RawMessage(nil), preset.Config...),
+		})
+	}
+	var installSchema *schema.InstallSchema
+	if d.install != nil {
+		installSchema = &schema.InstallSchema{Policy: d.install.Policy}
+	}
+	d.componentSchema = schema.ComponentSchema{
+		Kind: typed.Kind, Label: typed.Label, Structure: typed.Structure,
+		Config: schema.CloneValue(configSchema), Default: append(json.RawMessage(nil), defaultRaw...),
+		Controls: componentControls, Properties: componentProperties,
+		Roles:   append([]schema.ComponentRole(nil), typed.Roles...),
+		Install: installSchema, Presets: componentPresets,
+		Capabilities: schema.CapabilitySchema{
+			Editable: len(componentControls) > 0, Installable: installSchema != nil,
+			HasProperties: len(componentProperties) > 0, HasPresets: len(componentPresets) > 0,
+			RandomGeneration: d.generation != nil && d.generation.SupportsRandom(),
+			AIGeneration:     d.generation != nil && d.generation.SupportsAI(),
+		},
 	}
 	return d, nil
 }
@@ -451,8 +510,8 @@ func MustDefine[T any](typed TypedDefinition[T]) Definition {
 	return definition
 }
 
-func StringControl[T any](id, trait, kind, label, property string, get func(T) string, set func(*T, string), options ...ControlOption) Control[T] {
-	return Control[T]{ID: id, Descriptor: ControlDescriptor{Trait: trait, Kind: kind, Label: label, Property: property, Options: append([]ControlOption(nil), options...)}, Read: func(v T) json.RawMessage { raw, _ := json.Marshal(get(v)); return raw }, Apply: func(v *T, raw json.RawMessage) error {
+func StringControl[T any](id, trait, kind, label, property string, get func(T) string, set func(*T, string)) Control[T] {
+	return Control[T]{ID: id, ConfigPath: id, Descriptor: ControlDescriptor{Trait: trait, Kind: kind, Label: label, Property: property}, Read: func(v T) json.RawMessage { raw, _ := json.Marshal(get(v)); return raw }, Apply: func(v *T, raw json.RawMessage) error {
 		var next string
 		if err := decodeStrict(raw, &next); err != nil {
 			return fmt.Errorf("value must be a string")
@@ -461,8 +520,8 @@ func StringControl[T any](id, trait, kind, label, property string, get func(T) s
 		return nil
 	}}
 }
-func IntControl[T any](id, trait, kind, label, property string, min, max, step int, get func(T) int, set func(*T, int)) Control[T] {
-	return Control[T]{ID: id, Descriptor: ControlDescriptor{Trait: trait, Kind: kind, Label: label, Property: property, Min: min, Max: max, Step: step}, Read: func(v T) json.RawMessage { raw, _ := json.Marshal(get(v)); return raw }, Apply: func(v *T, raw json.RawMessage) error {
+func IntControl[T any](id, trait, kind, label, property string, step int, get func(T) int, set func(*T, int)) Control[T] {
+	return Control[T]{ID: id, ConfigPath: id, Descriptor: ControlDescriptor{Trait: trait, Kind: kind, Label: label, Property: property, Step: step}, Read: func(v T) json.RawMessage { raw, _ := json.Marshal(get(v)); return raw }, Apply: func(v *T, raw json.RawMessage) error {
 		var next int
 		if err := decodeStrict(raw, &next); err != nil {
 			return fmt.Errorf("value must be an integer")
@@ -470,6 +529,19 @@ func IntControl[T any](id, trait, kind, label, property string, min, max, step i
 		set(v, next)
 		return nil
 	}}
+}
+
+func WithOptionLabels[T any](control Control[T], options ...ControlOption) Control[T] {
+	control.OptionLabels = make(map[string]string, len(options))
+	for _, option := range options {
+		control.OptionLabels[option.Value] = option.Label
+	}
+	return control
+}
+
+func WithSuggestions[T any](control Control[T], options ...ControlOption) Control[T] {
+	control.Suggestions = append([]ControlOption(nil), options...)
+	return control
 }
 
 // DecodeControlObject applies the same strict object rules used by component

@@ -30,15 +30,9 @@ func syntheticDefinition(kind string, policy card.InstallPolicy) card.Definition
 			config.Name = strings.TrimSpace(config.Name)
 			return config
 		},
-		Validate: func(config syntheticConfig) []schema.Issue {
-			var issues []schema.Issue
-			if config.Count < 0 || config.Count > 10 {
-				issues = append(issues, schema.Issue{Path: "config.count", Code: "out_of_range", Message: "count must be between 0 and 10"})
-			}
-			if config.Mode != "quiet" && config.Mode != "loud" {
-				issues = append(issues, schema.Issue{Path: "config.mode", Code: "invalid_option", Message: "mode must be quiet or loud"})
-			}
-			return issues
+		ConfigRules: []schema.FieldRule{
+			schema.IntegerRange("count", 0, 10),
+			schema.Enum("mode", "quiet", "loud"),
 		},
 		Render: func(node card.Node, config syntheticConfig, _ card.RenderContext) (card.Contribution, error) {
 			return card.Contribution{Layers: []*godom.Node{godom.Div(godom.Attr("data-synthetic", node.ID), godom.T(config.Name))}}, nil
@@ -76,6 +70,23 @@ func syntheticRegistry(definitions ...card.Definition) *card.Registry {
 func TestTypedDefinitionExposesEveryCapabilityThroughErasedAPI(t *testing.T) {
 	definition := syntheticDefinition("synthetic", card.InstallAppend)
 	registry := syntheticRegistry(definition)
+	componentSchema := registry.Schema().Components[1]
+	if componentSchema.Kind != "synthetic" ||
+		!componentSchema.Capabilities.Editable ||
+		!componentSchema.Capabilities.Installable ||
+		!componentSchema.Capabilities.HasProperties ||
+		!componentSchema.Capabilities.HasPresets ||
+		!componentSchema.Capabilities.RandomGeneration ||
+		!componentSchema.Capabilities.AIGeneration {
+		t.Fatalf("component schema capabilities = %#v", componentSchema)
+	}
+	if len(componentSchema.Controls) != 1 || componentSchema.Controls[0].ConfigPath != "name" {
+		t.Fatalf("component schema controls = %#v", componentSchema.Controls)
+	}
+	componentSchema.Controls[0].ID = "mutated"
+	if registry.Schema().Components[1].Controls[0].ID != "name" {
+		t.Fatal("Registry.Schema() did not return a defensive copy")
+	}
 
 	canonical, issues := definition.CanonicalizeConfig(card.RawConfig{})
 	if len(issues) != 0 || string(canonical) != `{"name":"default","count":5,"enabled":true,"mode":"quiet"}` {
@@ -141,7 +152,7 @@ func TestStrictConfigPresenceAndCanonicalValues(t *testing.T) {
 		{name: "empty object", raw: card.RawConfig{Present: true, Value: json.RawMessage(`{}`)}, want: `{"name":"default","count":5,"enabled":true,"mode":"quiet"}`},
 		{name: "explicit zero and empty", raw: card.RawConfig{Present: true, Value: json.RawMessage(`{"name":"","count":0,"enabled":false}`)}, want: `{"name":"","count":0,"enabled":false,"mode":"quiet"}`},
 		{name: "null", raw: card.RawConfig{Present: true, Value: json.RawMessage(`null`)}, wantIssue: "null_config"},
-		{name: "unknown", raw: card.RawConfig{Present: true, Value: json.RawMessage(`{"unknown":1}`)}, wantIssue: "invalid_config"},
+		{name: "unknown", raw: card.RawConfig{Present: true, Value: json.RawMessage(`{"unknown":1}`)}, wantIssue: "unknown_field"},
 		{name: "range", raw: card.RawConfig{Present: true, Value: json.RawMessage(`{"count":99}`)}, wantIssue: "out_of_range"},
 		{name: "enum casing", raw: card.RawConfig{Present: true, Value: json.RawMessage(`{"mode":"LOUD"}`)}, wantIssue: "invalid_option"},
 	}

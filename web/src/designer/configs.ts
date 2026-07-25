@@ -1,7 +1,8 @@
 import { ConfigGenerationError, generateConfig } from "../api";
-import type { ConfigIssue, GeneratedConfig } from "../types";
+import { generatedComponentKinds } from "../generated/component-catalog.generated";
+import type { AIGeneratableComponentKind, ConfigIssue, GeneratedComponentKind, GeneratedConfig } from "../types";
 
-export async function generateComponentConfig(componentKind: string, instruction: string, update = false): Promise<GeneratedConfig> {
+export async function generateComponentConfig(componentKind: AIGeneratableComponentKind, instruction: string, update = false): Promise<GeneratedConfig> {
   return await generateConfig(componentKind, instruction, update);
 }
 
@@ -25,15 +26,22 @@ export function normalizeGeneratedConfigEnvelope(value: unknown): GeneratedConfi
   }
   const record = value as Record<string, unknown>;
   const componentKind = String(record.component_kind || "").trim();
+  if (!isGeneratedComponentKind(componentKind)) {
+    throw new Error("Generated config has an unsupported component_kind.");
+  }
   const config = record.config;
-  if (!config || typeof config !== "object") {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
     throw new Error("Generated config must include a config object.");
   }
   return {
     component_kind: componentKind,
     description: String(record.description || savedDesignFallbackName(componentKind)).trim(),
     config: cloneJSON(config as Record<string, unknown>),
-  };
+  } as unknown as GeneratedConfig;
+}
+
+function isGeneratedComponentKind(value: string): value is GeneratedComponentKind {
+  return generatedComponentKinds.some((kind) => kind === value);
 }
 
 export function isConfigGenerationError(error: unknown): error is ConfigGenerationError {

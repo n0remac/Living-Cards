@@ -1,30 +1,63 @@
-export interface CardDocument {
-  card_id: string;
-  name: string;
-  root: ComponentNode;
-}
+import type {
+  CardDocument,
+  ComponentConfigInput,
+  ComponentKind,
+  ComponentLibraryItem,
+  ComponentTemplate,
+  GeneratedComponentKind,
+  GeneratedConfigEnvelope,
+  InstallableComponentKind,
+  LeafComponentKind,
+  RootComponentKind,
+} from "./generated/card-types.generated";
 
-export interface ComponentNode {
-  id: string;
-  component_kind: string;
-  config: ConfigJSON;
-  children?: ComponentNode[];
-}
+export type {
+  AIGeneratableComponentKind,
+  BackgroundConfig,
+  BackgroundConfigInput,
+  BorderConfig,
+  BorderConfigInput,
+  ButtonConfig,
+  ButtonConfigInput,
+  CardConfig,
+  CardConfigInput,
+  CardDocument,
+  CardDocumentInput,
+  ComponentConfig,
+  ComponentConfigInput,
+  ComponentConfigInputMap,
+  ComponentConfigMap,
+  ComponentKind,
+  ComponentLibraryItem,
+  ComponentNode,
+  ComponentNodeInput,
+  ComponentTemplate,
+  ComponentTemplateInput,
+  GeneratedComponentKind,
+  GeneratedConfigEnvelope,
+  GeneratedConfigEnvelopeInput,
+  ImageConfig,
+  ImageConfigInput,
+  InstallableComponentKind,
+  LeafComponentKind,
+  PresetLibraryItem,
+  RootComponentKind,
+  ShapeConfig,
+  ShapeConfigInput,
+  SliderConfig,
+  SliderConfigInput,
+  TextConfig,
+  TextConfigInput,
+  TextInputConfig,
+  TextInputConfigInput,
+} from "./generated/card-types.generated";
 
-export type ConfigKind = "background" | "border" | "text" | "shape" | "image";
-export type ComponentKind = "card" | "background" | "border" | "text" | "shape" | "image" | "slider" | "text_input" | "button";
-export type ComponentTarget = ConfigKind | "slider" | "text_input" | "card" | "shadow" | "padding" | "textblock" | "button" | "layout";
-export type CardHitZone = "border" | "background" | "text" | "shape" | "image" | "slider" | "text_input" | "button";
+export type ConfigKind = Exclude<GeneratedComponentKind, RootComponentKind>;
+export type ComponentTarget = ComponentKind | "shadow" | "padding" | "textblock" | "layout";
+export type CardHitZone = LeafComponentKind;
 export type EditMode = "random" | "preset" | "simpleControls" | "advancedControls" | "aiPrompt" | "library";
 
-export type ConfigJSON = Record<string, unknown>;
-
-export interface GeneratedConfigEnvelope<T = ConfigJSON> {
-  component_kind: string;
-  description: string;
-  config: T;
-}
-
+export type ConfigJSON = ComponentConfigInput<InstallableComponentKind>;
 export type GeneratedConfig = GeneratedConfigEnvelope;
 
 export interface ConfigIssue {
@@ -35,14 +68,7 @@ export interface ConfigIssue {
   allowed?: string[];
 }
 
-export interface DesignLibraryItem {
-  id: string;
-  name: string;
-  component_kind: ConfigKind;
-  description: string;
-  config: ConfigJSON;
-  saved?: boolean;
-}
+export type DesignLibraryItem = ComponentLibraryItem<ConfigKind>;
 
 export interface RenderedDraftCard {
   document: CardDocument;
@@ -170,7 +196,9 @@ export interface RenderedGameCard {
   tags?: string[];
   collectible: boolean;
   collected?: boolean;
-  state?: Record<string, unknown>;
+  state?: Record<string, unknown> & {
+    component_template?: ComponentTemplate;
+  };
   document: CardDocument;
   preview_html: string;
 }

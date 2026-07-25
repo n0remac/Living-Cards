@@ -1,6 +1,7 @@
 package imagecomponent
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -11,14 +12,8 @@ import (
 func TestValidateGeneratedAcceptsSafeImageDataURL(t *testing.T) {
 	t.Parallel()
 
-	generated := schema.GeneratedConfig[Config]{
-		ComponentKind: Kind,
-		Description:   "Safe image",
-		Config:        DefaultConfig(),
-	}
-	NormalizeGenerated(&generated)
-	if issues := ValidateGenerated(generated); len(issues) > 0 {
-		t.Fatalf("ValidateGenerated() issues = %#v", issues)
+	if issues := configIssues(DefaultConfig()); len(issues) > 0 {
+		t.Fatalf("configIssues() issues = %#v", issues)
 	}
 }
 
@@ -40,14 +35,18 @@ func TestValidateGeneratedRejectsUnsafeImageSources(t *testing.T) {
 			t.Parallel()
 			part := DefaultConfig()
 			part.Src = test.src
-			generated := schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Unsafe", Config: part}
-			NormalizeGenerated(&generated)
-			issues := ValidateGenerated(generated)
+			issues := configIssues(NormalizeConfig(part))
 			if len(issues) == 0 || issues[0].Code != test.code {
 				t.Fatalf("issues = %#v, want first code %q", issues, test.code)
 			}
 		})
 	}
+}
+
+func configIssues(config Config) []schema.Issue {
+	raw, _ := json.Marshal(config)
+	_, issues := Definition().CanonicalizeConfig(card.RawConfig{Present: true, Value: raw})
+	return issues
 }
 
 func TestRenderLayerIncludesImageAttributes(t *testing.T) {

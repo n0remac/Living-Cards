@@ -46,6 +46,18 @@ func Definition() card.Definition {
 	return card.MustDefine(card.TypedDefinition[Config]{
 		Kind: Kind, Label: "Slider", Structure: card.StructureLeaf,
 		Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		ConfigRules: []schema.FieldRule{
+			schema.StringMinLength("label", 1),
+			schema.IntegerRange("min", 0, 100),
+			schema.IntegerRange("max", 0, 100),
+			schema.IntegerRange("step", 1, 100),
+			schema.IntegerRange("value", 0, 100),
+			schema.IntegerRange("x", 0, 100),
+			schema.IntegerRange("y", 0, 100),
+			schema.IntegerRange("width", 12, 100),
+			schema.StringFormat("track_color", schema.FormatCSSColor),
+			schema.StringFormat("accent_color", schema.FormatCSSColor),
+		},
 		Render: func(node card.Node, part Config, renderContext card.RenderContext) (card.Contribution, error) {
 			return card.Contribution{
 				Layers: []*godom.Node{RenderLayerWithContext(node.ID, part, renderContext)},
@@ -53,14 +65,14 @@ func Definition() card.Definition {
 		},
 		Controls: []card.Control[Config]{
 			card.StringControl("label", "content", "text", "Label", "label", func(c Config) string { return c.Label }, func(c *Config, v string) { c.Label = v }),
-			card.IntControl("value", "value", "range", "Value", "value", 0, 100, 1, func(c Config) int { return c.Value }, func(c *Config, v int) { c.Value = v }),
-			card.IntControl("min", "value", "range", "Minimum", "min", 0, 100, 1, func(c Config) int { return c.Min }, func(c *Config, v int) { c.Min = v }),
-			card.IntControl("max", "value", "range", "Maximum", "max", 0, 100, 1, func(c Config) int { return c.Max }, func(c *Config, v int) { c.Max = v }),
-			card.IntControl("step", "value", "range", "Step", "step", 1, 100, 1, func(c Config) int { return c.Step }, func(c *Config, v int) { c.Step = v }),
+			card.IntControl("value", "value", "range", "Value", "value", 1, func(c Config) int { return c.Value }, func(c *Config, v int) { c.Value = v }),
+			card.IntControl("min", "value", "range", "Minimum", "min", 1, func(c Config) int { return c.Min }, func(c *Config, v int) { c.Min = v }),
+			card.IntControl("max", "value", "range", "Maximum", "max", 1, func(c Config) int { return c.Max }, func(c *Config, v int) { c.Max = v }),
+			card.IntControl("step", "value", "range", "Step", "step", 1, func(c Config) int { return c.Step }, func(c *Config, v int) { c.Step = v }),
 			positionControl(),
-			card.IntControl("x", "layout", "range", "X position", "left", 0, 100, 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
-			card.IntControl("y", "layout", "range", "Y position", "top", 0, 100, 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
-			card.IntControl("width", "layout", "range", "Width", "width", 12, 100, 1, func(c Config) int { return c.Width }, func(c *Config, v int) { c.Width = v }),
+			card.IntControl("x", "layout", "range", "X position", "left", 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
+			card.IntControl("y", "layout", "range", "Y position", "top", 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
+			card.IntControl("width", "layout", "range", "Width", "width", 1, func(c Config) int { return c.Width }, func(c *Config, v int) { c.Width = v }),
 			card.StringControl("track_color", "style", "color", "Track color", "background", func(c Config) string { return c.TrackColor }, func(c *Config, v string) { c.TrackColor = v }),
 			card.StringControl("accent_color", "style", "color", "Accent color", "accent-color", func(c Config) string { return c.AccentColor }, func(c *Config, v string) { c.AccentColor = v }),
 		},
@@ -77,79 +89,21 @@ func NormalizeConfig(part Config) Config {
 }
 
 func ValidateConfig(part Config) []schema.Issue {
-	return ValidateGenerated(schema.GeneratedConfig[Config]{
-		ComponentKind: Kind,
-		Description:   "Slider config",
-		Config:        part,
-	})
-}
-
-func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
-	if generated == nil {
-		return
-	}
-	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
-	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config = NormalizeConfig(generated.Config)
-}
-
-func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
 	var issues []schema.Issue
-	if strings.TrimSpace(generated.Config.Label) == "" {
-		issues = append(issues, schema.Issue{
-			Path:    "config.label",
-			Code:    "required",
-			Message: "label is required",
-		})
-	}
-	if generated.Config.Min < 0 || generated.Config.Min > 100 {
-		issues = append(issues, rangeIssue("config.min", "min", generated.Config.Min, 0, 100))
-	}
-	if generated.Config.Max < 0 || generated.Config.Max > 100 {
-		issues = append(issues, rangeIssue("config.max", "max", generated.Config.Max, 0, 100))
-	}
-	if generated.Config.Max < generated.Config.Min {
+	if part.Max < part.Min {
 		issues = append(issues, schema.Issue{
 			Path:    "config.max",
 			Code:    "out_of_range",
 			Message: "max must be greater than or equal to min",
-			Actual:  generated.Config.Max,
+			Actual:  part.Max,
 		})
 	}
-	if generated.Config.Step < 1 || generated.Config.Step > 100 {
-		issues = append(issues, rangeIssue("config.step", "step", generated.Config.Step, 1, 100))
-	}
-	if generated.Config.Value < generated.Config.Min || generated.Config.Value > generated.Config.Max {
+	if part.Value < part.Min || part.Value > part.Max {
 		issues = append(issues, schema.Issue{
 			Path:    "config.value",
 			Code:    "out_of_range",
 			Message: "value must be between min and max",
-			Actual:  generated.Config.Value,
-		})
-	}
-	if generated.Config.X < 0 || generated.Config.X > 100 {
-		issues = append(issues, rangeIssue("config.x", "x", generated.Config.X, 0, 100))
-	}
-	if generated.Config.Y < 0 || generated.Config.Y > 100 {
-		issues = append(issues, rangeIssue("config.y", "y", generated.Config.Y, 0, 100))
-	}
-	if generated.Config.Width < 12 || generated.Config.Width > 100 {
-		issues = append(issues, rangeIssue("config.width", "width", generated.Config.Width, 12, 100))
-	}
-	if !schema.IsAllowedColor(generated.Config.TrackColor) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.track_color",
-			Code:    "invalid_color",
-			Message: "track_color must be a hex, rgb, rgba, hsl, or hsla color",
-			Actual:  generated.Config.TrackColor,
-		})
-	}
-	if !schema.IsAllowedColor(generated.Config.AccentColor) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.accent_color",
-			Code:    "invalid_color",
-			Message: "accent_color must be a hex, rgb, rgba, hsl, or hsla color",
-			Actual:  generated.Config.AccentColor,
+			Actual:  part.Value,
 		})
 	}
 	return issues
@@ -205,15 +159,6 @@ func RenderLayerWithContext(componentID string, part Config, renderContext card.
 	)
 }
 
-func rangeIssue(path, field string, actual, min, max int) schema.Issue {
-	return schema.Issue{
-		Path:    path,
-		Code:    "out_of_range",
-		Message: fmt.Sprintf("%s must be between %d and %d", field, min, max),
-		Actual:  actual,
-	}
-}
-
 func styleString(styles map[string]string) string {
 	keys := make([]string, 0, len(styles))
 	for key := range styles {
@@ -239,12 +184,21 @@ func positionControl() card.Control[Config] {
 		X int `json:"x"`
 		Y int `json:"y"`
 	}
-	return card.Control[Config]{ID: "position", Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
+	return card.Control[Config]{ID: "position", ValueSchema: positionControlSchema(), Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
 		var value position
 		if err := card.DecodeControlObject(raw, &value); err != nil {
 			return fmt.Errorf("value must include integer x and y: %w", err)
 		}
 		c.X, c.Y = value.X, value.Y
 		return nil
+	}}
+}
+
+func positionControlSchema() schema.ValueSchema {
+	minimum, maximum := float64(0), float64(100)
+	coordinate := schema.ValueSchema{Kind: schema.ValueInteger, Minimum: &minimum, Maximum: &maximum}
+	return schema.ValueSchema{Kind: schema.ValueObject, Fields: []schema.FieldSchema{
+		{JSONName: "x", Schema: coordinate, Required: true},
+		{JSONName: "y", Schema: coordinate, Required: true},
 	}}
 }

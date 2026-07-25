@@ -209,6 +209,24 @@ func RandomGenerated(seed int64, level int) schema.GeneratedConfig[Config] {
 func Definition() card.Definition {
 	return card.MustDefine(card.TypedDefinition[Config]{
 		Kind: Kind, Label: "Text", Structure: card.StructureLeaf, Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		ConfigRules: []schema.FieldRule{
+			schema.StringMinLength("content", 1),
+			schema.Enum("font_family", AllowedFontFamilies()...),
+			schema.IntegerRange("font_size_px", 10, 72),
+			schema.Enum("font_weight", AllowedWeights()...),
+			schema.IntegerRange("font_weight", 400, 800),
+			schema.Enum("font_style", AllowedFontStyles()...),
+			schema.StringFormat("color", schema.FormatCSSColor),
+			schema.Enum("align", AllowedAlignments()...),
+			schema.Enum("position", AllowedPositions()...),
+			schema.IntegerRange("x", 0, 100),
+			schema.IntegerRange("y", 0, 100),
+			schema.StringFormat("background_color", schema.FormatOptionalCSSColor),
+			schema.StringFormat("border_color", schema.FormatOptionalCSSColor),
+			schema.IntegerRange("border_width_px", 0, 12),
+			schema.IntegerRange("border_radius_px", 0, 40),
+			schema.IntegerRange("padding_px", 0, 32),
+		},
 		Render: func(node card.Node, part Config, renderContext card.RenderContext) (card.Contribution, error) {
 			return card.Contribution{
 				Layers: []*godom.Node{RenderLayerWithContext(node.ID, part, renderContext)},
@@ -216,20 +234,20 @@ func Definition() card.Definition {
 		},
 		Controls: []card.Control[Config]{
 			textStringControl("content", "content", "text", "Text", "content", func(c Config) string { return c.Content }, func(c *Config, v string) { c.Content = v }),
-			textStringControl("font_family", "type", "select", "Font family", "font-family", func(c Config) string { return c.FontFamily }, func(c *Config, v string) { c.FontFamily = v }, options(AllowedFontFamilies())...),
-			textIntControl("font_size_px", "type", "Font size", "font-size", 10, 72, func(c Config) int { return c.FontSizePX }, func(c *Config, v int) { c.FontSizePX = v }),
-			textIntControl("font_weight", "type", "Font weight", "font-weight", 400, 800, func(c Config) int { return c.FontWeight }, func(c *Config, v int) { c.FontWeight = v }),
-			textStringControl("font_style", "type", "select", "Font style", "font-style", func(c Config) string { return c.FontStyle }, func(c *Config, v string) { c.FontStyle = v }, options(AllowedFontStyles())...),
+			textStringControl("font_family", "type", "select", "Font family", "font-family", func(c Config) string { return c.FontFamily }, func(c *Config, v string) { c.FontFamily = v }),
+			textIntControl("font_size_px", "type", "Font size", "font-size", 1, func(c Config) int { return c.FontSizePX }, func(c *Config, v int) { c.FontSizePX = v }),
+			textIntControl("font_weight", "type", "Font weight", "font-weight", 100, func(c Config) int { return c.FontWeight }, func(c *Config, v int) { c.FontWeight = v }),
+			textStringControl("font_style", "type", "select", "Font style", "font-style", func(c Config) string { return c.FontStyle }, func(c *Config, v string) { c.FontStyle = v }),
 			textStringControl("color", "style", "color", "Text color", "color", func(c Config) string { return c.Color }, func(c *Config, v string) { c.Color = v }),
-			textStringControl("align", "type", "select", "Alignment", "text-align", func(c Config) string { return c.Align }, func(c *Config, v string) { c.Align = v }, options(AllowedAlignments())...),
+			textStringControl("align", "type", "select", "Alignment", "text-align", func(c Config) string { return c.Align }, func(c *Config, v string) { c.Align = v }),
 			positionControl(),
-			card.IntControl("x", "layout", "range", "X position", "left", 0, 100, 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
-			card.IntControl("y", "layout", "range", "Y position", "top", 0, 100, 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
+			card.IntControl("x", "layout", "range", "X position", "left", 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
+			card.IntControl("y", "layout", "range", "Y position", "top", 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
 			textStringControl("background_color", "style", "color", "Fill color", "background-color", func(c Config) string { return c.BackgroundColor }, func(c *Config, v string) { c.BackgroundColor = v }),
 			textStringControl("border_color", "style", "color", "Border color", "border-color", func(c Config) string { return c.BorderColor }, func(c *Config, v string) { c.BorderColor = v }),
-			textIntControl("border_width_px", "style", "Border width", "border-width", 0, 12, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
-			textIntControl("border_radius_px", "style", "Border radius", "border-radius", 0, 40, func(c Config) int { return c.BorderRadiusPX }, func(c *Config, v int) { c.BorderRadiusPX = v }),
-			textIntControl("padding_px", "layout", "Padding", "padding", 0, 32, func(c Config) int { return c.PaddingPX }, func(c *Config, v int) { c.PaddingPX = v }),
+			textIntControl("border_width_px", "style", "Border width", "border-width", 1, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
+			textIntControl("border_radius_px", "style", "Border radius", "border-radius", 1, func(c Config) int { return c.BorderRadiusPX }, func(c *Config, v int) { c.BorderRadiusPX = v }),
+			textIntControl("padding_px", "layout", "Padding", "padding", 1, func(c Config) int { return c.PaddingPX }, func(c *Config, v int) { c.PaddingPX = v }),
 		}, Install: &card.InstallSpec{Policy: card.InstallAppend}, Presets: typedPresets(), Generation: &card.TypedGenerationDefinition[Config]{SystemPrompt: systemPrompt, Example: exampleJSON, Random: RandomGenerated},
 	})
 }
@@ -280,15 +298,6 @@ func RenderLayerWithContext(componentID string, part Config, renderContext card.
 	)
 }
 
-func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
-	if generated == nil {
-		return
-	}
-	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
-	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config = NormalizeConfig(generated.Config)
-}
-
 func NormalizeConfig(config Config) Config {
 	config.Content = strings.TrimSpace(config.Content)
 	config.FontFamily = strings.TrimSpace(config.FontFamily)
@@ -302,143 +311,7 @@ func NormalizeConfig(config Config) Config {
 	return config
 }
 func ValidateConfig(config Config) []schema.Issue {
-	return ValidateGenerated(schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Text config", Config: config})
-}
-
-func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
-	var issues []schema.Issue
-	if strings.TrimSpace(generated.Config.Content) == "" {
-		issues = append(issues, schema.Issue{
-			Path:    "config.content",
-			Code:    "required",
-			Message: "content is required",
-		})
-	}
-	if !contains(AllowedFontFamilies(), generated.Config.FontFamily) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.font_family",
-			Code:    "invalid_value",
-			Message: "font_family is not allowed",
-			Actual:  generated.Config.FontFamily,
-			Allowed: AllowedFontFamilies(),
-		})
-	}
-	if generated.Config.FontSizePX < 10 || generated.Config.FontSizePX > 72 {
-		issues = append(issues, schema.Issue{
-			Path:    "config.font_size_px",
-			Code:    "out_of_range",
-			Message: "font_size_px must be between 10 and 72",
-			Actual:  generated.Config.FontSizePX,
-		})
-	}
-	if !containsInt(AllowedWeights(), generated.Config.FontWeight) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.font_weight",
-			Code:    "invalid_value",
-			Message: "font_weight is not allowed",
-			Actual:  generated.Config.FontWeight,
-			Allowed: intsToStrings(AllowedWeights()),
-		})
-	}
-	if !contains(AllowedFontStyles(), generated.Config.FontStyle) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.font_style",
-			Code:    "invalid_value",
-			Message: "font_style is not allowed",
-			Actual:  generated.Config.FontStyle,
-			Allowed: AllowedFontStyles(),
-		})
-	}
-	if color := strings.TrimSpace(generated.Config.Color); color == "" {
-		issues = append(issues, schema.Issue{
-			Path:    "config.color",
-			Code:    "required",
-			Message: "color is required",
-		})
-	} else if !schema.IsAllowedColor(color) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.color",
-			Code:    "invalid_color",
-			Message: "color must be a hex, rgb, rgba, hsl, or hsla color",
-			Actual:  color,
-		})
-	}
-	if !contains(AllowedAlignments(), generated.Config.Align) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.align",
-			Code:    "invalid_value",
-			Message: "align is not allowed",
-			Actual:  generated.Config.Align,
-			Allowed: AllowedAlignments(),
-		})
-	}
-	if !contains(AllowedPositions(), generated.Config.Position) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.position",
-			Code:    "invalid_value",
-			Message: "position is not allowed",
-			Actual:  generated.Config.Position,
-			Allowed: AllowedPositions(),
-		})
-	}
-	if generated.Config.X < 0 || generated.Config.X > 100 {
-		issues = append(issues, schema.Issue{
-			Path:    "config.x",
-			Code:    "out_of_range",
-			Message: "x must be between 0 and 100",
-			Actual:  generated.Config.X,
-		})
-	}
-	if generated.Config.Y < 0 || generated.Config.Y > 100 {
-		issues = append(issues, schema.Issue{
-			Path:    "config.y",
-			Code:    "out_of_range",
-			Message: "y must be between 0 and 100",
-			Actual:  generated.Config.Y,
-		})
-	}
-	if color := strings.TrimSpace(generated.Config.BackgroundColor); color != "" && !schema.IsAllowedColor(color) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.background_color",
-			Code:    "invalid_color",
-			Message: "background_color must be a hex, rgb, rgba, hsl, or hsla color",
-			Actual:  color,
-		})
-	}
-	if color := strings.TrimSpace(generated.Config.BorderColor); color != "" && !schema.IsAllowedColor(color) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_color",
-			Code:    "invalid_color",
-			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
-			Actual:  color,
-		})
-	}
-	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 12 {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_width_px",
-			Code:    "out_of_range",
-			Message: "border_width_px must be between 0 and 12",
-			Actual:  generated.Config.BorderWidthPX,
-		})
-	}
-	if generated.Config.BorderRadiusPX < 0 || generated.Config.BorderRadiusPX > 40 {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_radius_px",
-			Code:    "out_of_range",
-			Message: "border_radius_px must be between 0 and 40",
-			Actual:  generated.Config.BorderRadiusPX,
-		})
-	}
-	if generated.Config.PaddingPX < 0 || generated.Config.PaddingPX > 32 {
-		issues = append(issues, schema.Issue{
-			Path:    "config.padding_px",
-			Code:    "out_of_range",
-			Message: "padding_px must be between 0 and 32",
-			Actual:  generated.Config.PaddingPX,
-		})
-	}
-	issues = append(issues, schema.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
-	return issues
+	return schema.ValidateInlineCSS("config.css", config.CSS, AllowedCSS())
 }
 
 func AllowedCSS() map[string]struct{} {
@@ -484,13 +357,7 @@ func AllowedPositions() []string {
 }
 
 func normalizedConfig(part Config) Config {
-	generated := schema.GeneratedConfig[Config]{
-		ComponentKind: Kind,
-		Description:   "Rendered text",
-		Config:        part,
-	}
-	NormalizeGenerated(&generated)
-	return generated.Config
+	return NormalizeConfig(part)
 }
 
 func fontFamilyCSS(value string) string {
@@ -573,8 +440,8 @@ func typedPreset(id, name, description string, part Config) card.TypedPreset[Con
 	return card.TypedPreset[Config]{ID: id, Name: name, Description: description, Config: part}
 }
 
-func textStringControl(id, trait, kind, label, property string, get func(Config) string, set func(*Config, string), values ...card.ControlOption) card.Control[Config] {
-	control := card.StringControl(id, trait, kind, label, property, get, set, values...)
+func textStringControl(id, trait, kind, label, property string, get func(Config) string, set func(*Config, string)) card.Control[Config] {
+	control := card.StringControl(id, trait, kind, label, property, get, set)
 	base := control.Apply
 	control.Apply = func(c *Config, raw json.RawMessage) error {
 		if err := base(c, raw); err != nil {
@@ -585,8 +452,8 @@ func textStringControl(id, trait, kind, label, property string, get func(Config)
 	}
 	return control
 }
-func textIntControl(id, trait, label, property string, min, max int, get func(Config) int, set func(*Config, int)) card.Control[Config] {
-	control := card.IntControl(id, trait, "range", label, property, min, max, 1, get, set)
+func textIntControl(id, trait, label, property string, step int, get func(Config) int, set func(*Config, int)) card.Control[Config] {
+	control := card.IntControl(id, trait, "range", label, property, step, get, set)
 	base := control.Apply
 	control.Apply = func(c *Config, raw json.RawMessage) error {
 		if err := base(c, raw); err != nil {
@@ -602,7 +469,7 @@ func positionControl() card.Control[Config] {
 		X int `json:"x"`
 		Y int `json:"y"`
 	}
-	return card.Control[Config]{ID: "position", Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
+	return card.Control[Config]{ID: "position", ValueSchema: positionControlSchema(), Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
 		var value position
 		if err := card.DecodeControlObject(raw, &value); err != nil {
 			return fmt.Errorf("value must include integer x and y: %w", err)
@@ -612,16 +479,14 @@ func positionControl() card.Control[Config] {
 		return nil
 	}}
 }
-func options(values []string) []card.ControlOption {
-	out := make([]card.ControlOption, 0, len(values))
-	for _, value := range values {
-		words := strings.Fields(strings.ReplaceAll(value, "-", " "))
-		for index, word := range words {
-			words[index] = strings.ToUpper(word[:1]) + word[1:]
-		}
-		out = append(out, card.Option(strings.Join(words, " "), value))
-	}
-	return out
+
+func positionControlSchema() schema.ValueSchema {
+	minimum, maximum := float64(0), float64(100)
+	coordinate := schema.ValueSchema{Kind: schema.ValueInteger, Minimum: &minimum, Maximum: &maximum}
+	return schema.ValueSchema{Kind: schema.ValueObject, Fields: []schema.FieldSchema{
+		{JSONName: "x", Schema: coordinate, Required: true},
+		{JSONName: "y", Schema: coordinate, Required: true},
+	}}
 }
 func syncTextCSS(config *Config, control string) {
 	updates := map[string]string{}

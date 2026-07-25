@@ -1,10 +1,12 @@
 package button
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
 func TestNormalizeAndValidateConfig(t *testing.T) {
@@ -14,12 +16,18 @@ func TestNormalizeAndValidateConfig(t *testing.T) {
 	if part.FormID != "form" || part.Label != "Submit" || part.X != -3 || part.Y != 140 || part.Width != 2 {
 		t.Fatalf("part = %#v", part)
 	}
-	if issues := ValidateConfig(part); len(issues) == 0 {
-		t.Fatal("ValidateConfig() issues = nil, want invalid ranges")
+	if issues := configIssues(part); len(issues) == 0 {
+		t.Fatal("configIssues() issues = nil, want invalid ranges")
 	}
-	if issues := ValidateConfig(Config{FormID: "bad id", Label: "Submit", Width: 44}); len(issues) == 0 {
-		t.Fatal("ValidateConfig() issues = nil, want invalid form id")
+	if issues := configIssues(Config{FormID: "bad id", Label: "Submit", Width: 44}); len(issues) == 0 {
+		t.Fatal("configIssues() issues = nil, want invalid form id")
 	}
+}
+
+func configIssues(config Config) []schema.Issue {
+	raw, _ := json.Marshal(config)
+	_, issues := Definition().CanonicalizeConfig(card.RawConfig{Present: true, Value: raw})
+	return issues
 }
 
 func TestRenderLayerTargetsPrefixedExternalForm(t *testing.T) {

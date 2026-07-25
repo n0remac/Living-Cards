@@ -1,2 +1,3 @@
 data/state/*
 .tmp/
+node_modules/

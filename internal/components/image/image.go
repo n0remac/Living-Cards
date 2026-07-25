@@ -72,6 +72,16 @@ func RandomGenerated(seed int64, level int) schema.GeneratedConfig[Config] {
 func Definition() card.Definition {
 	return card.MustDefine(card.TypedDefinition[Config]{
 		Kind: Kind, Label: "Image", Structure: card.StructureLeaf, Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		ConfigRules: []schema.FieldRule{
+			schema.IntegerRange("x", 0, 100),
+			schema.IntegerRange("y", 0, 100),
+			schema.IntegerRange("width", 8, 100),
+			schema.IntegerRange("height", 8, 100),
+			schema.IntegerRange("rotation", 0, 359),
+			schema.StringFormat("border_color", schema.FormatCSSColor),
+			schema.IntegerRange("border_width_px", 0, 12),
+			schema.IntegerRange("border_radius_px", 0, 48),
+		},
 		Render: func(node card.Node, part Config, renderContext card.RenderContext) (card.Contribution, error) {
 			return card.Contribution{
 				Layers: []*godom.Node{RenderLayerWithContext(node.ID, part, renderContext)},
@@ -79,14 +89,14 @@ func Definition() card.Definition {
 		},
 		Controls: []card.Control[Config]{
 			card.StringControl("alt", "content", "text", "Alt text", "alt", func(c Config) string { return c.Alt }, func(c *Config, v string) { c.Alt = v }), positionControl(),
-			card.IntControl("x", "layout", "range", "X position", "left", 0, 100, 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
-			card.IntControl("y", "layout", "range", "Y position", "top", 0, 100, 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
-			card.IntControl("width", "layout", "range", "Width", "width", 8, 100, 1, func(c Config) int { return c.Width }, func(c *Config, v int) { c.Width = v }),
-			card.IntControl("height", "layout", "range", "Height", "height", 8, 100, 1, func(c Config) int { return c.Height }, func(c *Config, v int) { c.Height = v }),
-			card.IntControl("rotation", "layout", "range", "Rotation", "transform", 0, 359, 1, func(c Config) int { return c.Rotation }, func(c *Config, v int) { c.Rotation = v }),
+			card.IntControl("x", "layout", "range", "X position", "left", 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
+			card.IntControl("y", "layout", "range", "Y position", "top", 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
+			card.IntControl("width", "layout", "range", "Width", "width", 1, func(c Config) int { return c.Width }, func(c *Config, v int) { c.Width = v }),
+			card.IntControl("height", "layout", "range", "Height", "height", 1, func(c Config) int { return c.Height }, func(c *Config, v int) { c.Height = v }),
+			card.IntControl("rotation", "layout", "range", "Rotation", "transform", 1, func(c Config) int { return c.Rotation }, func(c *Config, v int) { c.Rotation = v }),
 			card.StringControl("border_color", "style", "color", "Border color", "border-color", func(c Config) string { return c.BorderColor }, func(c *Config, v string) { c.BorderColor = v }),
-			card.IntControl("border_width_px", "style", "range", "Border width", "border-width", 0, 12, 1, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
-			card.IntControl("border_radius_px", "style", "range", "Border radius", "border-radius", 0, 48, 1, func(c Config) int { return c.BorderRadiusPX }, func(c *Config, v int) { c.BorderRadiusPX = v }),
+			card.IntControl("border_width_px", "style", "range", "Border width", "border-width", 1, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
+			card.IntControl("border_radius_px", "style", "range", "Border radius", "border-radius", 1, func(c Config) int { return c.BorderRadiusPX }, func(c *Config, v int) { c.BorderRadiusPX = v }),
 		}, Install: &card.InstallSpec{Policy: card.InstallAppend}, Generation: &card.TypedGenerationDefinition[Config]{SystemPrompt: systemPrompt, Example: exampleJSON, Random: RandomGenerated},
 	})
 }
@@ -117,15 +127,6 @@ Rules:
 - SVG, external URLs, HTML, and JavaScript are forbidden.
 - x, y, width, and height are percentage values within the allowed ranges.`
 
-func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
-	if generated == nil {
-		return
-	}
-	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
-	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config = NormalizeConfig(generated.Config)
-}
-
 func NormalizeConfig(config Config) Config {
 	config.Src = strings.TrimSpace(config.Src)
 	config.Alt = strings.TrimSpace(config.Alt)
@@ -133,46 +134,10 @@ func NormalizeConfig(config Config) Config {
 	return config
 }
 func ValidateConfig(config Config) []schema.Issue {
-	return ValidateGenerated(schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Image config", Config: config})
-}
-
-func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
-	var issues []schema.Issue
-	if issue := validateDataURL("config.src", generated.Config.Src); issue != nil {
-		issues = append(issues, *issue)
+	if issue := validateDataURL("config.src", config.Src); issue != nil {
+		return []schema.Issue{*issue}
 	}
-	if generated.Config.X < 0 || generated.Config.X > 100 {
-		issues = append(issues, rangeIssue("config.x", "x", generated.Config.X, 0, 100))
-	}
-	if generated.Config.Y < 0 || generated.Config.Y > 100 {
-		issues = append(issues, rangeIssue("config.y", "y", generated.Config.Y, 0, 100))
-	}
-	if generated.Config.Width < 8 || generated.Config.Width > 100 {
-		issues = append(issues, rangeIssue("config.width", "width", generated.Config.Width, 8, 100))
-	}
-	if generated.Config.Height < 8 || generated.Config.Height > 100 {
-		issues = append(issues, rangeIssue("config.height", "height", generated.Config.Height, 8, 100))
-	}
-	if generated.Config.Rotation < 0 || generated.Config.Rotation > 359 {
-		issues = append(issues, rangeIssue("config.rotation", "rotation", generated.Config.Rotation, 0, 359))
-	}
-	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 12 {
-		issues = append(issues, rangeIssue("config.border_width_px", "border_width_px", generated.Config.BorderWidthPX, 0, 12))
-	}
-	if generated.Config.BorderRadiusPX < 0 || generated.Config.BorderRadiusPX > 48 {
-		issues = append(issues, rangeIssue("config.border_radius_px", "border_radius_px", generated.Config.BorderRadiusPX, 0, 48))
-	}
-	if color := strings.TrimSpace(generated.Config.BorderColor); color == "" {
-		issues = append(issues, schema.Issue{Path: "config.border_color", Code: "required", Message: "border_color is required"})
-	} else if !schema.IsAllowedColor(color) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_color",
-			Code:    "invalid_color",
-			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
-			Actual:  color,
-		})
-	}
-	return issues
+	return nil
 }
 
 func RenderLayer(componentID string, part Config) *godom.Node {
@@ -263,18 +228,7 @@ func validateDataURL(path, value string) *schema.Issue {
 }
 
 func normalizedConfig(part Config) Config {
-	generated := schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Current image", Config: part}
-	NormalizeGenerated(&generated)
-	return generated.Config
-}
-
-func rangeIssue(path, field string, actual, min, max int) schema.Issue {
-	return schema.Issue{
-		Path:    path,
-		Code:    "out_of_range",
-		Message: fmt.Sprintf("%s must be between %d and %d", field, min, max),
-		Actual:  actual,
-	}
+	return NormalizeConfig(part)
 }
 
 func contains(values []string, target string) bool {
@@ -322,12 +276,21 @@ func positionControl() card.Control[Config] {
 		X int `json:"x"`
 		Y int `json:"y"`
 	}
-	return card.Control[Config]{ID: "position", Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
+	return card.Control[Config]{ID: "position", ValueSchema: positionControlSchema(), Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
 		var value position
 		if err := card.DecodeControlObject(raw, &value); err != nil {
 			return fmt.Errorf("value must include integer x and y: %w", err)
 		}
 		c.X, c.Y = value.X, value.Y
 		return nil
+	}}
+}
+
+func positionControlSchema() schema.ValueSchema {
+	minimum, maximum := float64(0), float64(100)
+	coordinate := schema.ValueSchema{Kind: schema.ValueInteger, Minimum: &minimum, Maximum: &maximum}
+	return schema.ValueSchema{Kind: schema.ValueObject, Fields: []schema.FieldSchema{
+		{JSONName: "x", Schema: coordinate, Required: true},
+		{JSONName: "y", Schema: coordinate, Required: true},
 	}}
 }

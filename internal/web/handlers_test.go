@@ -68,7 +68,7 @@ func TestEditorControlsRouteThroughDefinition(t *testing.T) {
 	}
 	invalid := `{"componentId":"text-main","trait":"style","control":"font_size_px","value":999}`
 	recorder = request(t, mux, http.MethodPost, "/api/draft-card/control-change", invalid)
-	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "between") {
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "at most 72") {
 		t.Fatalf("invalid status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 	unknown := `{"componentId":"text-main","trait":"layout","control":"position","value":{"x":20,"y":30,"extra":true}}`
@@ -90,7 +90,7 @@ func TestAddComponentUsesRegisteredDefaultsAndStrictConfig(t *testing.T) {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 	recorder = request(t, mux, http.MethodPost, "/api/draft-card/components", `{"componentKind":"text_input","config":{"inputType":"text"}}`)
-	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "unknown field") {
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "field is not allowed") {
 		t.Fatalf("alias status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 	recorder = request(t, mux, http.MethodPost, "/api/draft-card/components", `{"componentKind":"text_input","config":null}`)
@@ -124,7 +124,7 @@ func TestApplyGeneratedConfigIsStrict(t *testing.T) {
 	}
 	invalid := `{"generated_config":{"component_kind":"text","description":"Bad","config":{"align":"CENTER"}}}`
 	recorder = request(t, mux, http.MethodPost, "/api/draft-card/apply-config", invalid)
-	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "invalid_value") {
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "invalid_option") {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 	legacy := `{"generated_config":{"componentKind":"text","description":"Bad","config":{}}}`

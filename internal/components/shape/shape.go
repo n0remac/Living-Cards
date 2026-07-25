@@ -124,24 +124,36 @@ func RandomGenerated(seed int64, level int) schema.GeneratedConfig[Config] {
 
 func Definition() card.Definition {
 	return card.MustDefine(card.TypedDefinition[Config]{
-		Kind: Kind, Label: "Shape", Structure: card.StructureLeaf, Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		Kind: Kind, Label: "Shape", Structure: card.StructureLeaf, Default: DefaultConfig, Normalize: NormalizeConfig,
+		ConfigRules: []schema.FieldRule{
+			schema.Enum("shape", AllowedShapes()...),
+			schema.IntegerRange("x", 0, 100),
+			schema.IntegerRange("y", 0, 100),
+			schema.IntegerRange("width", 8, 100),
+			schema.IntegerRange("height", 8, 100),
+			schema.IntegerRange("rotation", 0, 359),
+			schema.StringFormat("background_color", schema.FormatCSSColor),
+			schema.StringFormat("border_color", schema.FormatCSSColor),
+			schema.IntegerRange("border_width_px", 0, 10),
+			schema.Enum("shadow", AllowedShadows()...),
+		},
 		Render: func(node card.Node, part Config, renderContext card.RenderContext) (card.Contribution, error) {
 			return card.Contribution{
 				Layers: []*godom.Node{RenderLayerWithContext(node.ID, part, renderContext)},
 			}, nil
 		},
 		Controls: []card.Control[Config]{
-			card.StringControl("shape", "shape", "select", "Shape", "shape", func(c Config) string { return c.Shape }, func(c *Config, v string) { c.Shape = v }, shapeOptions()...),
+			card.WithOptionLabels(card.StringControl("shape", "shape", "select", "Shape", "shape", func(c Config) string { return c.Shape }, func(c *Config, v string) { c.Shape = v }), shapeOptions()...),
 			positionControl(),
-			card.IntControl("x", "layout", "range", "X position", "left", 0, 100, 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
-			card.IntControl("y", "layout", "range", "Y position", "top", 0, 100, 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
-			card.IntControl("width", "layout", "range", "Width", "width", 8, 100, 1, func(c Config) int { return c.Width }, func(c *Config, v int) { c.Width = v }),
-			card.IntControl("height", "layout", "range", "Height", "height", 8, 100, 1, func(c Config) int { return c.Height }, func(c *Config, v int) { c.Height = v }),
-			card.IntControl("rotation", "layout", "range", "Rotation", "transform", 0, 359, 1, func(c Config) int { return c.Rotation }, func(c *Config, v int) { c.Rotation = v }),
+			card.IntControl("x", "layout", "range", "X position", "left", 1, func(c Config) int { return c.X }, func(c *Config, v int) { c.X = v }),
+			card.IntControl("y", "layout", "range", "Y position", "top", 1, func(c Config) int { return c.Y }, func(c *Config, v int) { c.Y = v }),
+			card.IntControl("width", "layout", "range", "Width", "width", 1, func(c Config) int { return c.Width }, func(c *Config, v int) { c.Width = v }),
+			card.IntControl("height", "layout", "range", "Height", "height", 1, func(c Config) int { return c.Height }, func(c *Config, v int) { c.Height = v }),
+			card.IntControl("rotation", "layout", "range", "Rotation", "transform", 1, func(c Config) int { return c.Rotation }, func(c *Config, v int) { c.Rotation = v }),
 			card.StringControl("background_color", "style", "color", "Fill color", "fill", func(c Config) string { return c.BackgroundColor }, func(c *Config, v string) { c.BackgroundColor = v }),
 			card.StringControl("border_color", "style", "color", "Border color", "stroke", func(c Config) string { return c.BorderColor }, func(c *Config, v string) { c.BorderColor = v }),
-			card.IntControl("border_width_px", "style", "range", "Border width", "stroke-width", 0, 10, 1, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
-			card.StringControl("shadow", "style", "select", "Shadow", "filter", func(c Config) string { return c.Shadow }, func(c *Config, v string) { c.Shadow = v }, shadowOptions()...),
+			card.IntControl("border_width_px", "style", "range", "Border width", "stroke-width", 1, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
+			card.WithOptionLabels(card.StringControl("shadow", "style", "select", "Shadow", "filter", func(c Config) string { return c.Shadow }, func(c *Config, v string) { c.Shadow = v }), shadowOptions()...),
 		}, Install: &card.InstallSpec{Policy: card.InstallAppend}, Generation: &card.TypedGenerationDefinition[Config]{Random: RandomGenerated},
 	})
 }
@@ -172,15 +184,6 @@ Rules:
 - colors must be safe colors: hex, rgb(...), rgba(...), hsl(...), or hsla(...).
 - x, y, width, and height are percentage values within the allowed ranges.`
 
-func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
-	if generated == nil {
-		return
-	}
-	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
-	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config = NormalizeConfig(generated.Config)
-}
-
 func NormalizeConfig(config Config) Config {
 	config.Shape = strings.TrimSpace(config.Shape)
 	config.BackgroundColor = strings.TrimSpace(config.BackgroundColor)
@@ -188,76 +191,6 @@ func NormalizeConfig(config Config) Config {
 	config.Shadow = strings.TrimSpace(config.Shadow)
 	return config
 }
-func ValidateConfig(config Config) []schema.Issue {
-	return ValidateGenerated(schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Shape config", Config: config})
-}
-
-func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
-	var issues []schema.Issue
-	if !contains(AllowedShapes(), generated.Config.Shape) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.shape",
-			Code:    "invalid_value",
-			Message: "shape is not allowed",
-			Actual:  generated.Config.Shape,
-			Allowed: AllowedShapes(),
-		})
-	}
-	if generated.Config.X < 0 || generated.Config.X > 100 {
-		issues = append(issues, rangeIssue("config.x", "x", generated.Config.X, 0, 100))
-	}
-	if generated.Config.Y < 0 || generated.Config.Y > 100 {
-		issues = append(issues, rangeIssue("config.y", "y", generated.Config.Y, 0, 100))
-	}
-	if generated.Config.Width < 8 || generated.Config.Width > 100 {
-		issues = append(issues, rangeIssue("config.width", "width", generated.Config.Width, 8, 100))
-	}
-	if generated.Config.Height < 8 || generated.Config.Height > 100 {
-		issues = append(issues, rangeIssue("config.height", "height", generated.Config.Height, 8, 100))
-	}
-	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 10 {
-		issues = append(issues, rangeIssue("config.border_width_px", "border_width_px", generated.Config.BorderWidthPX, 0, 10))
-	}
-	if color := strings.TrimSpace(generated.Config.BackgroundColor); color == "" {
-		issues = append(issues, schema.Issue{
-			Path:    "config.background_color",
-			Code:    "required",
-			Message: "background_color is required",
-		})
-	} else if !schema.IsAllowedColor(color) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.background_color",
-			Code:    "invalid_color",
-			Message: "background_color must be a hex, rgb, rgba, hsl, or hsla color",
-			Actual:  color,
-		})
-	}
-	if color := strings.TrimSpace(generated.Config.BorderColor); color == "" {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_color",
-			Code:    "required",
-			Message: "border_color is required",
-		})
-	} else if !schema.IsAllowedColor(color) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_color",
-			Code:    "invalid_color",
-			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
-			Actual:  color,
-		})
-	}
-	if shadow := strings.TrimSpace(generated.Config.Shadow); shadow != "" && !contains(AllowedShadows(), shadow) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.shadow",
-			Code:    "invalid_value",
-			Message: "shadow is not an allowed preset value",
-			Actual:  shadow,
-			Allowed: AllowedShadows(),
-		})
-	}
-	return issues
-}
-
 func RenderLayer(componentID string, part Config) *godom.Node {
 	return RenderLayerWithContext(componentID, part, card.RenderContext{})
 }
@@ -357,14 +290,6 @@ func AllowedShadows() []string {
 	}
 }
 
-func MarshalGenerated(generated schema.GeneratedConfig[Config]) (json.RawMessage, error) {
-	NormalizeGenerated(&generated)
-	if issues := ValidateGenerated(generated); len(issues) > 0 {
-		return nil, fmt.Errorf("invalid shape config at %s: %s", issues[0].Path, issues[0].Message)
-	}
-	return json.Marshal(generated)
-}
-
 func styleString(styles map[string]string) string {
 	keys := make([]string, 0, len(styles))
 	for key := range styles {
@@ -385,27 +310,27 @@ func styleString(styles map[string]string) string {
 	return strings.TrimSpace(out.String())
 }
 
-func rangeIssue(path, name string, value, min, max int) schema.Issue {
-	return schema.Issue{
-		Path:    path,
-		Code:    "out_of_range",
-		Message: fmt.Sprintf("%s must be between %d and %d", name, min, max),
-		Actual:  value,
-	}
-}
-
 func positionControl() card.Control[Config] {
 	type position struct {
 		X int `json:"x"`
 		Y int `json:"y"`
 	}
-	return card.Control[Config]{ID: "position", Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
+	return card.Control[Config]{ID: "position", ValueSchema: positionControlSchema(), Descriptor: card.ControlDescriptor{Trait: "layout", Kind: "position", Label: "Position", Property: "position"}, Read: func(c Config) json.RawMessage { raw, _ := json.Marshal(position{c.X, c.Y}); return raw }, Apply: func(c *Config, raw json.RawMessage) error {
 		var value position
 		if err := card.DecodeControlObject(raw, &value); err != nil {
 			return fmt.Errorf("value must include integer x and y: %w", err)
 		}
 		c.X, c.Y = value.X, value.Y
 		return nil
+	}}
+}
+
+func positionControlSchema() schema.ValueSchema {
+	minimum, maximum := float64(0), float64(100)
+	coordinate := schema.ValueSchema{Kind: schema.ValueInteger, Minimum: &minimum, Maximum: &maximum}
+	return schema.ValueSchema{Kind: schema.ValueObject, Fields: []schema.FieldSchema{
+		{JSONName: "x", Schema: coordinate, Required: true},
+		{JSONName: "y", Schema: coordinate, Required: true},
 	}}
 }
 func shapeOptions() []card.ControlOption {
@@ -424,13 +349,4 @@ func shadowOptions() []card.ControlOption {
 		out = append(out, card.Option(labels[index], value))
 	}
 	return out
-}
-
-func contains(values []string, target string) bool {
-	for _, value := range values {
-		if target == value {
-			return true
-		}
-	}
-	return false
 }

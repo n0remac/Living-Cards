@@ -1,10 +1,12 @@
 package catalog_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/catalog"
+	"github.com/n0remac/Living-Card/internal/components/tsgen"
 )
 
 func TestDefaultCatalogOrderAndCanonicalVocabulary(t *testing.T) {
@@ -58,6 +61,26 @@ func TestAllDeclaredGenerationMetadataPassesTheDefinitionCodec(t *testing.T) {
 					t.Fatalf("%s random seed %d issues = %#v", definition.Kind(), seed, issues)
 				}
 			}
+		}
+	}
+}
+
+func TestGeneratedTypeScriptIsCurrent(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := tsgen.Generate(catalog.MustNew().Schema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, relativePath := range tsgen.SortedPaths(files) {
+		current, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relativePath)))
+		if err != nil {
+			t.Fatalf("read generated file %s: %v", relativePath, err)
+		}
+		if !bytes.Equal(current, files[relativePath]) {
+			t.Fatalf("%s is stale; run go run ./cmd/cardtypes", relativePath)
 		}
 	}
 }

@@ -141,6 +141,12 @@ func Definition() card.Definition {
 	return card.MustDefine(card.TypedDefinition[Config]{
 		Kind: Kind, Label: "Border", Structure: card.StructureLeaf,
 		Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		ConfigRules: []schema.FieldRule{
+			schema.IntegerRange("border_width_px", 0, 16),
+			schema.IntegerRange("border_radius_px", 0, 64),
+			schema.StringFormat("border_color", schema.FormatCSSColor),
+			schema.Enum("border_style", AllowedStyles()...),
+		},
 		Render: func(_ card.Node, part Config, _ card.RenderContext) (card.Contribution, error) {
 			styles := map[string]string{
 				"border":        fmt.Sprintf("%dpx %s %s", part.BorderWidthPX, part.BorderStyle, part.BorderColor),
@@ -156,9 +162,9 @@ func Definition() card.Definition {
 		},
 		Controls: []card.Control[Config]{
 			borderStringControl("border_color", "Color", "color", "border-color", func(c Config) string { return c.BorderColor }, func(c *Config, v string) { c.BorderColor = v }),
-			borderIntControl("border_width_px", "Width", "border-width", 0, 16, func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
-			borderIntControl("border_radius_px", "Radius", "border-radius", 0, 64, func(c Config) int { return c.BorderRadiusPX }, func(c *Config, v int) { c.BorderRadiusPX = v }),
-			borderStringControl("border_style", "Line type", "select", "border-style", func(c Config) string { return c.BorderStyle }, func(c *Config, v string) { c.BorderStyle = v }, card.Option("Solid", "solid"), card.Option("Dashed", "dashed"), card.Option("Dotted", "dotted"), card.Option("Double", "double")),
+			borderIntControl("border_width_px", "Width", "border-width", func(c Config) int { return c.BorderWidthPX }, func(c *Config, v int) { c.BorderWidthPX = v }),
+			borderIntControl("border_radius_px", "Radius", "border-radius", func(c Config) int { return c.BorderRadiusPX }, func(c *Config, v int) { c.BorderRadiusPX = v }),
+			borderStringControl("border_style", "Line type", "select", "border-style", func(c Config) string { return c.BorderStyle }, func(c *Config, v string) { c.BorderStyle = v }),
 		},
 		Install: &card.InstallSpec{Policy: card.InstallReplaceKind}, Presets: typedPresets(),
 		Generation: &card.TypedGenerationDefinition[Config]{SystemPrompt: systemPrompt, Example: exampleJSON, Random: RandomGenerated},
@@ -172,62 +178,7 @@ func NormalizeConfig(config Config) Config {
 	return config
 }
 func ValidateConfig(config Config) []schema.Issue {
-	return ValidateGenerated(schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Border config", Config: config})
-}
-
-func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
-	if generated == nil {
-		return
-	}
-	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
-	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config = NormalizeConfig(generated.Config)
-}
-
-func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
-	var issues []schema.Issue
-	if generated.Config.BorderWidthPX < 0 || generated.Config.BorderWidthPX > 16 {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_width_px",
-			Code:    "out_of_range",
-			Message: "border_width_px must be between 0 and 16",
-			Actual:  generated.Config.BorderWidthPX,
-		})
-	}
-	if generated.Config.BorderRadiusPX < 0 || generated.Config.BorderRadiusPX > 64 {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_radius_px",
-			Code:    "out_of_range",
-			Message: "border_radius_px must be between 0 and 64",
-			Actual:  generated.Config.BorderRadiusPX,
-		})
-	}
-	color := strings.TrimSpace(generated.Config.BorderColor)
-	if color == "" {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_color",
-			Code:    "required",
-			Message: "border_color is required",
-		})
-	} else if !schema.IsAllowedColor(color) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_color",
-			Code:    "invalid_color",
-			Message: "border_color must be a hex, rgb, rgba, hsl, or hsla color",
-			Actual:  color,
-		})
-	}
-	if !borderStyleAllowed(generated.Config.BorderStyle) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.border_style",
-			Code:    "invalid_option",
-			Message: "border_style must be solid, dashed, dotted, or double",
-			Actual:  generated.Config.BorderStyle,
-			Allowed: []string{"solid", "dashed", "dotted", "double"},
-		})
-	}
-	issues = append(issues, schema.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
-	return issues
+	return schema.ValidateInlineCSS("config.css", config.CSS, AllowedCSS())
 }
 
 func AllowedCSS() map[string]struct{} {
@@ -246,17 +197,8 @@ func AllowedStyles() []string {
 	return []string{"solid", "dashed", "dotted", "double"}
 }
 
-func borderStyleAllowed(style string) bool {
-	for _, candidate := range AllowedStyles() {
-		if style == candidate {
-			return true
-		}
-	}
-	return false
-}
-
-func borderStringControl(id, label, kind, property string, get func(Config) string, set func(*Config, string), options ...card.ControlOption) card.Control[Config] {
-	control := card.StringControl(id, "style", kind, label, property, get, set, options...)
+func borderStringControl(id, label, kind, property string, get func(Config) string, set func(*Config, string)) card.Control[Config] {
+	control := card.StringControl(id, "style", kind, label, property, get, set)
 	base := control.Apply
 	control.Apply = func(c *Config, raw json.RawMessage) error {
 		if err := base(c, raw); err != nil {
@@ -267,8 +209,8 @@ func borderStringControl(id, label, kind, property string, get func(Config) stri
 	}
 	return control
 }
-func borderIntControl(id, label, property string, min, max int, get func(Config) int, set func(*Config, int)) card.Control[Config] {
-	control := card.IntControl(id, "style", "range", label, property, min, max, 1, get, set)
+func borderIntControl(id, label, property string, get func(Config) int, set func(*Config, int)) card.Control[Config] {
+	control := card.IntControl(id, "style", "range", label, property, 1, get, set)
 	base := control.Apply
 	control.Apply = func(c *Config, raw json.RawMessage) error {
 		if err := base(c, raw); err != nil {

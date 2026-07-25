@@ -1,9 +1,11 @@
 package slider
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/schema"
 )
 
@@ -20,28 +22,30 @@ func TestNormalizeConfigDoesNotRepairSliderRange(t *testing.T) {
 	if part.Label != "" || part.Min != -10 || part.Max != 120 || part.Step != 0 || part.Value != 140 {
 		t.Fatalf("part = %#v", part)
 	}
-	if issues := ValidateConfig(part); len(issues) == 0 {
-		t.Fatal("ValidateConfig() issues = nil, want invalid slider")
+	if issues := configIssues(part); len(issues) == 0 {
+		t.Fatal("configIssues() issues = nil, want invalid slider")
 	}
 }
 
 func TestValidateGeneratedRejectsInvalidSlider(t *testing.T) {
 	t.Parallel()
 
-	issues := ValidateGenerated(schema.GeneratedConfig[Config]{
-		ComponentKind: Kind,
-		Description:   "Invalid slider",
-		Config: Config{
-			Label: "",
-			Min:   90,
-			Max:   20,
-			Step:  0,
-			Value: 101,
-		},
+	issues := configIssues(Config{
+		Label: "",
+		Min:   90,
+		Max:   20,
+		Step:  0,
+		Value: 101,
 	})
 	if len(issues) < 4 {
 		t.Fatalf("issues = %#v, want multiple validation issues", issues)
 	}
+}
+
+func configIssues(config Config) []schema.Issue {
+	raw, _ := json.Marshal(config)
+	_, issues := Definition().CanonicalizeConfig(card.RawConfig{Present: true, Value: raw})
+	return issues
 }
 
 func TestRenderLayerIncludesSliderValue(t *testing.T) {

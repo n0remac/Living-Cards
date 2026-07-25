@@ -38,7 +38,29 @@ Run tests with:
 
 ```sh
 go test ./...
+npm ci
+npm run typecheck
 ```
+
+## Generated Card Types
+
+The Go component catalog is the source of truth for component kinds, config
+shapes, simple field constraints, controls, capabilities, defaults, and
+presets. Generate the committed TypeScript contracts and frontend metadata
+after changing a component definition:
+
+```sh
+go run ./cmd/cardtypes
+```
+
+Check for stale generated files without rewriting them:
+
+```sh
+go run ./cmd/cardtypes -check
+```
+
+The Go test suite performs the same in-process stale-file check. Generated
+files live under `web/src/generated/` and should not be edited by hand.
 
 ## Configuration
 

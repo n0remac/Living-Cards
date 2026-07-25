@@ -1,3 +1,4 @@
+import { componentKinds } from "../generated/component-catalog.generated";
 import type { CardHitZone, ComponentTarget, ComponentKind } from "../types";
 
 const borderBandPX = 24;
@@ -32,12 +33,12 @@ export function hitTestCard(event: PointerEvent, preview: HTMLElement): CardHit 
 
   const target = event.target instanceof Element ? event.target : null;
   const component = target?.closest<HTMLElement>("[data-component-id][data-component-kind]");
-  const componentKind = component?.dataset.componentKind as ComponentKind | undefined;
-  if (component && componentKind === "shape") {
-    return componentHit(component, "shape", "shape", "geometry", x, y, event);
+  const componentKind = component?.dataset.componentKind || "";
+  if (component && isComponentKind(componentKind) && componentKind === "shape") {
+    return componentHit(component, "shape", "shape", "shape", "geometry", x, y, event);
   }
-  if (component && componentKind === "text") {
-    return componentHit(component, "text", "text", "text", x, y, event);
+  if (component && isComponentKind(componentKind) && componentKind === "text") {
+    return componentHit(component, "text", "text", "text", "text", x, y, event);
   }
 
   return cardRootHit("background", "background", x, y, event);
@@ -59,6 +60,7 @@ function cardRootHit(configKind: ComponentTarget, zone: CardHitZone, x: number, 
 
 function componentHit(
   element: HTMLElement,
+  componentKind: ComponentKind,
   configKind: ComponentTarget,
   zone: CardHitZone,
   trait: string,
@@ -70,13 +72,17 @@ function componentHit(
     configKind,
     zone,
     componentId: element.dataset.componentId || "",
-    componentKind: (element.dataset.componentKind || configKind) as ComponentKind,
+    componentKind,
     trait,
     x,
     y,
     clientX: event.clientX,
     clientY: event.clientY,
   };
+}
+
+function isComponentKind(value: string): value is ComponentKind {
+  return componentKinds.some((kind) => kind === value);
 }
 
 function clamp(value: number): number {

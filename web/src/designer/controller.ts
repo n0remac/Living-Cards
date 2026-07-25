@@ -2,7 +2,7 @@ import { addDraftComponent, applyDraftConfig, applyLibraryDesign, fetchDesignLib
 import { byID } from "../dom";
 import { replacePreviewHTML } from "./document";
 import { formatIssues, generateComponentConfig, isConfigGenerationError, parseGeneratedConfigEnvelope } from "./configs";
-import type { DesignLibraryItem, ConfigIssue, GeneratedConfig } from "../types";
+import type { AIGeneratableComponentKind, DesignLibraryItem, ConfigIssue, GeneratedConfig } from "../types";
 
 export function initDesigner(): void {
   const form = byID<HTMLFormElement>("card-designer-form");
@@ -246,7 +246,7 @@ function setSaveEnabled(enabled: boolean): void {
   save.disabled = !enabled;
 }
 
-function readConfigKind(): string {
+function readConfigKind(): AIGeneratableComponentKind {
   const select = byID<HTMLSelectElement>("config-target");
   switch (select?.value) {
     case "border":
@@ -267,6 +267,7 @@ function bindAddComponentControls(): void {
   });
   byID<HTMLInputElement>("add-image-component-input")?.addEventListener("change", (event) => {
     const input = event.currentTarget;
+    if (!(input instanceof HTMLInputElement)) return;
     const file = input.files?.[0];
     input.value = "";
     if (!file) return;

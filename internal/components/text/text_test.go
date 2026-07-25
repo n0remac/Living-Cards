@@ -1,6 +1,7 @@
 package text
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestValidateGeneratedAcceptsSafeTextConfig(t *testing.T) {
 			CSS:        "font-family: Georgia, serif; line-height: 1.5; text-align: center; text-shadow: 0 1px 8px rgba(0,0,0,0.3);",
 		},
 	}
-	if issues := ValidateGenerated(generated); len(issues) != 0 {
+	if issues := configIssues(generated.Config); len(issues) != 0 {
 		t.Fatalf("issues = %#v", issues)
 	}
 }
@@ -42,12 +43,12 @@ func TestNormalizeGeneratedDoesNotRepairFontSize(t *testing.T) {
 		Config:        validConfig(),
 	}
 	generated.Config.FontSizePX = 999
-	NormalizeGenerated(&generated)
+	generated.Config = NormalizeConfig(generated.Config)
 	if generated.Config.FontSizePX != 999 {
 		t.Fatalf("FontSizePX = %d, want 999", generated.Config.FontSizePX)
 	}
-	if issues := ValidateGenerated(generated); len(issues) == 0 {
-		t.Fatal("ValidateGenerated() issues = nil, want invalid font size")
+	if issues := configIssues(generated.Config); len(issues) == 0 {
+		t.Fatal("configIssues() issues = nil, want invalid font size")
 	}
 }
 
@@ -71,7 +72,7 @@ func TestValidateGeneratedRejectsInvalidTextFields(t *testing.T) {
 			CSS:        "position: fixed;",
 		},
 	}
-	issues := ValidateGenerated(generated)
+	issues := configIssues(generated.Config)
 	paths := textIssuePaths(issues)
 	for _, path := range []string{
 		"config.content",
@@ -97,14 +98,16 @@ func TestValidateGeneratedRejectsUnsupportedTextCSSProperty(t *testing.T) {
 
 	part := validConfig()
 	part.CSS = "background: red;"
-	issues := ValidateGenerated(schema.GeneratedConfig[Config]{
-		ComponentKind: Kind,
-		Description:   "Bad CSS",
-		Config:        part,
-	})
+	issues := configIssues(part)
 	if len(issues) != 1 || issues[0].Path != "config.css" || issues[0].Code != "unsupported_css_property" {
 		t.Fatalf("issues = %#v", issues)
 	}
+}
+
+func configIssues(config Config) []schema.Issue {
+	raw, _ := json.Marshal(config)
+	_, issues := Definition().CanonicalizeConfig(card.RawConfig{Present: true, Value: raw})
+	return issues
 }
 
 func TestRenderLayerIncludesExtendedTextStyles(t *testing.T) {

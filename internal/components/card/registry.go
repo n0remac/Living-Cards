@@ -68,6 +68,17 @@ func (r *Registry) Presets() []LibraryItem {
 	return out
 }
 
+func (r *Registry) Schema() schema.CatalogSchema {
+	if r == nil {
+		return schema.CatalogSchema{}
+	}
+	out := schema.CatalogSchema{Components: make([]schema.ComponentSchema, 0, len(r.ordered))}
+	for _, definition := range r.ordered {
+		out.Components = append(out.Components, definition.Schema())
+	}
+	return schema.CloneCatalog(out)
+}
+
 type documentWire struct {
 	CardID string          `json:"card_id"`
 	Name   string          `json:"name"`

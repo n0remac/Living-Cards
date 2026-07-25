@@ -16,8 +16,9 @@ import {
   submitGameForm,
 } from "../api";
 import { byID } from "../dom";
+import { componentKinds } from "../generated/component-catalog.generated";
 import { closeComponentOverlay, openComponentOverlay } from "../stage/componentControls";
-import type { ComponentOverlay, ControlDescriptor, GameSessionSnapshot, RenderedGameCard } from "../types";
+import type { ComponentKind, ComponentOverlay, ControlDescriptor, GameSessionSnapshot, RenderedGameCard } from "../types";
 
 let latestSession: GameSessionSnapshot | null = null;
 let busy = false;
@@ -36,7 +37,7 @@ interface RenderOptions {
 interface ActiveComponentHit {
   cardId: string;
   componentId: string;
-  componentKind: string;
+  componentKind: ComponentKind;
   element: HTMLElement;
   preview: HTMLElement;
 }
@@ -488,7 +489,7 @@ function activeComponentHit(event: MouseEvent | PointerEvent): ActiveComponentHi
   const component = elementTarget?.closest<HTMLElement>("[data-component-id][data-component-kind]");
   if (component && preview.contains(component)) {
     const componentKind = component.dataset.componentKind || "";
-    if (componentKind && componentKind !== "card") {
+    if (isComponentKind(componentKind) && componentKind !== "card") {
       return {
         cardId,
         componentId: component.dataset.componentId || "",
@@ -531,7 +532,7 @@ function editComponentHit(event: MouseEvent | PointerEvent): ActiveComponentHit 
   const component = elementTarget?.closest<HTMLElement>("[data-component-id][data-component-kind]");
   if (component && preview.contains(component)) {
     const componentKind = component.dataset.componentKind || "";
-    if (componentKind && componentKind !== "card" && componentKind !== "background" && componentKind !== "border") {
+    if (isComponentKind(componentKind) && componentKind !== "card" && componentKind !== "background" && componentKind !== "border") {
       return {
         cardId,
         componentId: component.dataset.componentId || "",
@@ -564,7 +565,7 @@ function editCardPreview(): HTMLElement | null {
   return preview instanceof HTMLElement ? preview : null;
 }
 
-function componentPercentPosition(element: HTMLElement, preview: HTMLElement, componentKind: string): { x: number; y: number } {
+function componentPercentPosition(element: HTMLElement, preview: HTMLElement, componentKind: ComponentKind): { x: number; y: number } {
   const styleX = parsePercent(element.style.left) ?? parsePercent(getComputedStyle(element).left);
   const styleY = parsePercent(element.style.top) ?? parsePercent(getComputedStyle(element).top);
   if (styleX !== null && styleY !== null) {
@@ -591,15 +592,15 @@ function parsePercent(value: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function canDragActiveComponent(componentKind: string): boolean {
+function canDragActiveComponent(componentKind: ComponentKind): boolean {
   return componentKind === "text" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "text_input" || componentKind === "button";
 }
 
-function canDragEditComponent(componentKind: string): boolean {
+function canDragEditComponent(componentKind: ComponentKind): boolean {
   return componentKind === "text" || componentKind === "shape" || componentKind === "image" || componentKind === "slider" || componentKind === "text_input" || componentKind === "button";
 }
 
-function componentTitle(componentKind: string): string {
+function componentTitle(componentKind: ComponentKind): string {
   switch (componentKind) {
     case "background":
       return "Background";
@@ -1095,11 +1096,12 @@ function isEditableCard(card: RenderedGameCard): boolean {
   return Boolean(card.state?.editable);
 }
 
-function componentKindForCard(card: RenderedGameCard): string {
-  const template = card.state?.component_template;
-  if (!template || typeof template !== "object") return "";
-  const value = (template as Record<string, unknown>).component_kind;
-  return typeof value === "string" ? value : "";
+function componentKindForCard(card: RenderedGameCard): ComponentKind | "" {
+  return card.state?.component_template?.component_kind || "";
+}
+
+function isComponentKind(value: string): value is ComponentKind {
+  return componentKinds.some((kind) => kind === value);
 }
 
 function pendingComponentIds(): Set<string> {

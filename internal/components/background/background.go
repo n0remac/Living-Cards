@@ -111,6 +111,9 @@ func Definition() card.Definition {
 	return card.MustDefine(card.TypedDefinition[Config]{
 		Kind: Kind, Label: "Background", Structure: card.StructureLeaf,
 		Default: DefaultConfig, Normalize: NormalizeConfig, Validate: ValidateConfig,
+		ConfigRules: []schema.FieldRule{
+			schema.StringFormat("background_color", schema.FormatCSSColor),
+		},
 		Render: func(_ card.Node, part Config, _ card.RenderContext) (card.Contribution, error) {
 			styles := map[string]string{
 				"background-color": part.BackgroundColor,
@@ -151,37 +154,7 @@ func NormalizeConfig(config Config) Config {
 }
 
 func ValidateConfig(config Config) []schema.Issue {
-	return ValidateGenerated(schema.GeneratedConfig[Config]{ComponentKind: Kind, Description: "Background config", Config: config})
-}
-
-func NormalizeGenerated(generated *schema.GeneratedConfig[Config]) {
-	if generated == nil {
-		return
-	}
-	generated.ComponentKind = strings.TrimSpace(generated.ComponentKind)
-	generated.Description = strings.TrimSpace(generated.Description)
-	generated.Config = NormalizeConfig(generated.Config)
-}
-
-func ValidateGenerated(generated schema.GeneratedConfig[Config]) []schema.Issue {
-	var issues []schema.Issue
-	color := strings.TrimSpace(generated.Config.BackgroundColor)
-	if color == "" {
-		issues = append(issues, schema.Issue{
-			Path:    "config.background_color",
-			Code:    "required",
-			Message: "background_color is required",
-		})
-	} else if !schema.IsAllowedColor(color) {
-		issues = append(issues, schema.Issue{
-			Path:    "config.background_color",
-			Code:    "invalid_color",
-			Message: "background_color must be a hex, rgb, rgba, hsl, or hsla color",
-			Actual:  color,
-		})
-	}
-	issues = append(issues, schema.ValidateInlineCSS("config.css", generated.Config.CSS, AllowedCSS())...)
-	return issues
+	return schema.ValidateInlineCSS("config.css", config.CSS, AllowedCSS())
 }
 
 func AllowedCSS() map[string]struct{} {

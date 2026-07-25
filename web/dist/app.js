@@ -1,13 +1,7 @@
-var __defProp = Object.defineProperty;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-
 // web/src/api.ts
 var ConfigGenerationError = class extends Error {
   constructor(message, rawResponse, issues = []) {
     super(message);
-    __publicField(this, "rawResponse");
-    __publicField(this, "issues");
     this.name = "ConfigGenerationError";
     this.rawResponse = rawResponse;
     this.issues = issues;
@@ -277,6 +271,10 @@ function replacePreviewHTML(previewHTML) {
   current.replaceWith(next);
 }
 
+// web/src/generated/component-catalog.generated.ts
+var componentKinds = ["card", "background", "border", "text", "shape", "image", "slider", "text_input", "button"];
+var generatedComponentKinds = ["card", "background", "border", "text", "shape", "image"];
+
 // web/src/designer/configs.ts
 async function generateComponentConfig(componentKind, instruction, update = false) {
   return await generateConfig(componentKind, instruction, update);
@@ -300,8 +298,11 @@ function normalizeGeneratedConfigEnvelope(value) {
   }
   const record = value;
   const componentKind = String(record.component_kind || "").trim();
+  if (!isGeneratedComponentKind(componentKind)) {
+    throw new Error("Generated config has an unsupported component_kind.");
+  }
   const config = record.config;
-  if (!config || typeof config !== "object") {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
     throw new Error("Generated config must include a config object.");
   }
   return {
@@ -309,6 +310,9 @@ function normalizeGeneratedConfigEnvelope(value) {
     description: String(record.description || savedDesignFallbackName(componentKind)).trim(),
     config: cloneJSON(config)
   };
+}
+function isGeneratedComponentKind(value) {
+  return generatedComponentKinds.some((kind) => kind === value);
 }
 function isConfigGenerationError(error) {
   return error instanceof ConfigGenerationError;
@@ -579,6 +583,7 @@ function bindAddComponentControls() {
   });
   byID("add-image-component-input")?.addEventListener("change", (event) => {
     const input = event.currentTarget;
+    if (!(input instanceof HTMLInputElement)) return;
     const file = input.files?.[0];
     input.value = "";
     if (!file) return;
@@ -1303,7 +1308,7 @@ function activeComponentHit(event) {
   const component = elementTarget?.closest("[data-component-id][data-component-kind]");
   if (component && preview.contains(component)) {
     const componentKind2 = component.dataset.componentKind || "";
-    if (componentKind2 && componentKind2 !== "card") {
+    if (isComponentKind(componentKind2) && componentKind2 !== "card") {
       return {
         cardId,
         componentId: component.dataset.componentId || "",
@@ -1342,7 +1347,7 @@ function editComponentHit(event) {
   const component = elementTarget?.closest("[data-component-id][data-component-kind]");
   if (component && preview.contains(component)) {
     const componentKind = component.dataset.componentKind || "";
-    if (componentKind && componentKind !== "card" && componentKind !== "background" && componentKind !== "border") {
+    if (isComponentKind(componentKind) && componentKind !== "card" && componentKind !== "background" && componentKind !== "border") {
       return {
         cardId,
         componentId: component.dataset.componentId || "",
@@ -1857,10 +1862,10 @@ function isEditableCard(card) {
   return Boolean(card.state?.editable);
 }
 function componentKindForCard(card) {
-  const template = card.state?.component_template;
-  if (!template || typeof template !== "object") return "";
-  const value = template.component_kind;
-  return typeof value === "string" ? value : "";
+  return card.state?.component_template?.component_kind || "";
+}
+function isComponentKind(value) {
+  return componentKinds.some((kind) => kind === value);
 }
 function pendingComponentIds() {
   return new Set(latestSession?.editSession?.pendingConsumedComponentIds || []);

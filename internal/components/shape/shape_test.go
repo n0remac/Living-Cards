@@ -1,6 +1,7 @@
 package shape
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -27,7 +28,7 @@ func TestValidateGeneratedAcceptsSafeShapeConfig(t *testing.T) {
 			Shadow:          "0 10px 24px rgba(14,165,233,0.22)",
 		},
 	}
-	if issues := ValidateGenerated(generated); len(issues) != 0 {
+	if issues := configIssues(generated.Config); len(issues) != 0 {
 		t.Fatalf("issues = %#v", issues)
 	}
 }
@@ -50,7 +51,7 @@ func TestValidateGeneratedRejectsInvalidShapeConfig(t *testing.T) {
 			Shadow:          "0 0 1px red",
 		},
 	}
-	issues := ValidateGenerated(generated)
+	issues := configIssues(generated.Config)
 	paths := map[string]bool{}
 	for _, issue := range issues {
 		paths[issue.Path] = true
@@ -70,6 +71,12 @@ func TestValidateGeneratedRejectsInvalidShapeConfig(t *testing.T) {
 			t.Fatalf("issues missing %s: %#v", path, issues)
 		}
 	}
+}
+
+func configIssues(config Config) []schema.Issue {
+	raw, _ := json.Marshal(config)
+	_, issues := Definition().CanonicalizeConfig(card.RawConfig{Present: true, Value: raw})
+	return issues
 }
 
 func TestRenderLayerIncludesShapeDataAttributesAndSVG(t *testing.T) {
