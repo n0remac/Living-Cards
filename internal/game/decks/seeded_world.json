@@ -630,47 +630,54 @@
       }
     }
   ],
-  "useRules": [
+  "rules": [
     {
       "id": "iron-key-unlocks-rusted-cell-door",
-      "source": {
-        "tags": [
-          "iron-key"
-        ]
+      "trigger": {
+        "kind": "cardPlayed",
+        "source": {
+          "tags": [
+            "iron-key"
+          ]
+        },
+        "target": {
+          "id": "rusted-cell-door"
+        }
       },
-      "target": {
-        "id": "rusted-cell-door"
-      },
-      "flagConditions": {
-        "doorUnlocked": false
-      },
+      "conditions": [
+        {
+          "kind": "flagEquals",
+          "flag": "doorUnlocked",
+          "value": false
+        }
+      ],
       "effects": [
         {
-          "effectKind": "setFlag",
+          "kind": "setFlag",
           "flag": "doorUnlocked",
           "value": true
         },
         {
-          "effectKind": "setCardState",
+          "kind": "setCardState",
           "key": "locked",
           "value": false
         },
         {
-          "effectKind": "removeCardTags",
+          "kind": "removeCardTags",
           "tags": [
             "locked"
           ]
         },
         {
-          "effectKind": "setDocumentVariant",
+          "kind": "setDocumentVariant",
           "variant": "open"
         },
         {
-          "effectKind": "loadDeck",
+          "kind": "loadDeck",
           "deckId": "fuse_room"
         },
         {
-          "effectKind": "setMessage",
+          "kind": "setMessage",
           "message": "The iron key catches. The door card unlocks."
         }
       ]

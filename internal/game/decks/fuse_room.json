@@ -381,57 +381,64 @@
       }
     }
   ],
-  "useRules": [
+  "rules": [
     {
       "id": "glass-fuse-powers-sleeping-switch",
-      "source": {
-        "id": "glass-fuse",
-        "tags": [
-          "fuse"
-        ]
+      "trigger": {
+        "kind": "cardPlayed",
+        "source": {
+          "id": "glass-fuse",
+          "tags": [
+            "fuse"
+          ]
+        },
+        "target": {
+          "id": "sleeping-switch"
+        }
       },
-      "target": {
-        "id": "sleeping-switch"
-      },
-      "flagConditions": {
-        "switchPowered": false
-      },
+      "conditions": [
+        {
+          "kind": "flagEquals",
+          "flag": "switchPowered",
+          "value": false
+        }
+      ],
       "effects": [
         {
-          "effectKind": "setFlag",
+          "kind": "setFlag",
           "flag": "switchPowered",
           "value": true
         },
         {
-          "effectKind": "setCardState",
+          "kind": "setCardState",
           "cardId": "sleeping-switch",
           "key": "powered",
           "value": true
         },
         {
-          "effectKind": "setCardState",
+          "kind": "setCardState",
           "cardId": "sleeping-switch",
           "key": "useful",
           "value": true
         },
         {
-          "effectKind": "removeCardTags",
+          "kind": "removeCardTags",
           "cardId": "sleeping-switch",
           "tags": [
             "decoy"
           ]
         },
         {
-          "effectKind": "setDocumentVariant",
+          "kind": "setDocumentVariant",
           "cardId": "sleeping-switch",
           "variant": "powered"
         },
         {
-          "effectKind": "loadDeck",
+          "kind": "loadDeck",
           "deckId": "generator_room"
         },
         {
-          "effectKind": "setMessage",
+          "kind": "setMessage",
           "message": "The glass fuse seats with a green snap. The sleeping switch flips awake."
         }
       ]

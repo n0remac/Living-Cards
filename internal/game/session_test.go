@@ -19,6 +19,7 @@ func TestEmbeddedDecksDecodeAgainstCatalog(t *testing.T) {
 	ids := []string{SeededWorldDeckDefinition, FuseRoomDeckDefinition, GeneratorDeckDefinition, ArchiveTerminalDefinition}
 	definitions := make([]DeckDefinition, 0, len(ids))
 	known := map[string]CardDefinition{}
+	knownRules := map[string]bool{}
 	for _, id := range ids {
 		definition, err := LoadEmbeddedDeck(registry, id)
 		if err != nil {
@@ -29,11 +30,14 @@ func TestEmbeddedDecksDecodeAgainstCatalog(t *testing.T) {
 			if err := ValidateDeckDefinition(registry, definition); err != nil {
 				t.Fatalf("ValidateDeckDefinition(%q): %v", id, err)
 			}
-		} else if err := ValidateDeckPackDefinition(registry, definition, known); err != nil {
+		} else if err := ValidateDeckPackDefinition(registry, definition, known, knownRules); err != nil {
 			t.Fatalf("ValidateDeckPackDefinition(%q): %v", id, err)
 		}
 		for _, card := range definition.Cards {
 			known[card.ID] = card
+		}
+		for _, rule := range definition.Rules {
+			knownRules[rule.ID] = true
 		}
 	}
 	if len(definitions) != len(ids) {
@@ -131,10 +135,13 @@ func TestSliderConditionReadsRegistryProperty(t *testing.T) {
 			{ID: "target", Name: "Target", Kind: KindWorld, InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("target")}},
 			{ID: "source", Name: "Source", Kind: KindItem, Collectible: true, InitialDocument: "default", Documents: map[string]card.Document{"default": sliderDocument("source", value)}},
 		},
-		UseRules: []UseRuleDefinition{{
-			ID: "property", Source: CardMatcherDefinition{ID: "source"}, Target: CardMatcherDefinition{ID: "target"},
-			SourceComponentConditions: []ComponentConditionDefinition{{ComponentKind: card.KindSlider, ComponentID: "source-slider", ValueEquals: &value}},
-			Effects:                   []RuleEffectDefinition{{EffectKind: EffectSetMessage, Message: "matched through property"}},
+		Rules: []RuleDefinition{{
+			ID:      "property",
+			Trigger: CardPlayedTrigger(CardMatcherDefinition{ID: "source"}, CardMatcherDefinition{ID: "target"}),
+			Conditions: []RuleCondition{
+				ComponentPropertyEqualsCondition(RuleCardSource, "", card.KindSlider, "source-slider", "value", NumberRuleValue(float64(value))),
+			},
+			Effects: []RuleEffect{SetMessageEffect("matched through property")},
 		}},
 	}
 	session, err := NewSessionFromDeck(registry, definition)
@@ -226,11 +233,14 @@ func TestUseCardConsumesMatchedAttemptButRetainsUnmatchedTarget(t *testing.T) {
 			{ID: "other", Name: "Other", Kind: KindWorld, InitialDocument: "default", Documents: map[string]card.Document{"default": simpleDocument("other")}},
 			{ID: "source", Name: "Source", Kind: KindItem, Collectible: true, InitialDocument: "default", Documents: map[string]card.Document{"default": sliderDocument("source", 3)}},
 		},
-		UseRules: []UseRuleDefinition{{
-			ID: "conditional", Source: CardMatcherDefinition{ID: "source"}, Target: CardMatcherDefinition{ID: "target"},
-			SourceComponentConditions: []ComponentConditionDefinition{{ComponentKind: card.KindSlider, ValueEquals: &requiredValue}},
-			FailureMessage:            "The value is wrong.",
-			Effects:                   []RuleEffectDefinition{{EffectKind: EffectSetMessage, Message: "matched"}},
+		Rules: []RuleDefinition{{
+			ID:      "conditional",
+			Trigger: CardPlayedTrigger(CardMatcherDefinition{ID: "source"}, CardMatcherDefinition{ID: "target"}),
+			Conditions: []RuleCondition{
+				ComponentPropertyEqualsCondition(RuleCardSource, "", card.KindSlider, "", "value", NumberRuleValue(float64(requiredValue))),
+			},
+			Effects:     []RuleEffect{SetMessageEffect("matched")},
+			ElseEffects: []RuleEffect{SetMessageEffect("The value is wrong.")},
 		}},
 	}
 	session, err := NewSessionFromDeck(registry, definition)
@@ -423,7 +433,7 @@ func TestFailedRegulatorPlayMovesSliderToFieldAndCanRevealArchive(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !revealed.SolvedFlags[GeneratorPoweredFlag] || !containsCard(revealed.WorldDeck, "archive-terminal") || revealed.ActiveWorldCardID != "archive-terminal" {
+	if !revealed.SolvedFlags["generatorPowered"] || !containsCard(revealed.WorldDeck, "archive-terminal") || revealed.ActiveWorldCardID != "archive-terminal" {
 		t.Fatalf("archive was not revealed: active=%q flags=%v world=%v", revealed.ActiveWorldCardID, revealed.SolvedFlags, cardIDs(revealed.WorldDeck))
 	}
 }
@@ -524,11 +534,11 @@ func TestFormDiscoveryUsesRegisteredRolesAndProperties(t *testing.T) {
 		{ID: "password", ComponentKind: card.KindTextInput, Config: json.RawMessage(`{"form_id":"login","name":"password"}`)},
 		{ID: "submit", ComponentKind: card.KindButton, Config: json.RawMessage(`{"form_id":"login"}`)},
 	}
-	conditions := []FormFieldConditionDefinition{{Name: "password", ValueEquals: "secret"}}
-	if !documentHasFormFields(registry, document, "login", conditions) || !documentHasSubmitButton(registry, document, "login") {
+	names := []string{"password"}
+	if !documentHasNamedFormFields(registry, document, "login", names) || !documentHasSubmitButton(registry, document, "login") {
 		t.Fatal("registered form roles were not discovered")
 	}
-	if documentHasFormFields(registry, document, "other", conditions) || documentHasSubmitButton(registry, document, "other") {
+	if documentHasNamedFormFields(registry, document, "other", names) || documentHasSubmitButton(registry, document, "other") {
 		t.Fatal("form discovery ignored form_id properties")
 	}
 }

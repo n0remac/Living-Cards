@@ -21,6 +21,7 @@ const (
 	EventCardVariantChanged     EventType = "cardVariantChanged"
 	EventComponentMounted       EventType = "componentMounted"
 	EventDeckLoaded             EventType = "deckLoaded"
+	EventRuleResolved           EventType = "ruleResolved"
 	EventActionRejected         EventType = "actionRejected"
 	EventMessage                EventType = "message"
 )
@@ -110,6 +111,12 @@ type ComponentMountedPayload struct {
 
 type DeckLoadedPayload struct {
 	DeckID string `json:"deckId"`
+}
+
+type RuleResolvedPayload struct {
+	RuleID      string `json:"ruleId"`
+	TriggerKind string `json:"triggerKind"`
+	Outcome     string `json:"outcome"`
 }
 
 type ActionRejectedPayload struct {

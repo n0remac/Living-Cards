@@ -1,7 +1,6 @@
 package game
 
 import (
-	"encoding/json"
 	"strings"
 
 	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
@@ -10,27 +9,6 @@ import (
 func stateBool(state map[string]any, key string) bool {
 	value, ok := state[key].(bool)
 	return ok && value
-}
-
-func stateInt(state map[string]any, key string) (int, bool) {
-	value, ok := state[key]
-	if !ok {
-		return 0, false
-	}
-	switch typed := value.(type) {
-	case int:
-		return typed, true
-	case float64:
-		return int(typed), typed == float64(int(typed))
-	case json.Number:
-		next, err := typed.Int64()
-		if err != nil {
-			return 0, false
-		}
-		return int(next), true
-	default:
-		return 0, false
-	}
 }
 
 func appendStringOnce(values []string, value string) []string {
@@ -60,19 +38,6 @@ func appendStateStringOnce(value any, next string) []string {
 		}
 	}
 	return appendStringOnce(values, next)
-}
-
-func appendOrReplaceRootChild(root *cardcomponent.Node, child cardcomponent.Node) {
-	if root == nil {
-		return
-	}
-	for index := range root.Children {
-		if root.Children[index].ID == child.ID {
-			root.Children[index] = child
-			return
-		}
-	}
-	root.Children = append(root.Children, child)
 }
 
 func findNodeByKind(node cardcomponent.Node, componentKind string) *cardcomponent.Node {

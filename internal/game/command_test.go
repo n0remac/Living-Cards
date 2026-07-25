@@ -52,12 +52,12 @@ func TestExecuteRollsBackMutationEventsAndRevisionOnFailure(t *testing.T) {
 		session.worldDeck[session.worldCardIndex("target")].State = map[string]any{}
 	}
 	session.worldDeck[session.worldCardIndex("target")].State["integer"] = 7
-	session.useRules = []UseRuleDefinition{{
-		Source: CardMatcherDefinition{ID: "source"},
-		Target: CardMatcherDefinition{ID: "target"},
-		Effects: []RuleEffectDefinition{
-			{EffectKind: EffectSetFlag, Flag: "partiallyMutated", Value: true},
-			{EffectKind: "forcedFailure"},
+	session.rules = []RuleDefinition{{
+		ID:      "forced-failure",
+		Trigger: CardPlayedTrigger(CardMatcherDefinition{ID: "source"}, CardMatcherDefinition{ID: "target"}),
+		Effects: []RuleEffect{
+			SetFlagEffect("partiallyMutated", true),
+			LoadDeckEffect("missing-deck"),
 		},
 	}}
 	before := mustViewResult(t, session)
@@ -79,12 +79,12 @@ func TestExecuteRollsBackMutationEventsAndRevisionOnFailure(t *testing.T) {
 }
 
 func TestCollectAndPlayEventsAreOrderedAndSemantic(t *testing.T) {
-	session := newCommandTestSession(t, []RuleEffectDefinition{
-		{EffectKind: EffectSetFlag, Flag: "opened", Value: true},
-		{EffectKind: EffectSetCardState, CardID: "target", Key: "open", Value: true},
-		{EffectKind: EffectRemoveCardTags, CardID: "target", Tags: []string{"closed"}},
-		{EffectKind: EffectSetDocumentVariant, CardID: "target", Variant: "changed"},
-		{EffectKind: EffectSetMessage, Message: "Opened."},
+	session := newCommandTestSession(t, []RuleEffect{
+		SetFlagEffect("opened", true),
+		SetCardStateEffect("target", "open", true),
+		RemoveCardTagsEffect("target", []string{"closed"}),
+		SetDocumentVariantEffect("target", "changed"),
+		SetMessageEffect("Opened."),
 	})
 
 	collected := mustExecuteResult(t, session, CollectCardCommand{CardID: "source"})
@@ -98,6 +98,7 @@ func TestCollectAndPlayEventsAreOrderedAndSemantic(t *testing.T) {
 		EventCardTagsRemoved,
 		EventCardVariantChanged,
 		EventMessage,
+		EventRuleResolved,
 		EventCardConsumed,
 	)
 	if played.Snapshot.Message != "Opened." {
@@ -171,11 +172,13 @@ func TestSubmitFormEventsDoNotExposeFieldValues(t *testing.T) {
 			ID: "terminal", Name: "Terminal", Kind: KindWorld, InitialDocument: "default",
 			Documents: map[string]card.Document{"default": document},
 		}},
-		FormSubmitRules: []FormSubmitRuleDefinition{{
-			Target:          CardMatcherDefinition{ID: "terminal"},
-			FormID:          "login",
-			FieldConditions: []FormFieldConditionDefinition{{Name: "password", ValueEquals: "nightjar"}},
-			Effects:         []RuleEffectDefinition{{EffectKind: EffectSetMessage, Message: "Accepted."}},
+		Rules: []RuleDefinition{{
+			ID:      "accept-login",
+			Trigger: FormSubmittedTrigger(CardMatcherDefinition{ID: "terminal"}, "login"),
+			Conditions: []RuleCondition{
+				FormFieldEqualsCondition("password", "nightjar", false, false),
+			},
+			Effects: []RuleEffect{SetMessageEffect("Accepted.")},
 		}},
 	}
 	session, err := NewSessionFromDeck(registry, definition)
@@ -185,7 +188,7 @@ func TestSubmitFormEventsDoNotExposeFieldValues(t *testing.T) {
 	result := mustExecuteResult(t, session, SubmitFormCommand{
 		CardID: "terminal", FormID: "login", Fields: map[string]string{"password": "nightjar"},
 	})
-	assertEventTypes(t, result.Events, EventFormSubmitted, EventMessage)
+	assertEventTypes(t, result.Events, EventFormSubmitted, EventMessage, EventRuleResolved)
 	raw, err := json.Marshal(result.Events)
 	if err != nil {
 		t.Fatal(err)
@@ -195,7 +198,7 @@ func TestSubmitFormEventsDoNotExposeFieldValues(t *testing.T) {
 	}
 }
 
-func newCommandTestSession(t *testing.T, effects []RuleEffectDefinition) *Session {
+func newCommandTestSession(t *testing.T, effects []RuleEffect) *Session {
 	t.Helper()
 	registry := catalog.MustNew()
 	targetDefault := simpleDocument("target")
@@ -209,9 +212,9 @@ func newCommandTestSession(t *testing.T, effects []RuleEffectDefinition) *Sessio
 		},
 	}
 	if effects != nil {
-		definition.UseRules = []UseRuleDefinition{{
-			Source:  CardMatcherDefinition{ID: "source"},
-			Target:  CardMatcherDefinition{ID: "target"},
+		definition.Rules = []RuleDefinition{{
+			ID:      "command-rule",
+			Trigger: CardPlayedTrigger(CardMatcherDefinition{ID: "source"}, CardMatcherDefinition{ID: "target"}),
 			Effects: effects,
 		}}
 	}
@@ -225,12 +228,14 @@ func newCommandTestSession(t *testing.T, effects []RuleEffectDefinition) *Sessio
 func newCommandTestSessionWithCondition(t *testing.T, required int) *Session {
 	t.Helper()
 	session := newCommandTestSession(t, nil)
-	session.useRules = []UseRuleDefinition{{
-		Source:                    CardMatcherDefinition{ID: "source"},
-		Target:                    CardMatcherDefinition{ID: "target"},
-		SourceComponentConditions: []ComponentConditionDefinition{{ComponentKind: card.KindSlider, ValueEquals: &required}},
-		FailureMessage:            "Wrong value.",
-		Effects:                   []RuleEffectDefinition{{EffectKind: EffectSetMessage, Message: "Matched."}},
+	session.rules = []RuleDefinition{{
+		ID:      "conditional",
+		Trigger: CardPlayedTrigger(CardMatcherDefinition{ID: "source"}, CardMatcherDefinition{ID: "target"}),
+		Conditions: []RuleCondition{
+			ComponentPropertyEqualsCondition(RuleCardSource, "", card.KindSlider, "", "value", NumberRuleValue(float64(required))),
+		},
+		Effects:     []RuleEffect{SetMessageEffect("Matched.")},
+		ElseEffects: []RuleEffect{SetMessageEffect("Wrong value.")},
 	}}
 	return session
 }

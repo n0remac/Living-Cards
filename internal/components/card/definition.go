@@ -170,6 +170,14 @@ func (d Definition) ConfigType() reflect.Type      { return d.configType }
 func (d Definition) Roles() []ComponentRole        { return append([]ComponentRole(nil), d.roles...) }
 func (d Definition) ControlIDs() []string          { return append([]string(nil), d.controlIDs...) }
 func (d Definition) PropertyIDs() []string         { return append([]string(nil), d.propertyIDs...) }
+func (d Definition) PropertyKind(id string) (schema.PropertyKind, bool) {
+	for _, property := range d.componentSchema.Properties {
+		if property.ID == id {
+			return property.Kind, true
+		}
+	}
+	return "", false
+}
 func (d Definition) Schema() schema.ComponentSchema {
 	return schema.CloneComponent(d.componentSchema)
 }

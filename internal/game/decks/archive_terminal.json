@@ -595,114 +595,143 @@
       }
     }
   ],
-  "useRules": [
+  "rules": [
     {
       "id": "controller-mounts-archive-login",
-      "source": {
-        "tags": [
-          "controller"
-        ]
+      "trigger": {
+        "kind": "cardPlayed",
+        "source": {
+          "tags": [
+            "controller"
+          ]
+        },
+        "target": {
+          "id": "archive-terminal"
+        }
       },
-      "target": {
-        "id": "archive-terminal"
-      },
-      "flagConditions": {
-        "archiveControllerMounted": false
-      },
-      "sourceComponentConditions": [
+      "conditions": [
         {
-          "component_kind": "text_input",
-          "component_id": "archive-password-input"
+          "kind": "flagEquals",
+          "flag": "archiveControllerMounted",
+          "value": false
         },
         {
-          "component_kind": "button",
-          "component_id": "archive-submit-button"
+          "kind": "componentPresent",
+          "card": "source",
+          "componentKind": "text_input",
+          "componentId": "archive-password-input"
+        },
+        {
+          "kind": "componentPresent",
+          "card": "source",
+          "componentKind": "button",
+          "componentId": "archive-submit-button"
         }
       ],
-      "failureMessage": "The terminal needs both a text form and its matching submit button.",
       "effects": [
         {
-          "effectKind": "setDocumentVariant",
+          "kind": "setDocumentVariant",
           "cardId": "archive-terminal",
           "variant": "login"
         },
         {
-          "effectKind": "copySourceComponentToTarget",
+          "kind": "copyComponent",
+          "source": "source",
           "cardId": "archive-terminal",
-          "component_kind": "text_input",
-          "source_component_id": "archive-password-input"
+          "componentKind": "text_input",
+          "sourceComponentId": "archive-password-input"
         },
         {
-          "effectKind": "copySourceComponentToTarget",
+          "kind": "copyComponent",
+          "source": "source",
           "cardId": "archive-terminal",
-          "component_kind": "button",
-          "source_component_id": "archive-submit-button"
+          "componentKind": "button",
+          "sourceComponentId": "archive-submit-button"
         },
         {
-          "effectKind": "setFlag",
+          "kind": "setFlag",
           "flag": "archiveControllerMounted",
           "value": true
         },
         {
-          "effectKind": "setCardState",
+          "kind": "setCardState",
           "cardId": "archive-terminal",
           "key": "controllerMounted",
           "value": true
         },
         {
-          "effectKind": "setMessage",
+          "kind": "setMessage",
           "message": "The controller seats into the terminal. The archive login is ready."
         }
+      ],
+      "elseEffects": [
+        {
+          "kind": "setMessage",
+          "message": "The terminal needs both a text form and its matching submit button."
+        }
       ]
-    }
-  ],
-  "formSubmitRules": [
+    },
     {
       "id": "nightjar-unlocks-archive",
-      "target": {
-        "id": "archive-terminal"
+      "trigger": {
+        "kind": "formSubmitted",
+        "target": {
+          "id": "archive-terminal"
+        },
+        "formId": "archive-login"
       },
-      "formId": "archive-login",
-      "flagConditions": {
-        "archiveControllerMounted": true,
-        "archiveUnlocked": false
-      },
-      "fieldConditions": [
+      "conditions": [
         {
+          "kind": "flagEquals",
+          "flag": "archiveControllerMounted",
+          "value": true
+        },
+        {
+          "kind": "flagEquals",
+          "flag": "archiveUnlocked",
+          "value": false
+        },
+        {
+          "kind": "formFieldEquals",
           "name": "password",
-          "valueEquals": "NIGHTJAR",
+          "value": "NIGHTJAR",
           "trimSpace": true,
           "caseSensitive": false
         }
       ],
-      "failureMessage": "ACCESS DENIED. The archive password is incorrect.",
       "effects": [
         {
-          "effectKind": "setFlag",
+          "kind": "setFlag",
           "flag": "archiveUnlocked",
           "value": true
         },
         {
-          "effectKind": "setCardState",
+          "kind": "setCardState",
           "cardId": "archive-terminal",
           "key": "unlocked",
           "value": true
         },
         {
-          "effectKind": "removeCardTags",
+          "kind": "removeCardTags",
           "cardId": "archive-terminal",
           "tags": [
             "locked"
           ]
         },
         {
-          "effectKind": "setDocumentVariant",
+          "kind": "setDocumentVariant",
           "cardId": "archive-terminal",
           "variant": "unlocked"
         },
         {
-          "effectKind": "setMessage",
+          "kind": "setMessage",
           "message": "NIGHTJAR accepted. The archive opens."
+        }
+      ],
+      "elseEffects": [
+        {
+          "kind": "setMessage",
+          "message": "ACCESS DENIED. The archive password is incorrect."
         }
       ]
     }

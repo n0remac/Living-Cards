@@ -523,70 +523,117 @@
       }
     }
   ],
-  "useRules": [
+  "rules": [
     {
-      "id": "regulator-controller-powers-generator",
-      "source": {
-        "tags": [
-          "controller"
-        ]
+      "id": "regulator-controller-mounts-generator",
+      "trigger": {
+        "kind": "cardPlayed",
+        "source": {
+          "tags": [
+            "controller"
+          ]
+        },
+        "target": {
+          "id": "generator-panel"
+        }
       },
-      "target": {
-        "id": "generator-panel"
-      },
-      "flagConditions": {
-        "generatorPowered": false
-      },
-      "sourceComponentConditions": [
+      "conditions": [
         {
-          "component_kind": "slider",
-          "valueEquals": 73
+          "kind": "flagEquals",
+          "flag": "generatorPowered",
+          "value": false
+        },
+        {
+          "kind": "componentPresent",
+          "card": "source",
+          "componentKind": "slider"
         }
       ],
-      "failureMessage": "The generator coughs, but the regulator value is wrong.",
       "effects": [
         {
-          "effectKind": "setFlag",
+          "kind": "copyComponent",
+          "source": "source",
+          "cardId": "generator-panel",
+          "componentKind": "slider"
+        }
+      ],
+      "elseEffects": [
+        {
+          "kind": "setMessage",
+          "message": "The generator needs a controller with an adjustable regulator."
+        }
+      ]
+    },
+    {
+      "id": "regulator-activates-generator",
+      "trigger": {
+        "kind": "componentUpdated",
+        "target": {
+          "id": "generator-panel",
+          "tags": [
+            "inactive"
+          ]
+        },
+        "componentKind": "slider"
+      },
+      "conditions": [
+        {
+          "kind": "componentPropertyEquals",
+          "component": "trigger",
+          "componentKind": "slider",
+          "property": "value",
+          "value": 73
+        }
+      ],
+      "effects": [
+        {
+          "kind": "setFlag",
           "flag": "generatorPowered",
           "value": true
         },
         {
-          "effectKind": "setCardState",
+          "kind": "setCardState",
           "cardId": "generator-panel",
           "key": "powered",
           "value": true
         },
         {
-          "effectKind": "setCardState",
+          "kind": "setCardState",
           "cardId": "generator-panel",
           "key": "useful",
           "value": true
         },
         {
-          "effectKind": "removeCardTags",
+          "kind": "removeCardTags",
           "cardId": "generator-panel",
           "tags": [
             "inactive"
           ]
         },
         {
-          "effectKind": "setDocumentVariant",
+          "kind": "setDocumentVariant",
           "cardId": "generator-panel",
           "variant": "active"
         },
         {
-          "effectKind": "copySourceComponentToTarget",
+          "kind": "copyComponent",
+          "source": "trigger",
           "cardId": "generator-panel",
-          "component_kind": "slider",
-          "applyOnFailure": true
+          "componentKind": "slider"
         },
         {
-          "effectKind": "loadDeck",
+          "kind": "loadDeck",
           "deckId": "archive_terminal"
         },
         {
-          "effectKind": "setMessage",
+          "kind": "setMessage",
           "message": "The regulator locks at 73. The generator comes fully online, revealing an archive terminal."
+        }
+      ],
+      "elseEffects": [
+        {
+          "kind": "setMessage",
+          "message": "The generator coughs, but the regulator value is wrong."
         }
       ]
     }

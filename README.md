@@ -8,7 +8,7 @@ The current game content is pure JSON under `internal/game/decks/`. Runtime code
 
 - A visible world-deck game served at `/`.
 - Server-rendered card previews built from strictly validated `card.Document` JSON, including background, border, text, shape, image, slider, text-input, and button components.
-- Data-driven deck packs with document variants, declarative use and form-submission rules, component-presence conditions, and chained `loadDeck` effects.
+- Data-driven deck packs with one strictly tagged rule model for card plays, form submissions, and world-component updates, plus typed component-property conditions and chained `loadDeck` effects.
 - A seeded puzzle path where opening the door loads the fuse room, using the fuse on the switch loads the generator room, and powering the generator reveals an Archive Terminal password puzzle.
 - Editable component cards that become controller bases through the full-screen edit workflow. Added component cards remain pending until save and are retained on cancel.
 - A registry-driven draft-card designer API for editing every component that declares controls and generating AI configs for background, border, text, and image.

@@ -11,8 +11,7 @@ type sessionState struct {
 	cardDefinitions          map[string]CardDefinition
 	documentVariants         map[string]map[string]cardcomponent.Document
 	loadedDecks              map[string]bool
-	useRules                 []UseRuleDefinition
-	formSubmitRules          []FormSubmitRuleDefinition
+	rules                    []RuleDefinition
 	worldDeck                []Card
 	activeIndex              int
 	activeEditingComponentID string
@@ -27,8 +26,7 @@ func (s *Session) stateLocked() sessionState {
 		cardDefinitions:          s.cardDefinitions,
 		documentVariants:         s.documentVariants,
 		loadedDecks:              s.loadedDecks,
-		useRules:                 s.useRules,
-		formSubmitRules:          s.formSubmitRules,
+		rules:                    s.rules,
 		worldDeck:                s.worldDeck,
 		activeIndex:              s.activeIndex,
 		activeEditingComponentID: s.activeEditingComponentID,
@@ -52,11 +50,7 @@ func cloneSessionState(state sessionState) (sessionState, error) {
 	if err != nil {
 		return sessionState{}, err
 	}
-	useRules, err := cloneSessionValue(state.useRules)
-	if err != nil {
-		return sessionState{}, err
-	}
-	formSubmitRules, err := cloneSessionValue(state.formSubmitRules)
+	rules, err := cloneSessionValue(state.rules)
 	if err != nil {
 		return sessionState{}, err
 	}
@@ -80,8 +74,7 @@ func cloneSessionState(state sessionState) (sessionState, error) {
 		cardDefinitions:          cardDefinitions,
 		documentVariants:         documentVariants,
 		loadedDecks:              loadedDecks,
-		useRules:                 useRules,
-		formSubmitRules:          formSubmitRules,
+		rules:                    rules,
 		worldDeck:                worldDeck,
 		activeIndex:              state.activeIndex,
 		activeEditingComponentID: state.activeEditingComponentID,
@@ -110,8 +103,7 @@ func (s *Session) restoreStateLocked(state sessionState) {
 	s.cardDefinitions = state.cardDefinitions
 	s.documentVariants = state.documentVariants
 	s.loadedDecks = state.loadedDecks
-	s.useRules = state.useRules
-	s.formSubmitRules = state.formSubmitRules
+	s.rules = state.rules
 	s.worldDeck = state.worldDeck
 	s.activeIndex = state.activeIndex
 	s.activeEditingComponentID = state.activeEditingComponentID

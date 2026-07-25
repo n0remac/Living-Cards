@@ -15,10 +15,6 @@ const (
 	KindWorld = "world"
 	KindItem  = "item"
 	KindClue  = "clue"
-
-	DoorUnlockedFlag = "doorUnlocked"
-
-	GeneratorPoweredFlag = "generatorPowered"
 )
 
 type Card struct {
@@ -59,8 +55,7 @@ type Session struct {
 	cardDefinitions          map[string]CardDefinition
 	documentVariants         map[string]map[string]cardcomponent.Document
 	loadedDecks              map[string]bool
-	useRules                 []UseRuleDefinition
-	formSubmitRules          []FormSubmitRuleDefinition
+	rules                    []RuleDefinition
 	worldDeck                []Card
 	activeIndex              int
 	activeEditingComponentID string
@@ -104,8 +99,7 @@ func NewSessionFromDeck(registry *cardcomponent.Registry, definition DeckDefinit
 		cardDefinitions:  cardDefinitions,
 		documentVariants: documentVariants,
 		loadedDecks:      map[string]bool{definition.ID: true},
-		useRules:         cloneValue(definition.UseRules),
-		formSubmitRules:  cloneValue(definition.FormSubmitRules),
+		rules:            cloneValue(definition.Rules),
 		worldDeck:        worldDeck,
 		activeIndex:      activeIndex,
 		library:          nil,
@@ -122,8 +116,7 @@ func (s *Session) resetLocked(events *eventCollector) (Snapshot, error) {
 	s.cardDefinitions = next.cardDefinitions
 	s.documentVariants = next.documentVariants
 	s.loadedDecks = next.loadedDecks
-	s.useRules = next.useRules
-	s.formSubmitRules = next.formSubmitRules
+	s.rules = next.rules
 	s.worldDeck = next.worldDeck
 	s.activeIndex = next.activeIndex
 	s.activeEditingComponentID = next.activeEditingComponentID
@@ -219,50 +212,36 @@ func (s *Session) playCardLocked(sourceCardID, targetCardID string, events *even
 	target := s.worldDeck[targetIndex]
 	played := &CardPlayedPayload{SourceCardID: source.ID, TargetCardID: target.ID}
 	events.emit(EventCardPlayed, played)
-	matchedTarget := false
-	for _, rule := range s.useRules {
-		if !s.ruleBaseMatches(rule, source, target) {
-			continue
-		}
-		matchedTarget = true
-		if !sourceComponentConditionsMatch(s.registry, rule.SourceComponentConditions, source.Document) {
-			if err := s.applyRuleFailureEffects(rule, source, target, events); err != nil {
-				return Snapshot{}, failExecution(err)
-			}
-			if strings.TrimSpace(rule.FailureMessage) != "" {
-				played.Outcome = "conditionsFailed"
-				events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
-				s.removeLibraryCard(source.ID)
-				events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
-				s.activeEditingComponentID = ""
-				s.setMessageLocked(rule.FailureMessage, events)
-				return s.commandSnapshotLocked()
-			}
-			continue
-		}
+	resolution, err := s.runRules(CardPlayedSignal{SourceCardID: source.ID, TargetCardID: target.ID}, events)
+	if err != nil {
+		return Snapshot{}, failExecution(err)
+	}
+	switch resolution.Outcome {
+	case RuleOutcomeSuccess:
 		played.Outcome = "resolved"
-		if err := s.applyRuleEffects(rule, source, target, events); err != nil {
-			return Snapshot{}, failExecution(err)
-		}
 		s.removeLibraryCard(source.ID)
 		events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
 		s.activeEditingComponentID = ""
 		s.ensureMessageEventLocked(events)
 		return s.commandSnapshotLocked()
-	}
-	if matchedTarget {
+	case RuleOutcomeConditionsFailed:
 		played.Outcome = "conditionsFailed"
 		events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
 		s.removeLibraryCard(source.ID)
 		events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
 		s.activeEditingComponentID = ""
-		s.setMessageLocked(source.Name+" was played, but its conditions were not met.", events)
+		if !events.hasMessage() {
+			s.setMessageLocked(source.Name+" was played, but its conditions were not met.", events)
+		}
 		return s.commandSnapshotLocked()
+	case RuleOutcomeNoMatch:
+		played.Outcome = "noMatchingRule"
+		events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
+		s.setMessageLocked("Nothing on this card responds to "+source.Name+".", events)
+		return s.commandSnapshotLocked()
+	default:
+		return Snapshot{}, failExecution(fmt.Errorf("unsupported rule outcome %q", resolution.Outcome))
 	}
-	played.Outcome = "noMatchingRule"
-	events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
-	s.setMessageLocked("Nothing on this card responds to "+source.Name+".", events)
-	return s.commandSnapshotLocked()
 }
 
 func (s *Session) submitFormLocked(cardID, formID string, fields map[string]string, events *eventCollector) (Snapshot, error) {
@@ -287,33 +266,35 @@ func (s *Session) submitFormLocked(cardID, formID string, fields map[string]stri
 		return Snapshot{}, fmt.Errorf("card %q is not in the world deck", cardID)
 	}
 	target := s.worldDeck[targetIndex]
+	requiredFields, acceptsForm := s.formRuleFieldNames(target, formID)
+	if !acceptsForm {
+		return Snapshot{}, fmt.Errorf("form %q does not accept submissions for %s", formID, target.Name)
+	}
+	if !documentHasSubmitButton(s.registry, target.Document, formID) ||
+		!documentHasNamedFormFields(s.registry, target.Document, formID, requiredFields) {
+		return Snapshot{}, fmt.Errorf("form %q is not mounted on %s", formID, target.Name)
+	}
 	events.emit(EventFormSubmitted, FormSubmittedPayload{CardID: cardID, FormID: formID})
-	for _, rule := range s.formSubmitRules {
-		if strings.TrimSpace(rule.FormID) != formID || !s.formSubmitRuleBaseMatches(rule, target) {
-			continue
-		}
-		if !documentHasSubmitButton(s.registry, target.Document, formID) || !documentHasFormFields(s.registry, target.Document, formID, rule.FieldConditions) {
-			return Snapshot{}, fmt.Errorf("form %q is not mounted on %s", formID, target.Name)
-		}
-		if !submittedFieldsMatch(rule.FieldConditions, fields) {
-			events.emit(EventActionRejected, ActionRejectedPayload{Action: "submitForm", Outcome: "conditionsFailed"})
-			if strings.TrimSpace(rule.FailureMessage) != "" {
-				s.setMessageLocked(rule.FailureMessage, events)
-			} else {
-				s.ensureMessageEventLocked(events)
-			}
-			s.activeIndex = targetIndex
-			return s.commandSnapshotLocked()
-		}
-		if err := s.applyRuleEffects(UseRuleDefinition{Effects: rule.Effects}, Card{}, target, events); err != nil {
-			return Snapshot{}, failExecution(err)
-		}
+	resolution, err := s.runRules(FormSubmittedSignal{CardID: cardID, FormID: formID, Fields: cloneValue(fields)}, events)
+	if err != nil {
+		return Snapshot{}, failExecution(err)
+	}
+	s.activeIndex = targetIndex
+	switch resolution.Outcome {
+	case RuleOutcomeSuccess:
 		s.activeIndex = targetIndex
 		s.activeEditingComponentID = ""
 		s.ensureMessageEventLocked(events)
 		return s.commandSnapshotLocked()
+	case RuleOutcomeConditionsFailed:
+		events.emit(EventActionRejected, ActionRejectedPayload{Action: "submitForm", Outcome: "conditionsFailed"})
+		s.ensureMessageEventLocked(events)
+		return s.commandSnapshotLocked()
+	case RuleOutcomeNoMatch:
+		return Snapshot{}, failExecution(fmt.Errorf("form %q stopped accepting submissions for %s", formID, target.Name))
+	default:
+		return Snapshot{}, failExecution(fmt.Errorf("unsupported rule outcome %q", resolution.Outcome))
 	}
-	return Snapshot{}, fmt.Errorf("form %q does not accept submissions for %s", formID, target.Name)
 }
 
 func (s *Session) selectWorldComponentLocked(cardID, componentID, componentKind string, events *eventCollector) (Snapshot, error) {
@@ -357,11 +338,14 @@ func (s *Session) changeWorldComponentLocked(cardID, componentID, componentKind,
 		Control:       control,
 		Scope:         "world",
 	})
-	powered, err := s.powerGeneratorIfTuned(index, node.ID, events)
+	_, err = s.runRules(ComponentUpdatedSignal{
+		CardID: s.worldDeck[index].ID, ComponentID: node.ID,
+		ComponentKind: node.ComponentKind, Component: cloneValue(*node),
+	}, events)
 	if err != nil {
 		return Snapshot{}, failExecution(err)
 	}
-	if !powered {
+	if !events.hasMessage() {
 		s.setMessageLocked(componentEditLabel(s.registry, node.ComponentKind)+" updated.", events)
 	}
 	return s.commandSnapshotLocked()
@@ -776,28 +760,29 @@ func materializeDeck(definition DeckDefinition) ([]Card, map[string]map[string]c
 	return worldDeck, documentVariants, cardDefinitions, activeIndex, nil
 }
 
-func (s *Session) ruleBaseMatches(rule UseRuleDefinition, source Card, target Card) bool {
-	if !cardMatches(source, rule.Source) || !cardMatches(target, rule.Target) {
-		return false
-	}
-	for flag, value := range rule.FlagConditions {
-		if s.solvedFlags[flag] != value {
-			return false
+func (s *Session) formRuleFieldNames(target Card, formID string) ([]string, bool) {
+	seen := map[string]bool{}
+	var names []string
+	accepts := false
+	for _, rule := range s.rules {
+		trigger := rule.Trigger.formSubmitted
+		if rule.Trigger.kind != TriggerFormSubmitted || trigger == nil ||
+			trigger.FormID != formID || !cardMatches(target, trigger.Target) {
+			continue
+		}
+		accepts = true
+		for _, condition := range rule.Conditions {
+			if condition.kind != ConditionFormFieldEquals || condition.formFieldEquals == nil {
+				continue
+			}
+			name := condition.formFieldEquals.Name
+			if !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
 		}
 	}
-	return true
-}
-
-func (s *Session) formSubmitRuleBaseMatches(rule FormSubmitRuleDefinition, target Card) bool {
-	if !cardMatches(target, rule.Target) {
-		return false
-	}
-	for flag, value := range rule.FlagConditions {
-		if s.solvedFlags[flag] != value {
-			return false
-		}
-	}
-	return true
+	return names, accepts
 }
 
 func documentHasSubmitButton(registry *cardcomponent.Registry, document cardcomponent.Document, formID string) bool {
@@ -816,7 +801,7 @@ func documentHasSubmitButton(registry *cardcomponent.Registry, document cardcomp
 	return found
 }
 
-func documentHasFormFields(registry *cardcomponent.Registry, document cardcomponent.Document, formID string, conditions []FormFieldConditionDefinition) bool {
+func documentHasNamedFormFields(registry *cardcomponent.Registry, document cardcomponent.Document, formID string, names []string) bool {
 	available := map[string]bool{}
 	visitNodes(document.Root, func(node cardcomponent.Node) {
 		definition, ok := registry.Lookup(node.ComponentKind)
@@ -832,32 +817,8 @@ func documentHasFormFields(registry *cardcomponent.Registry, document cardcompon
 			available[name.String] = true
 		}
 	})
-	for _, condition := range conditions {
-		if !available[condition.Name] {
-			return false
-		}
-	}
-	return true
-}
-
-func submittedFieldsMatch(conditions []FormFieldConditionDefinition, fields map[string]string) bool {
-	for _, condition := range conditions {
-		actual, ok := fields[condition.Name]
-		if !ok {
-			return false
-		}
-		expected := condition.ValueEquals
-		if condition.TrimSpace {
-			actual = strings.TrimSpace(actual)
-			expected = strings.TrimSpace(expected)
-		}
-		if condition.CaseSensitive {
-			if actual != expected {
-				return false
-			}
-			continue
-		}
-		if !strings.EqualFold(actual, expected) {
+	for _, name := range names {
+		if !available[name] {
 			return false
 		}
 	}
@@ -869,54 +830,6 @@ func visitNodes(node cardcomponent.Node, visit func(cardcomponent.Node)) {
 	for _, child := range node.Children {
 		visitNodes(child, visit)
 	}
-}
-
-func sourceComponentConditionsMatch(registry *cardcomponent.Registry, conditions []ComponentConditionDefinition, document cardcomponent.Document) bool {
-	for _, condition := range conditions {
-		if !componentConditionMatches(registry, condition, document.Root) {
-			return false
-		}
-	}
-	return true
-}
-
-func componentConditionMatches(registry *cardcomponent.Registry, condition ComponentConditionDefinition, root cardcomponent.Node) bool {
-	kind := strings.TrimSpace(condition.ComponentKind)
-	componentID := strings.TrimSpace(condition.ComponentID)
-	var candidates []cardcomponent.Node
-	if componentID != "" {
-		if node := findNodeByID(root, componentID); node != nil {
-			candidates = append(candidates, *node)
-		}
-	} else {
-		var visit func(cardcomponent.Node)
-		visit = func(node cardcomponent.Node) {
-			if node.ComponentKind == kind {
-				candidates = append(candidates, node)
-			}
-			for _, child := range node.Children {
-				visit(child)
-			}
-		}
-		visit(root)
-	}
-	for _, node := range candidates {
-		if node.ComponentKind != kind {
-			continue
-		}
-		if condition.ValueEquals == nil {
-			return true
-		}
-		definition, ok := registry.Lookup(kind)
-		if !ok {
-			continue
-		}
-		value, present, issues := definition.ReadProperty(node.Config, "value")
-		if len(issues) == 0 && present && value.Kind == schema.PropertyNumber && value.Number == float64(*condition.ValueEquals) {
-			return true
-		}
-	}
-	return false
 }
 
 func cardMatches(card Card, matcher CardMatcherDefinition) bool {
@@ -931,210 +844,6 @@ func cardMatches(card Card, matcher CardMatcherDefinition) bool {
 	return true
 }
 
-func (s *Session) applyRuleEffects(rule UseRuleDefinition, source Card, target Card, events *eventCollector) error {
-	for _, effect := range rule.Effects {
-		switch effect.EffectKind {
-		case EffectSetFlag:
-			if s.solvedFlags == nil {
-				s.solvedFlags = map[string]bool{}
-			}
-			value, ok := effect.Value.(bool)
-			if !ok {
-				return fmt.Errorf("%s effect value must be a boolean", EffectSetFlag)
-			}
-			s.solvedFlags[effect.Flag] = value
-			events.emit(EventFlagChanged, FlagChangedPayload{Flag: effect.Flag, Value: value})
-		case EffectSetCardState:
-			cardID := resolvedEffectCardID(effect, CardMatcherDefinition{ID: target.ID})
-			if err := s.updateEffectCard(effect, target, func(card *Card) error {
-				if card.State == nil {
-					card.State = map[string]any{}
-				}
-				card.State[effect.Key] = cloneValue(effect.Value)
-				return nil
-			}); err != nil {
-				return err
-			}
-			events.emit(EventCardStateChanged, CardStateChangedPayload{CardID: cardID, Key: effect.Key, Value: cloneValue(effect.Value)})
-		case EffectRemoveCardTags:
-			cardID := resolvedEffectCardID(effect, CardMatcherDefinition{ID: target.ID})
-			if err := s.updateEffectCard(effect, target, func(card *Card) error {
-				for _, tag := range effect.Tags {
-					card.Tags = removeString(card.Tags, tag)
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
-			events.emit(EventCardTagsRemoved, CardTagsRemovedPayload{CardID: cardID, Tags: append([]string(nil), effect.Tags...)})
-		case EffectSetDocumentVariant:
-			cardID := resolvedEffectCardID(effect, CardMatcherDefinition{ID: target.ID})
-			if err := s.updateEffectCard(effect, target, func(card *Card) error {
-				variants := s.documentVariants[card.ID]
-				document, ok := variants[effect.Variant]
-				if !ok {
-					return fmt.Errorf("card %q document variant %q does not exist", card.ID, effect.Variant)
-				}
-				card.Document = cloneValue(document)
-				return nil
-			}); err != nil {
-				return err
-			}
-			events.emit(EventCardVariantChanged, CardVariantChangedPayload{CardID: cardID, Variant: effect.Variant})
-		case EffectSetMessage:
-			s.setMessageLocked(effect.Message, events)
-		case EffectLoadDeck:
-			loaded, err := s.loadDeck(effect.DeckID)
-			if err != nil {
-				return err
-			}
-			if loaded {
-				events.emit(EventDeckLoaded, DeckLoadedPayload{DeckID: effect.DeckID})
-			}
-		case EffectCopySourceComponent:
-			mounted, err := s.copySourceComponentToEffectCard(effect, source, target)
-			if err != nil {
-				return err
-			}
-			events.emit(EventComponentMounted, mounted)
-		default:
-			return fmt.Errorf("unsupported effect kind %q", effect.EffectKind)
-		}
-	}
-	return nil
-}
-
-func (s *Session) applyRuleFailureEffects(rule UseRuleDefinition, source Card, target Card, events *eventCollector) error {
-	for _, effect := range rule.Effects {
-		if effect.EffectKind != EffectCopySourceComponent || !effect.ApplyOnFailure {
-			continue
-		}
-		mounted, err := s.copySourceComponentToEffectCard(effect, source, target)
-		if err != nil {
-			return err
-		}
-		events.emit(EventComponentMounted, mounted)
-	}
-	return nil
-}
-
-func (s *Session) copySourceComponentToEffectCard(effect RuleEffectDefinition, source Card, target Card) (ComponentMountedPayload, error) {
-	componentKind := strings.TrimSpace(effect.ComponentKind)
-	definition, ok := s.registry.Lookup(componentKind)
-	if !ok {
-		return ComponentMountedPayload{}, fmt.Errorf("%s effect requires a registered component_kind", EffectCopySourceComponent)
-	}
-	if _, ok := definition.Install(); !ok {
-		return ComponentMountedPayload{}, fmt.Errorf("%s effect requires an installable component_kind", EffectCopySourceComponent)
-	}
-	var sourceNode *cardcomponent.Node
-	if sourceComponentID := strings.TrimSpace(effect.SourceComponentID); sourceComponentID != "" {
-		sourceNode = findNodeByID(source.Document.Root, sourceComponentID)
-		if sourceNode != nil && sourceNode.ComponentKind != componentKind {
-			return ComponentMountedPayload{}, fmt.Errorf("%s source component %q is %s, not %s", EffectCopySourceComponent, sourceComponentID, sourceNode.ComponentKind, componentKind)
-		}
-	} else {
-		sourceNode = findNodeByKind(source.Document.Root, componentKind)
-	}
-	if sourceNode == nil {
-		return ComponentMountedPayload{}, fmt.Errorf("%s source card %q has no %s component", EffectCopySourceComponent, source.ID, componentKind)
-	}
-	template := cardcomponent.ComponentTemplate{ComponentKind: componentKind, ComponentID: sourceNode.ID, Config: append(json.RawMessage(nil), sourceNode.Config...)}
-	if componentID := strings.TrimSpace(effect.ComponentID); componentID != "" {
-		template.ComponentID = componentID
-	}
-	targetCardID := resolvedEffectCardID(effect, CardMatcherDefinition{ID: target.ID})
-	var installedID string
-	err := s.updateEffectCard(effect, target, func(card *Card) error {
-		document, node, err := s.registry.InstallTemplate(card.Document, template)
-		if err != nil {
-			return err
-		}
-		card.Document = document
-		installedID = node.ID
-		return nil
-	})
-	if err != nil {
-		return ComponentMountedPayload{}, err
-	}
-	return ComponentMountedPayload{
-		SourceCardID:  source.ID,
-		TargetCardID:  targetCardID,
-		ComponentID:   installedID,
-		ComponentKind: componentKind,
-	}, nil
-}
-
-func (s *Session) powerGeneratorIfTuned(cardIndex int, selectedComponentID string, events *eventCollector) (bool, error) {
-	if cardIndex < 0 || cardIndex >= len(s.worldDeck) {
-		return false, nil
-	}
-	card := &s.worldDeck[cardIndex]
-	if card.ID != "generator-panel" || s.solvedFlags[GeneratorPoweredFlag] {
-		return false, nil
-	}
-	targetValue, ok := stateInt(card.State, "targetValue")
-	if !ok {
-		return false, nil
-	}
-	var value schema.PropertyValue
-	var mountedSlider cardcomponent.Node
-	found := false
-	visitNodes(card.Document.Root, func(node cardcomponent.Node) {
-		if found {
-			return
-		}
-		definition, ok := s.registry.Lookup(node.ComponentKind)
-		if !ok {
-			return
-		}
-		candidate, present, issues := definition.ReadProperty(node.Config, "value")
-		if len(issues) == 0 && present && candidate.Kind == schema.PropertyNumber {
-			value = candidate
-			mountedSlider = cloneValue(node)
-			found = true
-		}
-	})
-	if !found || int(value.Number) != targetValue {
-		return false, nil
-	}
-	variants := s.documentVariants[card.ID]
-	activeDocument, ok := variants["active"]
-	if !ok {
-		return false, fmt.Errorf("card %q document variant %q does not exist", card.ID, "active")
-	}
-	card.Document = cloneValue(activeDocument)
-	appendOrReplaceRootChild(&card.Document.Root, mountedSlider)
-	events.emit(EventCardVariantChanged, CardVariantChangedPayload{CardID: card.ID, Variant: "active"})
-	if card.State == nil {
-		card.State = map[string]any{}
-	}
-	card.State["powered"] = true
-	events.emit(EventCardStateChanged, CardStateChangedPayload{CardID: card.ID, Key: "powered", Value: true})
-	card.State["useful"] = true
-	events.emit(EventCardStateChanged, CardStateChangedPayload{CardID: card.ID, Key: "useful", Value: true})
-	card.Tags = removeString(card.Tags, "inactive")
-	events.emit(EventCardTagsRemoved, CardTagsRemovedPayload{CardID: card.ID, Tags: []string{"inactive"}})
-	if s.solvedFlags == nil {
-		s.solvedFlags = map[string]bool{}
-	}
-	s.solvedFlags[GeneratorPoweredFlag] = true
-	events.emit(EventFlagChanged, FlagChangedPayload{Flag: GeneratorPoweredFlag, Value: true})
-	if strings.TrimSpace(selectedComponentID) != "" {
-		s.activeEditingComponentID = selectedComponentID
-	}
-	loaded, err := s.loadDeck(ArchiveTerminalDefinition)
-	if err != nil {
-		return false, err
-	}
-	if loaded {
-		events.emit(EventDeckLoaded, DeckLoadedPayload{DeckID: ArchiveTerminalDefinition})
-	}
-	s.activeEditingComponentID = ""
-	s.setMessageLocked("The regulator locks at 73. The generator comes fully online.", events)
-	return true, nil
-}
-
 func (s *Session) loadDeck(deckID string) (bool, error) {
 	deckID = strings.TrimSpace(deckID)
 	if s.loadedDecks[deckID] {
@@ -1144,7 +853,11 @@ func (s *Session) loadDeck(deckID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := ValidateDeckPackDefinition(s.registry, definition, s.cardDefinitions); err != nil {
+	existingRuleIDs := make(map[string]bool, len(s.rules))
+	for _, rule := range s.rules {
+		existingRuleIDs[rule.ID] = true
+	}
+	if err := ValidateDeckPackDefinition(s.registry, definition, s.cardDefinitions, existingRuleIDs); err != nil {
 		return false, err
 	}
 	worldDeck, documentVariants, cardDefinitions, activeIndex, err := materializeDeck(definition)
@@ -1173,31 +886,14 @@ func (s *Session) loadDeck(deckID string) (bool, error) {
 	for cardID, card := range cardDefinitions {
 		s.cardDefinitions[cardID] = card
 	}
-	s.useRules = append(s.useRules, cloneValue(definition.UseRules)...)
-	s.formSubmitRules = append(s.formSubmitRules, cloneValue(definition.FormSubmitRules)...)
+	s.rules = append(s.rules, cloneValue(definition.Rules)...)
 	if s.loadedDecks == nil {
 		s.loadedDecks = map[string]bool{}
 	}
 	s.loadedDecks[definition.ID] = true
 	s.activeIndex = startIndex + activeIndex
+	s.activeEditingComponentID = ""
 	return true, nil
-}
-
-func (s *Session) updateEffectCard(effect RuleEffectDefinition, target Card, update func(*Card) error) error {
-	cardID := effect.CardID
-	if strings.TrimSpace(cardID) == "" {
-		cardID = target.ID
-	}
-	index := s.worldCardIndex(cardID)
-	if index < 0 {
-		return fmt.Errorf("effect %q references card %q outside world deck", effect.EffectKind, cardID)
-	}
-	card := s.worldDeck[index]
-	if err := update(&card); err != nil {
-		return err
-	}
-	s.worldDeck[index] = card
-	return nil
 }
 
 func hasTag(card Card, tag string) bool {

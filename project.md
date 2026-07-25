@@ -121,7 +121,9 @@ The registry has no dependency on Ollama, HTTP handlers, or model clients. Repai
 
 ## World deck runtime
 
-The game loads the seeded world plus fuse-room, generator-room, and archive-terminal packs from embedded JSON. Deck decoding rejects unknown fields and runs every card document through the component registry. Rules can inspect declared properties, discover form participants through roles, install component templates, and render cards without leaf-package imports.
+The game loads the seeded world plus fuse-room, generator-room, and archive-terminal packs from embedded JSON. Deck decoding rejects unknown fields and runs every card document through the component registry. One strictly tagged rule model handles card plays, form submissions, and world-component updates. Rules can inspect typed registry properties, discover form participants through roles, install component templates, and render cards without leaf-package imports.
+
+Rules retain loaded declaration order: a newly loaded deck appends its rules after the current session rules. Each internal signal resolves at most one rule, applies its effects sequentially, and queues component-install follow-ups after the effect list. Queued signals resolve cards from current session state while retaining a canonical snapshot of the component that caused an update. Processing is capped at 32 signals so an accidental component-rule loop fails the command transactionally.
 
 Collecting a card moves it from the world deck into the library. A play against a matching target consumes the library card after its success or failure effects complete. Component cards are editable bases: editing installs their own template into the draft, and saving converts the base into an editable controller while consuming any added component cards.
 
@@ -153,9 +155,10 @@ action. Reset restores the seeded gameplay state without restarting the
 revision sequence.
 
 Events are command-local and transient. They are emitted at mutation time,
-including declarative rule effects and the temporary imperative generator
-path, and use contiguous sequence numbers beginning at zero. They are not an
-event store and do not support replay or undo. The web renderer runs after
+including declarative rule effects, and use contiguous sequence numbers
+beginning at zero. The diagnostic `ruleResolved` event is available to tests,
+logs, and the frontend but does not require visible presentation. Events are
+not an event store and do not support replay or undo. The web renderer runs after
 the domain transaction commits; a response-rendering or connection failure
 cannot safely roll back an already committed session.
 
@@ -163,7 +166,6 @@ cannot safely roll back an already committed session.
 
 - Recursive rendering and real container child policies.
 - Heading, form, stack, and grid components.
-- Generalized typed triggers and rule redesign.
 - Document versioning and migrations.
 - Generated, committed TypeScript types and frontend metadata from the Go catalog.
 - Persistent database-backed documents and sessions.
