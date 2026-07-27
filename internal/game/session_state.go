@@ -3,20 +3,18 @@ package game
 import (
 	"encoding/json"
 	"fmt"
-
-	cardcomponent "github.com/n0remac/Living-Card/internal/components/card"
 )
 
 type sessionState struct {
-	cardDefinitions          map[string]CardDefinition
-	documentVariants         map[string]map[string]cardcomponent.Document
+	cardDefinitions          map[CardDefinitionID]CardDefinition
 	loadedDecks              map[string]bool
 	rules                    []RuleDefinition
-	worldDeck                []Card
-	activeIndex              int
+	instances                map[CardInstanceID]CardInstance
+	zones                    ZoneState
+	activeSceneCardID        CardInstanceID
 	activeEditingComponentID string
-	library                  []Card
-	editSession              *EditSession
+	editSession              *editSessionState
+	encounter                *EncounterState
 	solvedFlags              map[string]bool
 	lastMessage              string
 }
@@ -24,14 +22,14 @@ type sessionState struct {
 func (s *Session) stateLocked() sessionState {
 	return sessionState{
 		cardDefinitions:          s.cardDefinitions,
-		documentVariants:         s.documentVariants,
 		loadedDecks:              s.loadedDecks,
 		rules:                    s.rules,
-		worldDeck:                s.worldDeck,
-		activeIndex:              s.activeIndex,
+		instances:                s.instances,
+		zones:                    s.zones,
+		activeSceneCardID:        s.activeSceneCardID,
 		activeEditingComponentID: s.activeEditingComponentID,
-		library:                  s.library,
 		editSession:              s.editSession,
+		encounter:                s.encounter,
 		solvedFlags:              s.solvedFlags,
 		lastMessage:              s.lastMessage,
 	}
@@ -39,10 +37,6 @@ func (s *Session) stateLocked() sessionState {
 
 func cloneSessionState(state sessionState) (sessionState, error) {
 	cardDefinitions, err := cloneSessionValue(state.cardDefinitions)
-	if err != nil {
-		return sessionState{}, err
-	}
-	documentVariants, err := cloneSessionValue(state.documentVariants)
 	if err != nil {
 		return sessionState{}, err
 	}
@@ -54,15 +48,19 @@ func cloneSessionState(state sessionState) (sessionState, error) {
 	if err != nil {
 		return sessionState{}, err
 	}
-	worldDeck, err := cloneSessionValue(state.worldDeck)
+	instances, err := cloneSessionValue(state.instances)
 	if err != nil {
 		return sessionState{}, err
 	}
-	library, err := cloneSessionValue(state.library)
+	zones, err := cloneSessionValue(state.zones)
 	if err != nil {
 		return sessionState{}, err
 	}
 	editSession, err := cloneSessionValue(state.editSession)
+	if err != nil {
+		return sessionState{}, err
+	}
+	encounter, err := cloneSessionValue(state.encounter)
 	if err != nil {
 		return sessionState{}, err
 	}
@@ -72,14 +70,14 @@ func cloneSessionState(state sessionState) (sessionState, error) {
 	}
 	return sessionState{
 		cardDefinitions:          cardDefinitions,
-		documentVariants:         documentVariants,
 		loadedDecks:              loadedDecks,
 		rules:                    rules,
-		worldDeck:                worldDeck,
-		activeIndex:              state.activeIndex,
+		instances:                instances,
+		zones:                    zones,
+		activeSceneCardID:        state.activeSceneCardID,
 		activeEditingComponentID: state.activeEditingComponentID,
-		library:                  library,
 		editSession:              editSession,
+		encounter:                encounter,
 		solvedFlags:              solvedFlags,
 		lastMessage:              state.lastMessage,
 	}, nil
@@ -101,14 +99,14 @@ func cloneSessionValue[T any](value T) (T, error) {
 
 func (s *Session) restoreStateLocked(state sessionState) {
 	s.cardDefinitions = state.cardDefinitions
-	s.documentVariants = state.documentVariants
 	s.loadedDecks = state.loadedDecks
 	s.rules = state.rules
-	s.worldDeck = state.worldDeck
-	s.activeIndex = state.activeIndex
+	s.instances = state.instances
+	s.zones = state.zones
+	s.activeSceneCardID = state.activeSceneCardID
 	s.activeEditingComponentID = state.activeEditingComponentID
-	s.library = state.library
 	s.editSession = state.editSession
+	s.encounter = state.encounter
 	s.solvedFlags = state.solvedFlags
 	s.lastMessage = state.lastMessage
 }

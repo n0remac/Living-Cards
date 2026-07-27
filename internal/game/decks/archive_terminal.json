@@ -631,20 +631,24 @@
       "effects": [
         {
           "kind": "setDocumentVariant",
-          "cardId": "archive-terminal",
+          "card": "target",
           "variant": "login"
         },
         {
           "kind": "copyComponent",
           "source": "source",
-          "cardId": "archive-terminal",
+          "target": {
+            "card": "target"
+          },
           "componentKind": "text_input",
           "sourceComponentId": "archive-password-input"
         },
         {
           "kind": "copyComponent",
           "source": "source",
-          "cardId": "archive-terminal",
+          "target": {
+            "card": "target"
+          },
           "componentKind": "button",
           "sourceComponentId": "archive-submit-button"
         },
@@ -655,19 +659,29 @@
         },
         {
           "kind": "setCardState",
-          "cardId": "archive-terminal",
+          "card": "target",
           "key": "controllerMounted",
           "value": true
         },
         {
           "kind": "setMessage",
           "message": "The controller seats into the terminal. The archive login is ready."
+        },
+        {
+          "kind": "moveCard",
+          "card": "source",
+          "to": "discard"
         }
       ],
       "elseEffects": [
         {
           "kind": "setMessage",
           "message": "The terminal needs both a text form and its matching submit button."
+        },
+        {
+          "kind": "moveCard",
+          "card": "source",
+          "to": "discard"
         }
       ]
     },
@@ -707,20 +721,20 @@
         },
         {
           "kind": "setCardState",
-          "cardId": "archive-terminal",
+          "card": "target",
           "key": "unlocked",
           "value": true
         },
         {
           "kind": "removeCardTags",
-          "cardId": "archive-terminal",
+          "card": "target",
           "tags": [
             "locked"
           ]
         },
         {
           "kind": "setDocumentVariant",
-          "cardId": "archive-terminal",
+          "card": "target",
           "variant": "unlocked"
         },
         {

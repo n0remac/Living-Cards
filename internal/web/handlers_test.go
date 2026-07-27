@@ -262,6 +262,31 @@ func TestInvalidGameRequestsAreStrictAndDoNotAdvanceRevision(t *testing.T) {
 	}
 }
 
+func TestGameMovementEventsSerializeThroughWebBoundary(t *testing.T) {
+	mux := testMux(nil)
+	collected := request(t, mux, http.MethodPost, "/api/game/collect", `{"cardId":"bent-iron-key"}`)
+	if collected.Code != http.StatusOK {
+		t.Fatalf("collect status = %d body=%s", collected.Code, collected.Body.String())
+	}
+	var result GameResultResponse
+	if err := json.Unmarshal(collected.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Events) < 2 || result.Events[0].Type != "cardMoved" || result.Events[1].Type != "cardCollected" {
+		t.Fatalf("movement events = %#v", result.Events)
+	}
+	raw := collected.Body.String()
+	for _, field := range []string{
+		`"instanceId":"bent-iron-key"`,
+		`"from":"scene"`,
+		`"to":"library"`,
+	} {
+		if !strings.Contains(raw, field) {
+			t.Fatalf("movement response missing %s: %s", field, raw)
+		}
+	}
+}
+
 func TestUnknownRoutesAndMethods(t *testing.T) {
 	mux := testMux(nil)
 	if recorder := request(t, mux, http.MethodGet, "/missing", ""); recorder.Code != http.StatusNotFound {

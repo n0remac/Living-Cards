@@ -101,7 +101,7 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				writeInvalidGameRequest(w)
 				return
 			}
-			result, err := state.Execute(game.CollectCardCommand{CardID: request.CardID})
+			result, err := state.Execute(game.CollectCardCommand{CardID: game.CardInstanceID(request.CardID)})
 			writeGameResult(registry, w, result, err)
 		case "play-card":
 			if r.Method != http.MethodPost {
@@ -116,7 +116,7 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				writeInvalidGameRequest(w)
 				return
 			}
-			result, err := state.Execute(game.PlayCardCommand{SourceCardID: request.SourceCardID, TargetCardID: request.TargetCardID})
+			result, err := state.Execute(game.PlayCardCommand{SourceCardID: game.CardInstanceID(request.SourceCardID), TargetCardID: game.CardInstanceID(request.TargetCardID)})
 			writeGameResult(registry, w, result, err)
 		case "submit-form":
 			if r.Method != http.MethodPost {
@@ -132,7 +132,7 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				writeInvalidGameRequest(w)
 				return
 			}
-			result, err := state.Execute(game.SubmitFormCommand{CardID: request.CardID, FormID: request.FormID, Fields: request.Fields})
+			result, err := state.Execute(game.SubmitFormCommand{CardID: game.CardInstanceID(request.CardID), FormID: request.FormID, Fields: request.Fields})
 			writeGameResult(registry, w, result, err)
 		case "component/select":
 			if r.Method != http.MethodPost {
@@ -148,7 +148,7 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				writeInvalidGameRequest(w)
 				return
 			}
-			result, err := state.Execute(game.SelectWorldComponentCommand{CardID: request.CardID, ComponentID: request.ComponentID, ComponentKind: request.ComponentKind})
+			result, err := state.Execute(game.SelectWorldComponentCommand{CardID: game.CardInstanceID(request.CardID), ComponentID: request.ComponentID, ComponentKind: request.ComponentKind})
 			writeGameResult(registry, w, result, err)
 		case "component/control-change":
 			if r.Method != http.MethodPost {
@@ -166,7 +166,7 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				writeInvalidGameRequest(w)
 				return
 			}
-			result, err := state.Execute(game.ChangeWorldComponentCommand{CardID: request.CardID, ComponentID: request.ComponentID, ComponentKind: request.ComponentKind, Control: request.Control, Value: request.Value})
+			result, err := state.Execute(game.ChangeWorldComponentCommand{CardID: game.CardInstanceID(request.CardID), ComponentID: request.ComponentID, ComponentKind: request.ComponentKind, Control: request.Control, Value: request.Value})
 			writeGameResult(registry, w, result, err)
 		case "edit/start":
 			if r.Method != http.MethodPost {
@@ -180,7 +180,7 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				writeInvalidGameRequest(w)
 				return
 			}
-			result, err := state.Execute(game.StartEditingCommand{CardID: request.CardID})
+			result, err := state.Execute(game.StartEditingCommand{CardID: game.CardInstanceID(request.CardID)})
 			writeGameResult(registry, w, result, err)
 		case "edit/install-component":
 			if r.Method != http.MethodPost {
@@ -194,7 +194,7 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				writeInvalidGameRequest(w)
 				return
 			}
-			result, err := state.Execute(game.InstallEditComponentCommand{ComponentCardID: request.ComponentCardID})
+			result, err := state.Execute(game.InstallEditComponentCommand{ComponentCardID: game.CardInstanceID(request.ComponentCardID)})
 			writeGameResult(registry, w, result, err)
 		case "edit/component/select":
 			if r.Method != http.MethodPost {
@@ -243,7 +243,7 @@ func gameResourceHandler(registry *cardcomponent.Registry, state *game.Session) 
 				writeInvalidGameRequest(w)
 				return
 			}
-			result, err := state.Execute(game.ChangeLibraryComponentCommand{CardID: request.CardID, ComponentID: request.ComponentID, ComponentKind: request.ComponentKind, Control: request.Control, Value: request.Value})
+			result, err := state.Execute(game.ChangeLibraryComponentCommand{CardID: game.CardInstanceID(request.CardID), ComponentID: request.ComponentID, ComponentKind: request.ComponentKind, Control: request.Control, Value: request.Value})
 			writeGameResult(registry, w, result, err)
 		case "edit/save":
 			if r.Method != http.MethodPost {
@@ -340,7 +340,7 @@ func renderGameSessionSnapshot(registry *cardcomponent.Registry, snapshot game.S
 	if err != nil {
 		return GameSessionSnapshot{}, err
 	}
-	activeWorldCard, err := renderGameCard(registry, snapshot.ActiveWorldCard, "game-world-"+safeDOMID(snapshot.ActiveWorldCard.ID))
+	activeWorldCard, err := renderGameCard(registry, snapshot.ActiveWorldCard, "game-world-"+safeDOMID(string(snapshot.ActiveWorldCard.ID)))
 	if err != nil {
 		return GameSessionSnapshot{}, err
 	}
@@ -350,14 +350,14 @@ func renderGameSessionSnapshot(registry *cardcomponent.Registry, snapshot game.S
 	}
 	var editSession *RenderedGameEditSession
 	if snapshot.EditSession != nil {
-		rendered, err := renderGameCard(registry, snapshot.EditSession.DraftCard, "game-edit-"+safeDOMID(snapshot.EditSession.DraftCard.ID))
+		rendered, err := renderGameCard(registry, snapshot.EditSession.DraftCard, "game-edit-"+safeDOMID(string(snapshot.EditSession.DraftCard.ID)))
 		if err != nil {
 			return GameSessionSnapshot{}, err
 		}
 		editSession = &RenderedGameEditSession{
-			TargetCardID:                snapshot.EditSession.TargetCardID,
+			TargetCardID:                string(snapshot.EditSession.TargetCardID),
 			DraftCard:                   rendered,
-			PendingConsumedComponentIDs: append([]string(nil), snapshot.EditSession.PendingConsumedComponentIDs...),
+			PendingConsumedComponentIDs: cardInstanceIDsToStrings(snapshot.EditSession.PendingConsumedComponentIDs),
 			SelectedComponentID:         snapshot.EditSession.SelectedComponentID,
 			EditingOverlay:              gameEditingOverlay(registry, snapshot.EditSession.DraftCard, snapshot.EditSession.SelectedComponentID),
 		}
@@ -365,7 +365,7 @@ func renderGameSessionSnapshot(registry *cardcomponent.Registry, snapshot game.S
 	return GameSessionSnapshot{
 		WorldDeck:                worldDeck,
 		ActiveWorldCard:          activeWorldCard,
-		ActiveWorldCardID:        snapshot.ActiveWorldCardID,
+		ActiveWorldCardID:        string(snapshot.ActiveWorldCardID),
 		ActiveIndex:              snapshot.ActiveIndex,
 		ActiveEditingComponentID: snapshot.ActiveEditingComponentID,
 		ActiveEditingOverlay:     gameActiveEditingOverlay(registry, snapshot.ActiveWorldCard, snapshot.ActiveEditingComponentID, snapshot.Library),
@@ -376,10 +376,10 @@ func renderGameSessionSnapshot(registry *cardcomponent.Registry, snapshot game.S
 	}, nil
 }
 
-func renderWorldGameCards(registry *cardcomponent.Registry, cards []game.Card) ([]RenderedGameCard, error) {
+func renderWorldGameCards(registry *cardcomponent.Registry, cards []game.CardSnapshot) ([]RenderedGameCard, error) {
 	out := make([]RenderedGameCard, 0, len(cards))
 	for _, card := range cards {
-		rendered, err := renderGameCard(registry, card, "game-world-"+safeDOMID(card.ID))
+		rendered, err := renderGameCard(registry, card, "game-world-"+safeDOMID(string(card.ID)))
 		if err != nil {
 			return nil, err
 		}
@@ -388,10 +388,10 @@ func renderWorldGameCards(registry *cardcomponent.Registry, cards []game.Card) (
 	return out, nil
 }
 
-func renderLibraryGameCards(registry *cardcomponent.Registry, cards []game.Card) ([]RenderedGameCard, error) {
+func renderLibraryGameCards(registry *cardcomponent.Registry, cards []game.CardSnapshot) ([]RenderedGameCard, error) {
 	out := make([]RenderedGameCard, 0, len(cards))
 	for index, card := range cards {
-		prefix := fmt.Sprintf("game-library-%d-%s", index, safeDOMID(card.ID))
+		prefix := fmt.Sprintf("game-library-%d-%s", index, safeDOMID(string(card.ID)))
 		rendered, err := renderGameCard(registry, card, prefix)
 		if err != nil {
 			return nil, err
@@ -401,7 +401,7 @@ func renderLibraryGameCards(registry *cardcomponent.Registry, cards []game.Card)
 	return out, nil
 }
 
-func renderGameCard(registry *cardcomponent.Registry, card game.Card, domIDPrefix string) (RenderedGameCard, error) {
+func renderGameCard(registry *cardcomponent.Registry, card game.CardSnapshot, domIDPrefix string) (RenderedGameCard, error) {
 	preview, err := cardcomponent.RenderDocumentWithOptions(card.Document, registry, cardcomponent.RenderOptions{
 		ElementID:   domIDPrefix,
 		DOMIDPrefix: domIDPrefix,
@@ -410,7 +410,7 @@ func renderGameCard(registry *cardcomponent.Registry, card game.Card, domIDPrefi
 		return RenderedGameCard{}, err
 	}
 	return RenderedGameCard{
-		ID:          card.ID,
+		ID:          string(card.ID),
 		Name:        card.Name,
 		Kind:        card.Kind,
 		Tags:        append([]string(nil), card.Tags...),
@@ -420,6 +420,17 @@ func renderGameCard(registry *cardcomponent.Registry, card game.Card, domIDPrefi
 		Document:    cloneValue(card.Document),
 		PreviewHTML: preview.Render(),
 	}, nil
+}
+
+func cardInstanceIDsToStrings(ids []game.CardInstanceID) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]string, len(ids))
+	for index, id := range ids {
+		out[index] = string(id)
+	}
+	return out
 }
 
 func safeDOMID(value string) string {

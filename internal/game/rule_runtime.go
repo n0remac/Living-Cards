@@ -100,27 +100,27 @@ func (s *Session) ruleTriggerMatches(trigger RuleTrigger, signal ruleSignal) (bo
 		if trigger.cardPlayed == nil {
 			return false, fmt.Errorf("%s trigger payload is missing", trigger.kind)
 		}
-		sourceIndex := s.libraryCardIndex(typed.SourceCardID)
-		targetIndex := s.worldCardIndex(typed.TargetCardID)
-		if sourceIndex < 0 || targetIndex < 0 {
+		source, sourceOK := s.instance(typed.SourceInstanceID)
+		target, targetOK := s.instance(typed.TargetInstanceID)
+		if !sourceOK || !targetOK {
 			return false, nil
 		}
-		return cardMatches(s.library[sourceIndex], trigger.cardPlayed.Source) &&
-			cardMatches(s.worldDeck[targetIndex], trigger.cardPlayed.Target), nil
+		return cardMatches(source, trigger.cardPlayed.Source) &&
+			cardMatches(target, trigger.cardPlayed.Target), nil
 	case FormSubmittedSignal:
 		if trigger.formSubmitted == nil || trigger.formSubmitted.FormID != typed.FormID {
 			return false, nil
 		}
-		targetIndex := s.worldCardIndex(typed.CardID)
-		return targetIndex >= 0 && cardMatches(s.worldDeck[targetIndex], trigger.formSubmitted.Target), nil
+		target, ok := s.instance(typed.InstanceID)
+		return ok && cardMatches(target, trigger.formSubmitted.Target), nil
 	case ComponentUpdatedSignal:
 		if trigger.componentUpdated == nil ||
 			trigger.componentUpdated.ComponentKind != typed.ComponentKind ||
 			(trigger.componentUpdated.ComponentID != "" && trigger.componentUpdated.ComponentID != typed.ComponentID) {
 			return false, nil
 		}
-		targetIndex := s.worldCardIndex(typed.CardID)
-		return targetIndex >= 0 && cardMatches(s.worldDeck[targetIndex], trigger.componentUpdated.Target), nil
+		target, ok := s.instance(typed.InstanceID)
+		return ok && cardMatches(target, trigger.componentUpdated.Target), nil
 	default:
 		return false, fmt.Errorf("unsupported rule signal %T", signal)
 	}
@@ -213,37 +213,29 @@ func (s *Session) ruleConditionMatches(condition RuleCondition, signal ruleSigna
 	}
 }
 
-func (s *Session) ruleSignalCard(signal ruleSignal, reference string) (Card, bool) {
-	var cardID string
+func (s *Session) ruleSignalCard(signal ruleSignal, reference string) (CardInstance, bool) {
+	var instanceID CardInstanceID
 	switch typed := signal.(type) {
 	case CardPlayedSignal:
 		switch reference {
 		case RuleCardSource:
-			index := s.libraryCardIndex(typed.SourceCardID)
-			if index < 0 {
-				return Card{}, false
-			}
-			return s.library[index], true
+			return s.instance(typed.SourceInstanceID)
 		case RuleCardTarget:
-			cardID = typed.TargetCardID
+			instanceID = typed.TargetInstanceID
 		}
 	case FormSubmittedSignal:
 		if reference == RuleCardTarget {
-			cardID = typed.CardID
+			instanceID = typed.InstanceID
 		}
 	case ComponentUpdatedSignal:
 		if reference == RuleCardTarget {
-			cardID = typed.CardID
+			instanceID = typed.InstanceID
 		}
 	}
-	if cardID == "" {
-		return Card{}, false
+	if instanceID == "" {
+		return CardInstance{}, false
 	}
-	index := s.worldCardIndex(cardID)
-	if index < 0 {
-		return Card{}, false
-	}
-	return s.worldDeck[index], true
+	return s.instance(instanceID)
 }
 
 func findRuleComponent(document cardcomponent.Document, componentKind, componentID string) *cardcomponent.Node {
@@ -292,58 +284,63 @@ func (s *Session) applyRuleEffects(effects []RuleEffect, signal ruleSignal, even
 			if value == nil {
 				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
 			}
-			cardID, err := s.ruleEffectTargetCardID(value.CardID, signal)
+			instanceID, err := s.resolveRuleInstanceReference(value.RuleInstanceReference, signal)
 			if err != nil {
 				return nil, err
 			}
-			if err := s.updateRuleWorldCard(cardID, effect.kind, func(card *Card) error {
-				if card.State == nil {
-					card.State = map[string]any{}
+			if err := s.updateInstance(instanceID, func(instance *CardInstance) error {
+				if instance.State == nil {
+					instance.State = map[string]any{}
 				}
-				card.State[value.Key] = cloneValue(value.Value)
+				instance.State[value.Key] = cloneValue(value.Value)
 				return nil
 			}); err != nil {
 				return nil, err
 			}
-			events.emit(EventCardStateChanged, CardStateChangedPayload{CardID: cardID, Key: value.Key, Value: cloneValue(value.Value)})
+			events.emit(EventCardStateChanged, CardStateChangedPayload{CardID: string(instanceID), Key: value.Key, Value: cloneValue(value.Value)})
 		case EffectRemoveCardTags:
 			value := effect.removeCardTags
 			if value == nil {
 				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
 			}
-			cardID, err := s.ruleEffectTargetCardID(value.CardID, signal)
+			instanceID, err := s.resolveRuleInstanceReference(value.RuleInstanceReference, signal)
 			if err != nil {
 				return nil, err
 			}
-			if err := s.updateRuleWorldCard(cardID, effect.kind, func(card *Card) error {
+			if err := s.updateInstance(instanceID, func(instance *CardInstance) error {
 				for _, tag := range value.Tags {
-					card.Tags = removeString(card.Tags, tag)
+					instance.Tags = removeString(instance.Tags, tag)
 				}
 				return nil
 			}); err != nil {
 				return nil, err
 			}
-			events.emit(EventCardTagsRemoved, CardTagsRemovedPayload{CardID: cardID, Tags: append([]string(nil), value.Tags...)})
+			events.emit(EventCardTagsRemoved, CardTagsRemovedPayload{CardID: string(instanceID), Tags: append([]string(nil), value.Tags...)})
 		case EffectSetDocumentVariant:
 			value := effect.setDocumentVariant
 			if value == nil {
 				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
 			}
-			cardID, err := s.ruleEffectTargetCardID(value.CardID, signal)
+			instanceID, err := s.resolveRuleInstanceReference(value.RuleInstanceReference, signal)
 			if err != nil {
 				return nil, err
 			}
-			if err := s.updateRuleWorldCard(cardID, effect.kind, func(card *Card) error {
-				document, ok := s.documentVariants[card.ID][value.Variant]
+			if err := s.updateInstance(instanceID, func(instance *CardInstance) error {
+				definition, ok := s.cardDefinitions[instance.DefinitionID]
 				if !ok {
-					return fmt.Errorf("card %q document variant %q does not exist", card.ID, value.Variant)
+					return fmt.Errorf("card instance %q references missing definition %q", instanceID, instance.DefinitionID)
 				}
-				card.Document = cloneValue(document)
+				document, ok := definition.Documents[value.Variant]
+				if !ok {
+					return fmt.Errorf("card definition %q document variant %q does not exist", definition.ID, value.Variant)
+				}
+				instance.Document = cloneValue(document)
+				instance.Document.CardID = string(instanceID)
 				return nil
 			}); err != nil {
 				return nil, err
 			}
-			events.emit(EventCardVariantChanged, CardVariantChangedPayload{CardID: cardID, Variant: value.Variant})
+			events.emit(EventCardVariantChanged, CardVariantChangedPayload{CardID: string(instanceID), Variant: value.Variant})
 		case EffectSetMessage:
 			if effect.setMessage == nil {
 				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
@@ -353,7 +350,7 @@ func (s *Session) applyRuleEffects(effects []RuleEffect, signal ruleSignal, even
 			if effect.loadDeck == nil {
 				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
 			}
-			loaded, err := s.loadDeck(effect.loadDeck.DeckID)
+			loaded, err := s.loadDeck(effect.loadDeck.DeckID, events)
 			if err != nil {
 				return nil, err
 			}
@@ -370,6 +367,26 @@ func (s *Session) applyRuleEffects(effects []RuleEffect, signal ruleSignal, even
 			}
 			events.emit(EventComponentMounted, mounted)
 			followUps = append(followUps, updated)
+		case EffectMoveCard:
+			if effect.moveCard == nil {
+				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
+			}
+			instanceID, err := s.resolveRuleInstanceReference(effect.moveCard.RuleInstanceReference, signal)
+			if err != nil {
+				return nil, err
+			}
+			from, unique := s.instanceZone(instanceID)
+			if !unique {
+				return nil, fmt.Errorf("card instance %q does not belong to exactly one zone", instanceID)
+			}
+			move, err := s.moveCard(instanceID, from, effect.moveCard.To)
+			if err != nil {
+				return nil, err
+			}
+			events.emit(EventCardMoved, CardMovedPayloadFromMove(move))
+			if effect.moveCard.To == ZoneDiscard {
+				events.emit(EventCardConsumed, CardConsumedPayload{CardID: string(instanceID)})
+			}
 		default:
 			return nil, fmt.Errorf("unsupported effect kind %q", effect.kind)
 		}
@@ -389,18 +406,18 @@ func (s *Session) copyRuleComponent(
 		if !ok {
 			return ComponentMountedPayload{}, ComponentUpdatedSignal{}, fmt.Errorf("%s source requires %s", effect.Kind, TriggerCardPlayed)
 		}
-		sourceIndex := s.libraryCardIndex(played.SourceCardID)
-		if sourceIndex < 0 {
-			return ComponentMountedPayload{}, ComponentUpdatedSignal{}, fmt.Errorf("source card %q is not in the library", played.SourceCardID)
+		source, ok := s.instance(played.SourceInstanceID)
+		if !ok {
+			return ComponentMountedPayload{}, ComponentUpdatedSignal{}, fmt.Errorf("source card instance %q does not exist", played.SourceInstanceID)
 		}
-		sourceCardID = played.SourceCardID
-		sourceNode = findRuleComponent(s.library[sourceIndex].Document, effect.ComponentKind, effect.SourceComponentID)
+		sourceCardID = string(played.SourceInstanceID)
+		sourceNode = findRuleComponent(source.Document, effect.ComponentKind, effect.SourceComponentID)
 	case RuleComponentTrigger:
 		updated, ok := signal.(ComponentUpdatedSignal)
 		if !ok {
 			return ComponentMountedPayload{}, ComponentUpdatedSignal{}, fmt.Errorf("%s source requires %s", effect.Kind, TriggerComponentUpdated)
 		}
-		sourceCardID = updated.CardID
+		sourceCardID = string(updated.InstanceID)
 		candidate := cloneValue(updated.Component)
 		if candidate.ComponentKind == effect.ComponentKind &&
 			(effect.SourceComponentID == "" || candidate.ID == effect.SourceComponentID) {
@@ -414,7 +431,7 @@ func (s *Session) copyRuleComponent(
 			"%s source has no %s component", effect.Kind, effect.ComponentKind,
 		)
 	}
-	targetCardID, err := s.ruleEffectTargetCardID(effect.CardID, signal)
+	targetInstanceID, err := s.resolveRuleInstanceReference(effect.Target, signal)
 	if err != nil {
 		return ComponentMountedPayload{}, ComponentUpdatedSignal{}, err
 	}
@@ -427,53 +444,38 @@ func (s *Session) copyRuleComponent(
 		template.ComponentID = effect.ComponentID
 	}
 	var installed cardcomponent.Node
-	if err := s.updateRuleWorldCard(targetCardID, effect.Kind, func(card *Card) error {
-		document, node, err := s.registry.InstallTemplate(card.Document, template)
+	if err := s.updateInstance(targetInstanceID, func(instance *CardInstance) error {
+		document, node, err := s.registry.InstallTemplate(instance.Document, template)
 		if err != nil {
 			return err
 		}
-		card.Document = document
+		instance.Document = document
 		installed = cloneValue(node)
 		return nil
 	}); err != nil {
 		return ComponentMountedPayload{}, ComponentUpdatedSignal{}, err
 	}
 	mounted := ComponentMountedPayload{
-		SourceCardID: sourceCardID, TargetCardID: targetCardID,
+		SourceCardID: sourceCardID, TargetCardID: string(targetInstanceID),
 		ComponentID: installed.ID, ComponentKind: installed.ComponentKind,
 	}
 	followUp := ComponentUpdatedSignal{
-		CardID: targetCardID, ComponentID: installed.ID,
+		InstanceID: targetInstanceID, ComponentID: installed.ID,
 		ComponentKind: installed.ComponentKind, Component: installed,
 	}
 	return mounted, followUp, nil
 }
 
-func (s *Session) ruleEffectTargetCardID(explicitCardID string, signal ruleSignal) (string, error) {
-	if cardID := strings.TrimSpace(explicitCardID); cardID != "" {
-		return cardID, nil
+func (s *Session) resolveRuleInstanceReference(reference RuleInstanceReference, signal ruleSignal) (CardInstanceID, error) {
+	if reference.InstanceID != "" {
+		if _, ok := s.instance(reference.InstanceID); !ok {
+			return "", fmt.Errorf("rule effect references unknown card instance %q", reference.InstanceID)
+		}
+		return reference.InstanceID, nil
 	}
-	switch typed := signal.(type) {
-	case CardPlayedSignal:
-		return typed.TargetCardID, nil
-	case FormSubmittedSignal:
-		return typed.CardID, nil
-	case ComponentUpdatedSignal:
-		return typed.CardID, nil
-	default:
-		return "", fmt.Errorf("rule signal %T has no target card", signal)
+	card, ok := s.ruleSignalCard(signal, string(reference.Card))
+	if !ok {
+		return "", fmt.Errorf("rule signal %T has no %q card instance", signal, reference.Card)
 	}
-}
-
-func (s *Session) updateRuleWorldCard(cardID string, effectKind RuleEffectKind, update func(*Card) error) error {
-	index := s.worldCardIndex(cardID)
-	if index < 0 {
-		return fmt.Errorf("%s effect references card %q outside world deck", effectKind, cardID)
-	}
-	card := s.worldDeck[index]
-	if err := update(&card); err != nil {
-		return err
-	}
-	s.worldDeck[index] = card
-	return nil
+	return card.InstanceID, nil
 }

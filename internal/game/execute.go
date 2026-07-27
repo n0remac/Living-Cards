@@ -82,6 +82,10 @@ func (s *Session) Execute(command Command) (Result, error) {
 		}
 		return Result{}, invalidCommand(err)
 	}
+	if err := s.validateZoneState(); err != nil {
+		s.restoreStateLocked(previous)
+		return Result{}, fmt.Errorf("validate session state: %w", err)
+	}
 	s.revision++
 	return Result{
 		Revision: s.revision,
@@ -97,25 +101,25 @@ func (s *Session) executeLocked(command Command, events *eventCollector) (Snapsh
 	case CycleCardCommand:
 		return s.cycleLocked(typed.Direction, events)
 	case CollectCardCommand:
-		return s.collectLocked(typed.CardID, events)
+		return s.collectLocked(string(typed.CardID), events)
 	case PlayCardCommand:
-		return s.playCardLocked(typed.SourceCardID, typed.TargetCardID, events)
+		return s.playCardLocked(string(typed.SourceCardID), string(typed.TargetCardID), events)
 	case SubmitFormCommand:
-		return s.submitFormLocked(typed.CardID, typed.FormID, typed.Fields, events)
+		return s.submitFormLocked(string(typed.CardID), typed.FormID, typed.Fields, events)
 	case SelectWorldComponentCommand:
-		return s.selectWorldComponentLocked(typed.CardID, typed.ComponentID, typed.ComponentKind, events)
+		return s.selectWorldComponentLocked(string(typed.CardID), typed.ComponentID, typed.ComponentKind, events)
 	case ChangeWorldComponentCommand:
-		return s.changeWorldComponentLocked(typed.CardID, typed.ComponentID, typed.ComponentKind, typed.Control, typed.Value, events)
+		return s.changeWorldComponentLocked(string(typed.CardID), typed.ComponentID, typed.ComponentKind, typed.Control, typed.Value, events)
 	case StartEditingCommand:
-		return s.startEditingLocked(typed.CardID, events)
+		return s.startEditingLocked(string(typed.CardID), events)
 	case InstallEditComponentCommand:
-		return s.installEditComponentLocked(typed.ComponentCardID, events)
+		return s.installEditComponentLocked(string(typed.ComponentCardID), events)
 	case SelectEditComponentCommand:
 		return s.selectEditComponentLocked(typed.ComponentID, typed.ComponentKind, events)
 	case ChangeEditComponentCommand:
 		return s.changeEditComponentLocked(typed.ComponentID, typed.Control, typed.Value, events)
 	case ChangeLibraryComponentCommand:
-		return s.changeLibraryComponentLocked(typed.CardID, typed.ComponentID, typed.ComponentKind, typed.Control, typed.Value, events)
+		return s.changeLibraryComponentLocked(string(typed.CardID), typed.ComponentID, typed.ComponentKind, typed.Control, typed.Value, events)
 	case SaveEditCommand:
 		return s.saveEditLocked(events)
 	case CancelEditCommand:

@@ -10,7 +10,8 @@ import (
 func validateRuleDefinitions(
 	registry *cardcomponent.Registry,
 	rules []RuleDefinition,
-	cardsByID map[string]CardDefinition,
+	cardsByID map[CardDefinitionID]CardDefinition,
+	instancesByID map[CardInstanceID]CardDefinitionID,
 	existingRuleIDs map[string]bool,
 ) error {
 	seen := map[string]bool{}
@@ -29,14 +30,19 @@ func validateRuleDefinitions(
 			return fmt.Errorf("duplicate rule id %q", id)
 		}
 		seen[id] = true
-		if err := validateRuleDefinition(registry, rule, cardsByID); err != nil {
+		if err := validateRuleDefinition(registry, rule, cardsByID, instancesByID); err != nil {
 			return fmt.Errorf("rule %q: %w", id, err)
 		}
 	}
 	return nil
 }
 
-func validateRuleDefinition(registry *cardcomponent.Registry, rule RuleDefinition, cardsByID map[string]CardDefinition) error {
+func validateRuleDefinition(
+	registry *cardcomponent.Registry,
+	rule RuleDefinition,
+	cardsByID map[CardDefinitionID]CardDefinition,
+	instancesByID map[CardInstanceID]CardDefinitionID,
+) error {
 	target, err := validateRuleTrigger(registry, rule.Trigger, cardsByID)
 	if err != nil {
 		return err
@@ -50,12 +56,12 @@ func validateRuleDefinition(registry *cardcomponent.Registry, rule RuleDefinitio
 		}
 	}
 	for _, effect := range rule.Effects {
-		if err := validateRuleEffect(registry, rule.Trigger, target, effect, cardsByID); err != nil {
+		if err := validateRuleEffect(registry, rule.Trigger, target, effect, cardsByID, instancesByID); err != nil {
 			return err
 		}
 	}
 	for _, effect := range rule.ElseEffects {
-		if err := validateRuleEffect(registry, rule.Trigger, target, effect, cardsByID); err != nil {
+		if err := validateRuleEffect(registry, rule.Trigger, target, effect, cardsByID, instancesByID); err != nil {
 			return fmt.Errorf("else effect: %w", err)
 		}
 	}
@@ -65,7 +71,7 @@ func validateRuleDefinition(registry *cardcomponent.Registry, rule RuleDefinitio
 func validateRuleTrigger(
 	registry *cardcomponent.Registry,
 	trigger RuleTrigger,
-	cardsByID map[string]CardDefinition,
+	cardsByID map[CardDefinitionID]CardDefinition,
 ) (CardMatcherDefinition, error) {
 	switch trigger.kind {
 	case TriggerCardPlayed:
@@ -224,7 +230,8 @@ func validateRuleEffect(
 	trigger RuleTrigger,
 	target CardMatcherDefinition,
 	effect RuleEffect,
-	cardsByID map[string]CardDefinition,
+	cardsByID map[CardDefinitionID]CardDefinition,
+	instancesByID map[CardInstanceID]CardDefinitionID,
 ) error {
 	switch effect.kind {
 	case EffectSetFlag:
@@ -239,7 +246,7 @@ func validateRuleEffect(
 		if value.Value == nil {
 			return fmt.Errorf("%s effect requires value", effect.kind)
 		}
-		if _, _, err := ruleEffectCard(value.CardID, target, cardsByID, effect.kind); err != nil {
+		if err := validateRuleInstanceReference(trigger, value.RuleInstanceReference, instancesByID, effect.kind); err != nil {
 			return err
 		}
 	case EffectRemoveCardTags:
@@ -252,7 +259,7 @@ func validateRuleEffect(
 				return fmt.Errorf("%s effect contains an empty tag", effect.kind)
 			}
 		}
-		if _, _, err := ruleEffectCard(value.CardID, target, cardsByID, effect.kind); err != nil {
+		if err := validateRuleInstanceReference(trigger, value.RuleInstanceReference, instancesByID, effect.kind); err != nil {
 			return err
 		}
 	case EffectSetDocumentVariant:
@@ -260,7 +267,9 @@ func validateRuleEffect(
 		if value == nil || strings.TrimSpace(value.Variant) == "" {
 			return fmt.Errorf("%s effect requires variant", effect.kind)
 		}
-		cardID, card, err := ruleEffectCard(value.CardID, target, cardsByID, effect.kind)
+		cardID, card, err := ruleEffectCardDefinition(
+			value.RuleInstanceReference, trigger, target, cardsByID, instancesByID, effect.kind,
+		)
 		if err != nil {
 			return err
 		}
@@ -308,8 +317,19 @@ func validateRuleEffect(
 		if value.ComponentID != "" && !cardcomponent.ValidComponentID(value.ComponentID) {
 			return fmt.Errorf("%s effect componentId %q is invalid", effect.kind, value.ComponentID)
 		}
-		if _, _, err := ruleEffectCard(value.CardID, target, cardsByID, effect.kind); err != nil {
+		if err := validateRuleInstanceReference(trigger, value.Target, instancesByID, effect.kind); err != nil {
 			return err
+		}
+	case EffectMoveCard:
+		value := effect.moveCard
+		if value == nil {
+			return fmt.Errorf("%s effect payload is missing", effect.kind)
+		}
+		if err := validateRuleInstanceReference(trigger, value.RuleInstanceReference, instancesByID, effect.kind); err != nil {
+			return err
+		}
+		if !validZone(value.To) {
+			return fmt.Errorf("%s effect has unsupported destination zone %q", effect.kind, value.To)
 		}
 	default:
 		return fmt.Errorf("unsupported effect kind %q", effect.kind)
@@ -317,22 +337,62 @@ func validateRuleEffect(
 	return nil
 }
 
-func ruleEffectCard(
-	explicitCardID string,
-	target CardMatcherDefinition,
-	cardsByID map[string]CardDefinition,
+func validateRuleInstanceReference(
+	trigger RuleTrigger,
+	reference RuleInstanceReference,
+	instancesByID map[CardInstanceID]CardDefinitionID,
 	effectKind RuleEffectKind,
-) (string, CardDefinition, error) {
-	cardID := strings.TrimSpace(explicitCardID)
-	if cardID == "" {
-		cardID = strings.TrimSpace(target.ID)
+) error {
+	hasCard := reference.Card != ""
+	hasInstance := reference.InstanceID != ""
+	if hasCard == hasInstance {
+		return fmt.Errorf("%s effect requires exactly one of card or instanceId", effectKind)
 	}
-	if cardID == "" {
-		return "", CardDefinition{}, fmt.Errorf("%s effect requires cardId when target matcher has no id", effectKind)
+	if hasInstance {
+		if _, ok := instancesByID[reference.InstanceID]; !ok {
+			return fmt.Errorf("%s effect references unknown instance %q", effectKind, reference.InstanceID)
+		}
+		return nil
 	}
-	card, exists := cardsByID[cardID]
+	switch string(reference.Card) {
+	case RuleCardTarget:
+		return nil
+	case RuleCardSource:
+		if trigger.kind != TriggerCardPlayed {
+			return fmt.Errorf("%s effect source card is only valid for %s", effectKind, TriggerCardPlayed)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%s effect has unsupported card reference %q", effectKind, reference.Card)
+	}
+}
+
+func ruleEffectCardDefinition(
+	reference RuleInstanceReference,
+	trigger RuleTrigger,
+	target CardMatcherDefinition,
+	cardsByID map[CardDefinitionID]CardDefinition,
+	instancesByID map[CardInstanceID]CardDefinitionID,
+	effectKind RuleEffectKind,
+) (CardDefinitionID, CardDefinition, error) {
+	if err := validateRuleInstanceReference(trigger, reference, instancesByID, effectKind); err != nil {
+		return "", CardDefinition{}, err
+	}
+	var definitionID CardDefinitionID
+	switch {
+	case reference.InstanceID != "":
+		definitionID = instancesByID[reference.InstanceID]
+	case reference.Card == RuleCardTarget:
+		definitionID = CardDefinitionID(strings.TrimSpace(target.ID))
+	case reference.Card == RuleCardSource && trigger.cardPlayed != nil:
+		definitionID = CardDefinitionID(strings.TrimSpace(trigger.cardPlayed.Source.ID))
+	}
+	if definitionID == "" {
+		return "", CardDefinition{}, fmt.Errorf("%s effect requires a matcher id to validate its document variant", effectKind)
+	}
+	card, exists := cardsByID[definitionID]
 	if !exists {
-		return "", CardDefinition{}, fmt.Errorf("%s effect references unknown card %q", effectKind, cardID)
+		return "", CardDefinition{}, fmt.Errorf("%s effect references unknown definition %q", effectKind, definitionID)
 	}
-	return cardID, card, nil
+	return definitionID, card, nil
 }

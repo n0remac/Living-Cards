@@ -9,7 +9,7 @@ import (
 
 func TestComponentCardUsesCanonicalTemplate(t *testing.T) {
 	registry := catalog.MustNew()
-	component := Card{Name: "Input", State: map[string]any{
+	component := CardInstance{InstanceID: "input", State: map[string]any{
 		componentTemplateStateKey: map[string]any{
 			"component_kind": card.KindTextInput,
 			"component_id":   "password-input",

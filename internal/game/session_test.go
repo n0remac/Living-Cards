@@ -18,7 +18,8 @@ func TestEmbeddedDecksDecodeAgainstCatalog(t *testing.T) {
 	registry := catalog.MustNew()
 	ids := []string{SeededWorldDeckDefinition, FuseRoomDeckDefinition, GeneratorDeckDefinition, ArchiveTerminalDefinition}
 	definitions := make([]DeckDefinition, 0, len(ids))
-	known := map[string]CardDefinition{}
+	known := map[CardDefinitionID]CardDefinition{}
+	knownInstances := map[CardInstanceID]CardDefinitionID{}
 	knownRules := map[string]bool{}
 	for _, id := range ids {
 		definition, err := LoadEmbeddedDeck(registry, id)
@@ -30,11 +31,14 @@ func TestEmbeddedDecksDecodeAgainstCatalog(t *testing.T) {
 			if err := ValidateDeckDefinition(registry, definition); err != nil {
 				t.Fatalf("ValidateDeckDefinition(%q): %v", id, err)
 			}
-		} else if err := ValidateDeckPackDefinition(registry, definition, known, knownRules); err != nil {
+		} else if err := ValidateDeckPackDefinition(registry, definition, known, knownInstances, knownRules); err != nil {
 			t.Fatalf("ValidateDeckPackDefinition(%q): %v", id, err)
 		}
 		for _, card := range definition.Cards {
 			known[card.ID] = card
+		}
+		for _, spec := range initialInstanceSpecs(definition) {
+			knownInstances[spec.InstanceID] = spec.DefinitionID
 		}
 		for _, rule := range definition.Rules {
 			knownRules[rule.ID] = true
@@ -59,7 +63,7 @@ func TestEmbeddedDecksUseGeneratedArtworkAndOpaqueTextPanels(t *testing.T) {
 			t.Fatalf("LoadEmbeddedDeck(%q): %v", deckID, err)
 		}
 		for _, cardDefinition := range definition.Cards {
-			assetPath := filepath.Join(assetDirectory, cardDefinition.ID+".webp")
+			assetPath := filepath.Join(assetDirectory, string(cardDefinition.ID)+".webp")
 			assetInfo, err := os.Stat(assetPath)
 			if err != nil {
 				t.Fatalf("card %q background asset: %v", cardDefinition.ID, err)
@@ -78,7 +82,7 @@ func TestEmbeddedDecksUseGeneratedArtworkAndOpaqueTextPanels(t *testing.T) {
 						if err := json.Unmarshal(child.Config, &config); err != nil {
 							t.Fatalf("card %q variant %q background config: %v", cardDefinition.ID, variant, err)
 						}
-						if config.AssetID != cardDefinition.ID {
+						if config.AssetID != string(cardDefinition.ID) {
 							t.Fatalf("card %q variant %q background asset = %q", cardDefinition.ID, variant, config.AssetID)
 						}
 					case card.KindText:
@@ -141,7 +145,10 @@ func TestSliderConditionReadsRegistryProperty(t *testing.T) {
 			Conditions: []RuleCondition{
 				ComponentPropertyEqualsCondition(RuleCardSource, "", card.KindSlider, "source-slider", "value", NumberRuleValue(float64(value))),
 			},
-			Effects: []RuleEffect{SetMessageEffect("matched through property")},
+			Effects: []RuleEffect{
+				SetMessageEffect("matched through property"),
+				MoveCardEffect(SignaledInstance(RuleCardSource), ZoneDiscard),
+			},
 		}},
 	}
 	session, err := NewSessionFromDeck(registry, definition)
@@ -239,8 +246,14 @@ func TestUseCardConsumesMatchedAttemptButRetainsUnmatchedTarget(t *testing.T) {
 			Conditions: []RuleCondition{
 				ComponentPropertyEqualsCondition(RuleCardSource, "", card.KindSlider, "", "value", NumberRuleValue(float64(requiredValue))),
 			},
-			Effects:     []RuleEffect{SetMessageEffect("matched")},
-			ElseEffects: []RuleEffect{SetMessageEffect("The value is wrong.")},
+			Effects: []RuleEffect{
+				SetMessageEffect("matched"),
+				MoveCardEffect(SignaledInstance(RuleCardSource), ZoneDiscard),
+			},
+			ElseEffects: []RuleEffect{
+				SetMessageEffect("The value is wrong."),
+				MoveCardEffect(SignaledInstance(RuleCardSource), ZoneDiscard),
+			},
 		}},
 	}
 	session, err := NewSessionFromDeck(registry, definition)
@@ -345,11 +358,11 @@ func TestComponentCardEditSaveConvertsBaseAndCancelPreservesLibrary(t *testing.T
 	if _, declared := controller.State[componentTemplateStateKey]; declared {
 		t.Fatal("saved controller retained component template")
 	}
-	if !stateBool(controller.State, "editable") || !stateBool(controller.State, "built") || !hasTag(controller, "controller") {
+	if !stateBool(controller.State, "editable") || !stateBool(controller.State, "built") || !snapshotHasTag(controller, "controller") {
 		t.Fatalf("controller metadata = %#v tags=%v", controller.State, controller.Tags)
 	}
 	for _, unwanted := range []string{"component", "slider-component"} {
-		if hasTag(controller, unwanted) {
+		if snapshotHasTag(controller, unwanted) {
 			t.Fatalf("controller retained component tag %q: %v", unwanted, controller.Tags)
 		}
 	}
@@ -387,10 +400,10 @@ func TestEveryEmbeddedComponentCardCanBeAnEditBase(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := executeSession(session, CollectCardCommand{CardID: test.cardID}); err != nil {
+			if _, err := executeSession(session, CollectCardCommand{CardID: CardInstanceID(test.cardID)}); err != nil {
 				t.Fatal(err)
 			}
-			snapshot, err := executeSession(session, StartEditingCommand{CardID: test.cardID})
+			snapshot, err := executeSession(session, StartEditingCommand{CardID: CardInstanceID(test.cardID)})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -428,6 +441,10 @@ func TestFailedRegulatorPlayMovesSliderToFieldAndCanRevealArchive(t *testing.T) 
 	}
 	if containsCard(failed.Library, "slider-component") || findNodeByID(failed.ActiveWorldCard.Document.Root, sliderID) == nil {
 		t.Fatalf("failed play did not move controller to field: %#v", failed)
+	}
+	discarded := session.instances["slider-component"]
+	if session.zoneIndex(ZoneDiscard, "slider-component") < 0 || findNodeByID(discarded.Document.Root, sliderID) == nil {
+		t.Fatalf("edited instance did not persist into discard: %#v", discarded)
 	}
 	revealed, err := executeSession(session, ChangeWorldComponentCommand{CardID: "generator-panel", ComponentID: sliderID, ComponentKind: card.KindSlider, Control: "value", Value: json.RawMessage(`73`)})
 	if err != nil {
@@ -567,19 +584,28 @@ func jsonNumber(value int) string {
 	return string(raw)
 }
 
-func containsCard(cards []Card, cardID string) bool {
+func containsCard(cards []CardSnapshot, cardID string) bool {
 	for _, candidate := range cards {
-		if candidate.ID == cardID {
+		if string(candidate.ID) == cardID {
 			return true
 		}
 	}
 	return false
 }
 
-func cardIDs(cards []Card) []string {
+func snapshotHasTag(card CardSnapshot, tag string) bool {
+	for _, candidate := range card.Tags {
+		if candidate == tag {
+			return true
+		}
+	}
+	return false
+}
+
+func cardIDs(cards []CardSnapshot) []string {
 	ids := make([]string, 0, len(cards))
 	for _, candidate := range cards {
-		ids = append(ids, candidate.ID)
+		ids = append(ids, string(candidate.ID))
 	}
 	return ids
 }
@@ -605,10 +631,10 @@ func executeSession(session *Session, command Command) (Snapshot, error) {
 
 func collectAndUse(t *testing.T, session *Session, sourceCardID, targetCardID string) {
 	t.Helper()
-	if _, err := executeSession(session, CollectCardCommand{CardID: sourceCardID}); err != nil {
+	if _, err := executeSession(session, CollectCardCommand{CardID: CardInstanceID(sourceCardID)}); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := executeSession(session, PlayCardCommand{SourceCardID: sourceCardID, TargetCardID: targetCardID})
+	snapshot, err := executeSession(session, PlayCardCommand{SourceCardID: CardInstanceID(sourceCardID), TargetCardID: CardInstanceID(targetCardID)})
 	if err != nil {
 		t.Fatal(err)
 	}

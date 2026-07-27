@@ -6,6 +6,8 @@ const (
 	EventSessionReset           EventType = "sessionReset"
 	EventCardCycled             EventType = "cardCycled"
 	EventCardCollected          EventType = "cardCollected"
+	EventCardInstantiated       EventType = "cardInstantiated"
+	EventCardMoved              EventType = "cardMoved"
 	EventCardPlayed             EventType = "cardPlayed"
 	EventCardConsumed           EventType = "cardConsumed"
 	EventFormSubmitted          EventType = "formSubmitted"
@@ -23,6 +25,10 @@ const (
 	EventDeckLoaded             EventType = "deckLoaded"
 	EventRuleResolved           EventType = "ruleResolved"
 	EventActionRejected         EventType = "actionRejected"
+	EventEncounterStarted       EventType = "encounterStarted"
+	EventEncounterPhaseChanged  EventType = "encounterPhaseChanged"
+	EventEncounterResolved      EventType = "encounterResolved"
+	EventActorResourceChanged   EventType = "actorResourceChanged"
 	EventMessage                EventType = "message"
 )
 
@@ -45,6 +51,30 @@ type CardCollectedPayload struct {
 	CardID             string `json:"cardId"`
 	PreviousWorldIndex int    `json:"previousWorldIndex"`
 	ActiveCardID       string `json:"activeCardId"`
+}
+
+type CardInstantiatedPayload struct {
+	InstanceID   string `json:"instanceId"`
+	DefinitionID string `json:"definitionId"`
+	Zone         string `json:"zone"`
+}
+
+type CardMovedPayload struct {
+	InstanceID string `json:"instanceId"`
+	From       string `json:"from"`
+	To         string `json:"to"`
+	FromIndex  int    `json:"fromIndex"`
+	ToIndex    int    `json:"toIndex"`
+}
+
+func CardMovedPayloadFromMove(move CardMove) CardMovedPayload {
+	return CardMovedPayload{
+		InstanceID: string(move.InstanceID),
+		From:       string(move.From),
+		To:         string(move.To),
+		FromIndex:  move.FromIndex,
+		ToIndex:    move.ToIndex,
+	}
 }
 
 type CardPlayedPayload struct {
@@ -122,6 +152,29 @@ type RuleResolvedPayload struct {
 type ActionRejectedPayload struct {
 	Action  string `json:"action"`
 	Outcome string `json:"outcome"`
+}
+
+type EncounterStartedPayload struct {
+	EncounterID string `json:"encounterId"`
+	Phase       string `json:"phase"`
+}
+
+type EncounterPhaseChangedPayload struct {
+	EncounterID   string `json:"encounterId"`
+	PreviousPhase string `json:"previousPhase"`
+	Phase         string `json:"phase"`
+}
+
+type EncounterResolvedPayload struct {
+	EncounterID string `json:"encounterId"`
+	Outcome     string `json:"outcome"`
+}
+
+type ActorResourceChangedPayload struct {
+	InstanceID string `json:"instanceId"`
+	Resource   string `json:"resource"`
+	Previous   int    `json:"previous"`
+	Current    int    `json:"current"`
 }
 
 type eventCollector struct {

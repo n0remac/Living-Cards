@@ -553,14 +553,26 @@
         {
           "kind": "copyComponent",
           "source": "source",
-          "cardId": "generator-panel",
+          "target": {
+            "card": "target"
+          },
           "componentKind": "slider"
+        },
+        {
+          "kind": "moveCard",
+          "card": "source",
+          "to": "discard"
         }
       ],
       "elseEffects": [
         {
           "kind": "setMessage",
           "message": "The generator needs a controller with an adjustable regulator."
+        },
+        {
+          "kind": "moveCard",
+          "card": "source",
+          "to": "discard"
         }
       ]
     },
@@ -593,32 +605,34 @@
         },
         {
           "kind": "setCardState",
-          "cardId": "generator-panel",
+          "card": "target",
           "key": "powered",
           "value": true
         },
         {
           "kind": "setCardState",
-          "cardId": "generator-panel",
+          "card": "target",
           "key": "useful",
           "value": true
         },
         {
           "kind": "removeCardTags",
-          "cardId": "generator-panel",
+          "card": "target",
           "tags": [
             "inactive"
           ]
         },
         {
           "kind": "setDocumentVariant",
-          "cardId": "generator-panel",
+          "card": "target",
           "variant": "active"
         },
         {
           "kind": "copyComponent",
           "source": "trigger",
-          "cardId": "generator-panel",
+          "target": {
+            "card": "target"
+          },
           "componentKind": "slider"
         },
         {

@@ -172,9 +172,56 @@ func TestRuleIDsRemainUniqueAcrossLoadedPacks(t *testing.T) {
 		Trigger: CardPlayedTrigger(CardMatcherDefinition{ID: "source"}, CardMatcherDefinition{ID: "target"}),
 		Effects: []RuleEffect{SetMessageEffect("matched")},
 	}})
-	err := ValidateDeckPackDefinition(registry, definition, nil, map[string]bool{"shared-rule": true})
+	err := ValidateDeckPackDefinition(registry, definition, nil, nil, map[string]bool{"shared-rule": true})
 	if err == nil || !strings.Contains(err.Error(), `duplicate rule id "shared-rule"`) {
 		t.Fatalf("ValidateDeckPackDefinition() error = %v", err)
+	}
+}
+
+func TestExplicitInstanceEffectsValidateAgainstInstanceDefinition(t *testing.T) {
+	registry := catalog.MustNew()
+	definition := DeckDefinition{
+		ID: "explicit-effect-validation", Name: "Explicit Effect Validation",
+		InitialActiveInstanceID: "target-one",
+		InitialInstances: []CardInstanceSpec{
+			{InstanceID: "target-one", DefinitionID: "target", Zone: ZoneScene},
+			{InstanceID: "source-one", DefinitionID: "source", Zone: ZoneScene},
+		},
+		Cards: []CardDefinition{
+			{
+				ID: "target", Name: "Target", Kind: KindWorld, InitialDocument: "default",
+				Documents: map[string]card.Document{"default": simpleDocument("target"), "changed": simpleDocument("target")},
+			},
+			{
+				ID: "source", Name: "Source", Kind: KindItem, Collectible: true, InitialDocument: "default",
+				Documents: map[string]card.Document{"default": simpleDocument("source")},
+			},
+		},
+		Rules: []RuleDefinition{{
+			ID:      "explicit-target",
+			Trigger: ComponentUpdatedTrigger(CardMatcherDefinition{ID: "target"}, card.KindBorder, ""),
+			Effects: []RuleEffect{SetDocumentVariantFor(ExplicitInstance("target-one"), "changed")},
+		}},
+	}
+	if err := ValidateDeckDefinition(registry, definition); err != nil {
+		t.Fatalf("valid explicit instance effect: %v", err)
+	}
+	definition.Rules[0].Effects = []RuleEffect{
+		SetDocumentVariantFor(ExplicitInstance("source-one"), "changed"),
+	}
+	if err := ValidateDeckDefinition(registry, definition); err == nil || !strings.Contains(err.Error(), `missing variant "changed"`) {
+		t.Fatalf("wrong-definition variant error = %v", err)
+	}
+}
+
+func TestLegacyRuleEffectCardIDIsRejected(t *testing.T) {
+	var effect RuleEffect
+	err := json.Unmarshal([]byte(`{"kind":"moveCard","cardId":"source-one","to":"discard"}`), &effect)
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("legacy cardId error = %v", err)
+	}
+	if err := json.Unmarshal([]byte(`{"kind":"moveCard","card":"source","to":"discard"}`), &effect); err != nil {
+		t.Fatalf("explicit source reference: %v", err)
 	}
 }
 
@@ -247,6 +294,9 @@ func TestRuleRuntimeSelectsFirstSuccessAndFirstFallback(t *testing.T) {
 				Trigger:    testCardPlayedTrigger(),
 				Conditions: []RuleCondition{FlagEqualsCondition("missing", true)},
 				Effects:    []RuleEffect{SetMessageEffect("wrong")},
+				ElseEffects: []RuleEffect{
+					MoveCardEffect(SignaledInstance(RuleCardSource), ZoneDiscard),
+				},
 			},
 			{
 				ID:         "second-failure",
@@ -274,7 +324,7 @@ func TestLoadedRulesAppendInStableDeclarationOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := ruleIDs(session.rules)
-	if loaded, err := session.loadDeck(ArchiveTerminalDefinition); err != nil || !loaded {
+	if loaded, err := session.loadDeck(ArchiveTerminalDefinition, &eventCollector{}); err != nil || !loaded {
 		t.Fatalf("loadDeck() = %v, %v", loaded, err)
 	}
 	after := ruleIDs(session.rules)
@@ -465,13 +515,13 @@ func countResolvedRule(events []Event, ruleID string) int {
 	return count
 }
 
-func cardByID(cards []Card, cardID string) (Card, bool) {
+func cardByID(cards []CardSnapshot, cardID string) (CardSnapshot, bool) {
 	for _, candidate := range cards {
-		if candidate.ID == cardID {
+		if string(candidate.ID) == cardID {
 			return candidate, true
 		}
 	}
-	return Card{}, false
+	return CardSnapshot{}, false
 }
 
 func ruleIDs(rules []RuleDefinition) []string {

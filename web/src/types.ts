@@ -227,6 +227,8 @@ export interface GameSessionSnapshot {
 export type GameEvent =
   | { sequence: number; type: "sessionReset"; payload?: Record<string, never> }
   | { sequence: number; type: "cardCycled"; payload: { direction: string; previousCardId: string; activeCardId: string } }
+  | { sequence: number; type: "cardInstantiated"; payload: { instanceId: string; definitionId: string; zone: GameCardZone } }
+  | { sequence: number; type: "cardMoved"; payload: { instanceId: string; from: GameCardZone; to: GameCardZone; fromIndex: number; toIndex: number } }
   | { sequence: number; type: "cardCollected"; payload: { cardId: string; previousWorldIndex: number; activeCardId: string } }
   | { sequence: number; type: "cardPlayed"; payload: { sourceCardId: string; targetCardId: string; outcome: "resolved" | "conditionsFailed" | "noMatchingRule" } }
   | { sequence: number; type: "cardConsumed"; payload: { cardId: string } }
@@ -245,7 +247,13 @@ export type GameEvent =
   | { sequence: number; type: "deckLoaded"; payload: { deckId: string } }
   | { sequence: number; type: "ruleResolved"; payload: { ruleId: string; triggerKind: "cardPlayed" | "formSubmitted" | "componentUpdated"; outcome: "success" | "conditionsFailed" } }
   | { sequence: number; type: "actionRejected"; payload: { action: string; outcome: string } }
+  | { sequence: number; type: "encounterStarted"; payload: { encounterId: string; phase: string } }
+  | { sequence: number; type: "encounterPhaseChanged"; payload: { encounterId: string; previousPhase: string; phase: string } }
+  | { sequence: number; type: "encounterResolved"; payload: { encounterId: string; outcome: string } }
+  | { sequence: number; type: "actorResourceChanged"; payload: { instanceId: string; resource: "integrity" | "charge"; previous: number; current: number } }
   | { sequence: number; type: "message"; message: string };
+
+export type GameCardZone = "scene" | "library" | "discard";
 
 export interface GameComponentEventPayload {
   cardId: string;
