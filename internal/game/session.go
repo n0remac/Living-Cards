@@ -18,15 +18,16 @@ const (
 )
 
 type Snapshot struct {
-	WorldDeck                []CardSnapshot  `json:"worldDeck"`
-	ActiveWorldCard          CardSnapshot    `json:"activeWorldCard"`
-	ActiveWorldCardID        CardInstanceID  `json:"activeWorldCardId"`
-	ActiveIndex              int             `json:"activeIndex"`
-	ActiveEditingComponentID string          `json:"activeEditingComponentId,omitempty"`
-	Library                  []CardSnapshot  `json:"library"`
-	EditSession              *EditSession    `json:"editSession,omitempty"`
-	SolvedFlags              map[string]bool `json:"solvedFlags"`
-	Message                  string          `json:"message,omitempty"`
+	WorldDeck                []CardSnapshot     `json:"worldDeck"`
+	ActiveWorldCard          CardSnapshot       `json:"activeWorldCard"`
+	ActiveWorldCardID        CardInstanceID     `json:"activeWorldCardId"`
+	ActiveIndex              int                `json:"activeIndex"`
+	ActiveEditingComponentID string             `json:"activeEditingComponentId,omitempty"`
+	Library                  []CardSnapshot     `json:"library"`
+	EditSession              *EditSession       `json:"editSession,omitempty"`
+	Encounter                *EncounterSnapshot `json:"encounter,omitempty"`
+	SolvedFlags              map[string]bool    `json:"solvedFlags"`
+	Message                  string             `json:"message,omitempty"`
 }
 
 type EditSession struct {
@@ -98,6 +99,7 @@ func NewSessionFromDeck(registry *cardcomponent.Registry, definition DeckDefinit
 		instances:         materialized.instances,
 		zones:             materialized.zones,
 		activeSceneCardID: materialized.activeID,
+		encounter:         cloneValue(definition.InitialEncounter),
 		solvedFlags:       cloneValue(definition.InitialSolvedFlags),
 		lastMessage:       definition.InitialMessage,
 	}
@@ -223,6 +225,9 @@ func (s *Session) playCardLocked(sourceCardID, targetCardID string, events *even
 	switch resolution.Outcome {
 	case RuleOutcomeSuccess:
 		played.Outcome = "resolved"
+		if err := s.advanceEncounter(events); err != nil {
+			return Snapshot{}, failExecution(err)
+		}
 		s.activeEditingComponentID = ""
 		s.ensureMessageEventLocked(events)
 		return s.commandSnapshotLocked()
@@ -230,6 +235,9 @@ func (s *Session) playCardLocked(sourceCardID, targetCardID string, events *even
 		played.Outcome = "conditionsFailed"
 		events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
 		s.activeEditingComponentID = ""
+		if err := s.advanceEncounter(events); err != nil {
+			return Snapshot{}, failExecution(err)
+		}
 		if !events.hasMessage() {
 			s.setMessageLocked(sourceDefinition.Name+" was played, but its conditions were not met.", events)
 		}
@@ -237,6 +245,9 @@ func (s *Session) playCardLocked(sourceCardID, targetCardID string, events *even
 	case RuleOutcomeNoMatch:
 		played.Outcome = "noMatchingRule"
 		events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
+		if err := s.advanceEncounter(events); err != nil {
+			return Snapshot{}, failExecution(err)
+		}
 		s.setMessageLocked("Nothing on this card responds to "+sourceDefinition.Name+".", events)
 		return s.commandSnapshotLocked()
 	default:
@@ -284,11 +295,17 @@ func (s *Session) submitFormLocked(cardID, formID string, fields map[string]stri
 	}
 	switch resolution.Outcome {
 	case RuleOutcomeSuccess:
+		if err := s.advanceEncounter(events); err != nil {
+			return Snapshot{}, failExecution(err)
+		}
 		s.activeEditingComponentID = ""
 		s.ensureMessageEventLocked(events)
 		return s.commandSnapshotLocked()
 	case RuleOutcomeConditionsFailed:
 		events.emit(EventActionRejected, ActionRejectedPayload{Action: "submitForm", Outcome: "conditionsFailed"})
+		if err := s.advanceEncounter(events); err != nil {
+			return Snapshot{}, failExecution(err)
+		}
 		s.ensureMessageEventLocked(events)
 		return s.commandSnapshotLocked()
 	case RuleOutcomeNoMatch:
@@ -345,6 +362,9 @@ func (s *Session) changeWorldComponentLocked(cardID, componentID, componentKind,
 		ComponentKind: node.ComponentKind, Component: cloneValue(*node),
 	}, events)
 	if err != nil {
+		return Snapshot{}, failExecution(err)
+	}
+	if err := s.advanceEncounter(events); err != nil {
 		return Snapshot{}, failExecution(err)
 	}
 	if !events.hasMessage() {
@@ -625,6 +645,25 @@ func (s *Session) snapshotLocked() (Snapshot, error) {
 			SelectedComponentID:         s.editSession.SelectedComponentID,
 		}
 	}
+	var encounter *EncounterSnapshot
+	if s.encounter != nil {
+		participants := make([]EncounterParticipantSnapshot, 0, len(s.encounter.Participants))
+		for _, participant := range s.encounter.Participants {
+			zone, ok := s.instanceZone(participant.InstanceID)
+			if !ok {
+				return Snapshot{}, fmt.Errorf("encounter participant %q has invalid zone membership", participant.InstanceID)
+			}
+			card, err := s.cardSnapshot(participant.InstanceID, zone)
+			if err != nil {
+				return Snapshot{}, err
+			}
+			participants = append(participants, EncounterParticipantSnapshot{Role: participant.Role, Card: card})
+		}
+		encounter = &EncounterSnapshot{
+			ID: s.encounter.ID, Phase: s.encounter.Phase, Participants: participants,
+			Pressure: s.encounter.Pressure, MaxPressure: s.encounter.MaxPressure, Outcome: s.encounter.Outcome,
+		}
+	}
 	return Snapshot{
 		WorldDeck:                worldDeck,
 		ActiveWorldCard:          activeCard,
@@ -633,6 +672,7 @@ func (s *Session) snapshotLocked() (Snapshot, error) {
 		ActiveEditingComponentID: s.activeEditingComponentID,
 		Library:                  library,
 		EditSession:              editSession,
+		Encounter:                encounter,
 		SolvedFlags:              cloneValue(s.solvedFlags),
 		Message:                  s.lastMessage,
 	}, nil

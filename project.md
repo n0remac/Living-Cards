@@ -125,6 +125,16 @@ The game loads the seeded world plus fuse-room, generator-room, and archive-term
 
 Rules retain loaded declaration order: a newly loaded deck appends its rules after the current session rules. Each internal signal resolves at most one rule, applies its effects sequentially, and queues component-install follow-ups after the effect list. Queued signals resolve cards from current session state while retaining a canonical snapshot of the component that caused an update. Processing is capped at 32 signals so an accidental component-rule loop fails the command transactionally.
 
+Encounters are ordered overlays on card ownership rather than a separate
+zone. An encounter snapshot hydrates every participant with its rendered card,
+role, actor state, pressure, phase, and outcome. Actor state retains the
+original integrity and charge resources and may add arbitrary named tracks for
+non-combat systems such as trust, alert, or stability. Declarative effects can
+start and resolve encounters, change pressure and actor tracks, change
+disposition, and add or remove statuses. Active encounters may add authored
+reaction pressure after a player action; reaching the maximum resolves the
+encounter as overwhelmed.
+
 Collecting a card moves it from the world deck into the library. A play against a matching target consumes the library card after its success or failure effects complete. Component cards are editable bases: editing installs their own template into the draft, and saving converts the base into an editable controller while consuming any added component cards.
 
 The main game endpoints are under `/api/game/*`. Draft/designer endpoints are under `/api/draft-card/*`. The frontend bundle is built from `web/src/app.ts` by `internal/webbuild` and committed under `web/dist/`.

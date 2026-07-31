@@ -387,6 +387,75 @@ func (s *Session) applyRuleEffects(effects []RuleEffect, signal ruleSignal, even
 			if effect.moveCard.To == ZoneDiscard {
 				events.emit(EventCardConsumed, CardConsumedPayload{CardID: string(instanceID)})
 			}
+		case EffectStartEncounter:
+			value := effect.startEncounter
+			if value == nil {
+				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
+			}
+			if err := s.startEncounter(EncounterState{
+				ID: value.ID, Phase: EncounterPhaseActive, Participants: cloneValue(value.Participants),
+				Pressure: value.Pressure, MaxPressure: value.MaxPressure, ReactionPressure: value.ReactionPressure,
+			}, events); err != nil {
+				return nil, err
+			}
+		case EffectChangePressure:
+			if effect.changePressure == nil {
+				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
+			}
+			if err := s.changeEncounterPressure(effect.changePressure.Delta, events); err != nil {
+				return nil, err
+			}
+		case EffectChangeActorTrack:
+			value := effect.changeActorTrack
+			if value == nil {
+				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
+			}
+			instanceID, err := s.resolveRuleInstanceReference(value.RuleInstanceReference, signal)
+			if err != nil {
+				return nil, err
+			}
+			instance, _ := s.instance(instanceID)
+			if instance.Actor == nil {
+				return nil, fmt.Errorf("card instance %q has no actor state", instanceID)
+			}
+			current, ok := actorResourceCurrent(*instance.Actor, value.Track)
+			if !ok {
+				return nil, fmt.Errorf("actor %q has no track %q", instanceID, value.Track)
+			}
+			if err := s.changeActorResource(instanceID, value.Track, current+value.Delta, events); err != nil {
+				return nil, err
+			}
+		case EffectSetActorDisposition:
+			value := effect.setActorDisposition
+			if value == nil {
+				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
+			}
+			instanceID, err := s.resolveRuleInstanceReference(value.RuleInstanceReference, signal)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.setActorDisposition(instanceID, value.Disposition, events); err != nil {
+				return nil, err
+			}
+		case EffectAddActorStatus, EffectRemoveActorStatus:
+			value := effect.actorStatus
+			if value == nil {
+				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
+			}
+			instanceID, err := s.resolveRuleInstanceReference(value.RuleInstanceReference, signal)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.changeActorStatus(instanceID, value.Status, effect.kind == EffectAddActorStatus, events); err != nil {
+				return nil, err
+			}
+		case EffectResolveEncounter:
+			if effect.resolveEncounter == nil {
+				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
+			}
+			if err := s.resolveEncounter(effect.resolveEncounter.Outcome, events); err != nil {
+				return nil, err
+			}
 		default:
 			return nil, fmt.Errorf("unsupported effect kind %q", effect.kind)
 		}

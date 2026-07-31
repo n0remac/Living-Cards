@@ -50,6 +50,38 @@ func gameStageView() *Node {
 			),
 		),
 		Div(
+			Id("game-encounter"),
+			Class("game-encounter"),
+			Attr("hidden", "hidden"),
+			Div(
+				Class("game-encounter-header"),
+				Div(
+					H2(Id("game-encounter-title"), Class("game-encounter-title"), T("Encounter")),
+					Div(Id("game-encounter-phase"), Class("game-encounter-phase"), T("Active")),
+				),
+				Div(
+					Class("game-pressure"),
+					Div(Class("game-pressure-label"), Span(T("Pressure")), Span(Id("game-pressure-value"), T("0"))),
+					Div(Class("game-pressure-track"), Div(Id("game-pressure-fill"), Class("game-pressure-fill"))),
+				),
+			),
+			Div(
+				Class("game-field-lane"),
+				Div(Class("game-field-lane-label"), T("Opposition")),
+				Div(Id("game-field-opposition"), Class("game-field-grid")),
+			),
+			Div(
+				Class("game-field-lane"),
+				Div(Class("game-field-lane-label"), T("Your side")),
+				Div(Id("game-field-player"), Class("game-field-grid")),
+			),
+			Div(
+				Class("game-action-row game-encounter-actions"),
+				Div(Id("game-encounter-status"), Class("game-status"), T("The encounter is forming...")),
+				Button(Id("game-encounter-collect"), Type("button"), Class(uiPrimaryButtonClass("sm")), T("Collect")),
+			),
+		),
+		Div(
 			Class("game-board"),
 			Button(Id("game-prev-card"), Type("button"), Class("game-cycle-button"), Attr("aria-label", "Previous card"), T("‹")),
 			Div(
@@ -105,6 +137,27 @@ func gameStageView() *Node {
 				Span(Id("game-library-count"), Class("game-library-count"), T("Empty")),
 			),
 			Div(Id("game-library-list"), Class("game-library-list"), T("No cards collected.")),
+		),
+		Div(
+			Id("game-card-detail"),
+			Class("game-card-detail"),
+			Attr("hidden", "hidden"),
+			Attr("role", "dialog"),
+			Attr("aria-modal", "true"),
+			Attr("aria-labelledby", "game-card-detail-title"),
+			Div(Class("game-card-detail-backdrop"), Attr("data-card-detail-close", "")),
+			Div(
+				Class("game-card-detail-panel"),
+				Div(
+					Class("game-card-detail-header"),
+					Div(
+						Div(Id("game-card-detail-role"), Class("game-encounter-phase"), T("Card")),
+						H2(Id("game-card-detail-title"), Class("game-card-detail-title"), T("Card detail")),
+					),
+					Button(Id("game-card-detail-close"), Type("button"), Class(uiSecondaryButtonClass("sm")), T("Close")),
+				),
+				Div(Id("game-card-detail-card"), Class("game-card-detail-card")),
+			),
 		),
 	)
 }
@@ -370,6 +423,280 @@ func pageCSS() string {
   grid-template-columns: 3rem minmax(0, 1fr) 3rem;
   gap: 1rem;
   align-items: center;
+}
+
+.game-encounter {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+  overflow-y: auto;
+  padding: 0.1rem;
+}
+
+.game-encounter[hidden] {
+  display: none;
+}
+
+.game-stage-shell[data-encounter="true"] .game-board {
+  display: none;
+}
+
+.game-encounter-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.game-encounter-title,
+.game-card-detail-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 850;
+}
+
+.game-encounter-phase {
+  margin-top: 0.15rem;
+  color: rgba(244,244,245,0.58);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.game-pressure {
+  width: min(15rem, 42vw);
+}
+
+.game-pressure-label {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(244,244,245,0.7);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.game-pressure-track,
+.game-actor-track {
+  height: 0.42rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.12);
+}
+
+.game-pressure-track {
+  margin-top: 0.35rem;
+}
+
+.game-pressure-fill,
+.game-actor-track-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #f59e0b, #ef4444);
+  transition: width 180ms ease;
+}
+
+.game-field-lane {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.game-field-lane-label {
+  color: rgba(244,244,245,0.52);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.game-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 12rem));
+  justify-content: center;
+  gap: clamp(0.55rem, 1.8vw, 0.9rem);
+}
+
+.game-field-card {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 0.75rem;
+  background: rgba(9,9,11,0.72);
+  color: var(--app-fg);
+  padding: 0;
+  box-shadow: 0 12px 28px rgba(0,0,0,0.26);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.game-field-card[data-role="hostile"] {
+  border-color: rgba(248,113,113,0.62);
+}
+
+.game-field-card[data-role="player"],
+.game-field-card[data-role="ally"] {
+  border-color: rgba(52,211,153,0.58);
+}
+
+.game-field-card[data-focused="true"] {
+  outline: 3px solid rgba(250,204,21,0.76);
+  outline-offset: -3px;
+}
+
+.game-field-card[data-drop-active="true"] {
+  outline: 3px solid rgba(52,211,153,0.9);
+  outline-offset: -3px;
+}
+
+.game-field-preview {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.game-field-preview > [data-card-id] {
+  position: absolute;
+  top: -20%;
+  left: 0;
+  width: 100%;
+  max-width: none;
+  color: var(--app-fg);
+  pointer-events: none;
+}
+
+.game-field-preview [data-component-kind="text"],
+.game-field-preview [data-component-kind="slider"],
+.game-field-preview [data-component-kind="text_input"],
+.game-field-preview [data-component-kind="button"] {
+  display: none !important;
+}
+
+.game-field-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0,0,0,0.08) 35%, rgba(0,0,0,0.88) 100%);
+  pointer-events: none;
+}
+
+.game-field-meta {
+  position: absolute;
+  inset: auto 0 0;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.55rem 0.6rem;
+  text-align: left;
+  pointer-events: none;
+}
+
+.game-field-name {
+  overflow: hidden;
+  color: white;
+  font-size: clamp(0.72rem, 2.3vw, 0.9rem);
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-field-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.game-field-badge {
+  border-radius: 999px;
+  background: rgba(9,9,11,0.76);
+  padding: 0.15rem 0.35rem;
+  color: rgba(244,244,245,0.84);
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.game-actor-tracks {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.game-actor-track-row {
+  display: grid;
+  grid-template-columns: 3.4rem 1fr auto;
+  align-items: center;
+  gap: 0.28rem;
+  color: rgba(244,244,245,0.82);
+  font-size: 0.56rem;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+
+.game-actor-track-fill {
+  background: linear-gradient(90deg, #34d399, #facc15);
+}
+
+.game-encounter-actions {
+  width: 100%;
+}
+
+.game-card-detail {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.game-card-detail[hidden] {
+  display: none;
+}
+
+.game-card-detail-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.76);
+  backdrop-filter: blur(8px);
+}
+
+.game-card-detail-panel {
+  position: relative;
+  z-index: 1;
+  width: min(94vw, 31rem);
+  max-height: calc(100dvh - 2rem);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  overflow: auto;
+  border: 1px solid rgba(255,255,255,0.24);
+  border-radius: 0.8rem;
+  background: rgba(24,24,27,0.98);
+  padding: 0.8rem;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+}
+
+.game-card-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.game-card-detail-card {
+  width: min(88vw, 27rem, calc((100dvh - 8rem) * 5 / 7));
+  margin: 0 auto;
+}
+
+.game-card-detail-card > [data-card-id] {
+  width: 100%;
+  max-width: none;
+  color: var(--app-fg);
+  touch-action: none;
 }
 
 .game-active-column {
@@ -707,6 +1034,10 @@ func pageCSS() string {
   .game-board {
     grid-template-columns: 2.5rem minmax(0, 1fr) 2.5rem;
     gap: 0.5rem;
+  }
+
+  .game-field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .game-cycle-button {

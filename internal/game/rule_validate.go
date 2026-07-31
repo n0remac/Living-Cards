@@ -331,6 +331,64 @@ func validateRuleEffect(
 		if !validZone(value.To) {
 			return fmt.Errorf("%s effect has unsupported destination zone %q", effect.kind, value.To)
 		}
+	case EffectStartEncounter:
+		value := effect.startEncounter
+		if value == nil || strings.TrimSpace(string(value.ID)) == "" {
+			return fmt.Errorf("%s effect requires id", effect.kind)
+		}
+		if len(value.Participants) < 2 {
+			return fmt.Errorf("%s effect requires at least two participants", effect.kind)
+		}
+		if value.Pressure < 0 || value.MaxPressure < 0 ||
+			(value.MaxPressure > 0 && value.Pressure > value.MaxPressure) ||
+			value.ReactionPressure < 0 {
+			return fmt.Errorf("%s effect pressure is out of range", effect.kind)
+		}
+		seen := map[CardInstanceID]bool{}
+		for _, participant := range value.Participants {
+			if _, ok := instancesByID[participant.InstanceID]; !ok {
+				return fmt.Errorf("%s effect references unknown participant %q", effect.kind, participant.InstanceID)
+			}
+			if seen[participant.InstanceID] {
+				return fmt.Errorf("%s effect repeats participant %q", effect.kind, participant.InstanceID)
+			}
+			if !validEncounterRole(participant.Role) {
+				return fmt.Errorf("%s effect has unsupported role %q", effect.kind, participant.Role)
+			}
+			seen[participant.InstanceID] = true
+		}
+	case EffectChangePressure:
+		if effect.changePressure == nil || effect.changePressure.Delta == 0 {
+			return fmt.Errorf("%s effect requires a non-zero delta", effect.kind)
+		}
+	case EffectChangeActorTrack:
+		value := effect.changeActorTrack
+		if value == nil || strings.TrimSpace(value.Track) == "" || value.Delta == 0 {
+			return fmt.Errorf("%s effect requires track and non-zero delta", effect.kind)
+		}
+		if err := validateRuleInstanceReference(trigger, value.RuleInstanceReference, instancesByID, effect.kind); err != nil {
+			return err
+		}
+	case EffectSetActorDisposition:
+		value := effect.setActorDisposition
+		if value == nil || !validDisposition(value.Disposition) {
+			return fmt.Errorf("%s effect requires a valid disposition", effect.kind)
+		}
+		if err := validateRuleInstanceReference(trigger, value.RuleInstanceReference, instancesByID, effect.kind); err != nil {
+			return err
+		}
+	case EffectAddActorStatus, EffectRemoveActorStatus:
+		value := effect.actorStatus
+		if value == nil || strings.TrimSpace(value.Status) == "" {
+			return fmt.Errorf("%s effect requires status", effect.kind)
+		}
+		if err := validateRuleInstanceReference(trigger, value.RuleInstanceReference, instancesByID, effect.kind); err != nil {
+			return err
+		}
+	case EffectResolveEncounter:
+		if effect.resolveEncounter == nil || strings.TrimSpace(effect.resolveEncounter.Outcome) == "" {
+			return fmt.Errorf("%s effect requires outcome", effect.kind)
+		}
 	default:
 		return fmt.Errorf("unsupported effect kind %q", effect.kind)
 	}

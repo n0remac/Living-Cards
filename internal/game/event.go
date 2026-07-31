@@ -3,33 +3,36 @@ package game
 type EventType string
 
 const (
-	EventSessionReset           EventType = "sessionReset"
-	EventCardCycled             EventType = "cardCycled"
-	EventCardCollected          EventType = "cardCollected"
-	EventCardInstantiated       EventType = "cardInstantiated"
-	EventCardMoved              EventType = "cardMoved"
-	EventCardPlayed             EventType = "cardPlayed"
-	EventCardConsumed           EventType = "cardConsumed"
-	EventFormSubmitted          EventType = "formSubmitted"
-	EventComponentSelected      EventType = "componentSelected"
-	EventComponentChanged       EventType = "componentChanged"
-	EventEditStarted            EventType = "editStarted"
-	EventEditComponentInstalled EventType = "editComponentInstalled"
-	EventEditSaved              EventType = "editSaved"
-	EventEditCanceled           EventType = "editCanceled"
-	EventFlagChanged            EventType = "flagChanged"
-	EventCardStateChanged       EventType = "cardStateChanged"
-	EventCardTagsRemoved        EventType = "cardTagsRemoved"
-	EventCardVariantChanged     EventType = "cardVariantChanged"
-	EventComponentMounted       EventType = "componentMounted"
-	EventDeckLoaded             EventType = "deckLoaded"
-	EventRuleResolved           EventType = "ruleResolved"
-	EventActionRejected         EventType = "actionRejected"
-	EventEncounterStarted       EventType = "encounterStarted"
-	EventEncounterPhaseChanged  EventType = "encounterPhaseChanged"
-	EventEncounterResolved      EventType = "encounterResolved"
-	EventActorResourceChanged   EventType = "actorResourceChanged"
-	EventMessage                EventType = "message"
+	EventSessionReset             EventType = "sessionReset"
+	EventCardCycled               EventType = "cardCycled"
+	EventCardCollected            EventType = "cardCollected"
+	EventCardInstantiated         EventType = "cardInstantiated"
+	EventCardMoved                EventType = "cardMoved"
+	EventCardPlayed               EventType = "cardPlayed"
+	EventCardConsumed             EventType = "cardConsumed"
+	EventFormSubmitted            EventType = "formSubmitted"
+	EventComponentSelected        EventType = "componentSelected"
+	EventComponentChanged         EventType = "componentChanged"
+	EventEditStarted              EventType = "editStarted"
+	EventEditComponentInstalled   EventType = "editComponentInstalled"
+	EventEditSaved                EventType = "editSaved"
+	EventEditCanceled             EventType = "editCanceled"
+	EventFlagChanged              EventType = "flagChanged"
+	EventCardStateChanged         EventType = "cardStateChanged"
+	EventCardTagsRemoved          EventType = "cardTagsRemoved"
+	EventCardVariantChanged       EventType = "cardVariantChanged"
+	EventComponentMounted         EventType = "componentMounted"
+	EventDeckLoaded               EventType = "deckLoaded"
+	EventRuleResolved             EventType = "ruleResolved"
+	EventActionRejected           EventType = "actionRejected"
+	EventEncounterStarted         EventType = "encounterStarted"
+	EventEncounterPhaseChanged    EventType = "encounterPhaseChanged"
+	EventEncounterResolved        EventType = "encounterResolved"
+	EventEncounterPressureChanged EventType = "encounterPressureChanged"
+	EventActorResourceChanged     EventType = "actorResourceChanged"
+	EventActorDispositionChanged  EventType = "actorDispositionChanged"
+	EventActorStatusChanged       EventType = "actorStatusChanged"
+	EventMessage                  EventType = "message"
 )
 
 type Event struct {
@@ -175,6 +178,24 @@ type ActorResourceChangedPayload struct {
 	Resource   string `json:"resource"`
 	Previous   int    `json:"previous"`
 	Current    int    `json:"current"`
+}
+
+type EncounterPressureChangedPayload struct {
+	EncounterID string `json:"encounterId"`
+	Previous    int    `json:"previous"`
+	Current     int    `json:"current"`
+}
+
+type ActorDispositionChangedPayload struct {
+	InstanceID string `json:"instanceId"`
+	Previous   string `json:"previous"`
+	Current    string `json:"current"`
+}
+
+type ActorStatusChangedPayload struct {
+	InstanceID string `json:"instanceId"`
+	Status     string `json:"status"`
+	Added      bool   `json:"added"`
 }
 
 type eventCollector struct {

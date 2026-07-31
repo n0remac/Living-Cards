@@ -7,12 +7,19 @@ The current game content is pure JSON under `internal/game/decks/`. Runtime code
 ## What Is In The App
 
 - A visible world-deck game served at `/`.
+- Responsive multi-card encounter fields with compact square participants, pressure and actor tracks, direct card targeting, and a long-press full-card detail view.
 - Server-rendered card previews built from strictly validated `card.Document` JSON, including background, border, text, shape, image, slider, text-input, and button components.
 - Data-driven deck packs with one strictly tagged rule model for card plays, form submissions, and world-component updates, plus typed component-property conditions and chained `loadDeck` effects.
 - A seeded puzzle path where opening the door loads the fuse room, using the fuse on the switch loads the generator room, and powering the generator reveals an Archive Terminal password puzzle.
 - Editable component cards that become controller bases through the full-screen edit workflow. Added component cards remain pending until save and are retained on cancel.
 - A registry-driven draft-card designer API for editing every component that declares controls and generating AI configs for background, border, text, and image.
 - In-memory state only; restarting the server resets the game and draft card state.
+
+The seeded world now opens with a small lockdown encounter. Encounter
+participants remain in their normal ownership zones, so collecting a
+participant moves it into the library without removing it from the field.
+Meaningful unresolved actions advance authored encounter pressure; unlocking
+the cell resolves the encounter while preserving its final field state.
 
 ## Requirements
 

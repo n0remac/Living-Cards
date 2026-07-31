@@ -19,7 +19,15 @@ func TestPageUsesCanonicalComponentVocabulary(t *testing.T) {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 	body := recorder.Body.String()
-	for _, marker := range []string{`src="/assets/app.js"`, `id="living-card-stage"`, `value="text"`, `id="add-text-component-btn"`} {
+	for _, marker := range []string{
+		`src="/assets/app.js"`,
+		`id="living-card-stage"`,
+		`value="text"`,
+		`id="add-text-component-btn"`,
+		`id="game-encounter"`,
+		`id="game-field-opposition"`,
+		`id="game-card-detail"`,
+	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("page missing %q", marker)
 		}
@@ -192,6 +200,9 @@ func TestGameSessionRendersWithInjectedRegistry(t *testing.T) {
 	for _, marker := range []string{
 		`"component_kind":"card"`,
 		`"preview_html"`,
+		`"encounter":{"id":"cell-lockdown"`,
+		`"role":"hostile"`,
+		`"tracks":{"alert":{"current":1,"max":4}}`,
 		`src=\"/assets/card-backgrounds/rusted-cell-door.webp\"`,
 		`background-color: #101713`,
 	} {

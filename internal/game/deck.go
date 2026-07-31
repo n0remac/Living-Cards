@@ -30,6 +30,7 @@ type DeckDefinition struct {
 	InitialInstances        []CardInstanceSpec `json:"initialInstances,omitempty"`
 	InitialMessage          string             `json:"initialMessage"`
 	InitialSolvedFlags      map[string]bool    `json:"initialSolvedFlags,omitempty"`
+	InitialEncounter        *EncounterState    `json:"initialEncounter,omitempty"`
 	Cards                   []CardDefinition   `json:"cards"`
 	Rules                   []RuleDefinition   `json:"rules,omitempty"`
 }
@@ -115,6 +116,7 @@ func decodeDeckDefinition(registry *cardcomponent.Registry, raw []byte) (DeckDef
 		InitialInstances        []CardInstanceSpec `json:"initialInstances,omitempty"`
 		InitialMessage          string             `json:"initialMessage"`
 		InitialSolvedFlags      map[string]bool    `json:"initialSolvedFlags,omitempty"`
+		InitialEncounter        *EncounterState    `json:"initialEncounter,omitempty"`
 		Cards                   []cardWire         `json:"cards"`
 		Rules                   []RuleDefinition   `json:"rules,omitempty"`
 	}
@@ -125,7 +127,8 @@ func decodeDeckDefinition(registry *cardcomponent.Registry, raw []byte) (DeckDef
 	definition := DeckDefinition{
 		ID: wire.ID, Name: wire.Name, InitialActiveCardID: wire.InitialActiveCardID,
 		InitialActiveInstanceID: wire.InitialActiveInstanceID, InitialInstances: wire.InitialInstances,
-		InitialMessage: wire.InitialMessage, InitialSolvedFlags: wire.InitialSolvedFlags, Rules: wire.Rules,
+		InitialMessage: wire.InitialMessage, InitialSolvedFlags: wire.InitialSolvedFlags,
+		InitialEncounter: wire.InitialEncounter, Rules: wire.Rules,
 	}
 	for _, cardWire := range wire.Cards {
 		card := CardDefinition{ID: CardDefinitionID(cardWire.ID), Name: cardWire.Name, Kind: cardWire.Kind, Tags: cardWire.Tags, Collectible: cardWire.Collectible, State: cardWire.State, InitialDocument: cardWire.InitialDocument, Documents: map[string]cardcomponent.Document{}}
@@ -148,6 +151,9 @@ func ValidateDeckDefinition(registry *cardcomponent.Registry, definition DeckDef
 	}
 	instancesByID, err := validateInitialInstances(definition, cardsByID, nil)
 	if err != nil {
+		return err
+	}
+	if err := validateInitialEncounter(definition, instancesByID); err != nil {
 		return err
 	}
 	return validateRuleDefinitions(registry, definition.Rules, cardsByID, instancesByID, nil)
@@ -174,7 +180,47 @@ func ValidateDeckPackDefinition(
 	if err != nil {
 		return err
 	}
+	if definition.InitialEncounter != nil {
+		return fmt.Errorf("deck pack %q cannot declare initialEncounter", definition.ID)
+	}
 	return validateRuleDefinitions(registry, definition.Rules, cardsByID, instancesByID, existingRuleIDs)
+}
+
+func validateInitialEncounter(definition DeckDefinition, instances map[CardInstanceID]CardDefinitionID) error {
+	if definition.InitialEncounter == nil {
+		return nil
+	}
+	encounter := definition.InitialEncounter
+	if strings.TrimSpace(string(encounter.ID)) == "" {
+		return fmt.Errorf("initial encounter id is required")
+	}
+	if !validEncounterPhase(encounter.Phase) {
+		return fmt.Errorf("initial encounter %q has unsupported phase %q", encounter.ID, encounter.Phase)
+	}
+	if len(encounter.Participants) < 2 {
+		return fmt.Errorf("initial encounter %q requires at least two participants", encounter.ID)
+	}
+	if encounter.Pressure < 0 || encounter.MaxPressure < 0 ||
+		(encounter.MaxPressure > 0 && encounter.Pressure > encounter.MaxPressure) {
+		return fmt.Errorf("initial encounter %q pressure is out of range", encounter.ID)
+	}
+	if encounter.ReactionPressure < 0 {
+		return fmt.Errorf("initial encounter %q reactionPressure cannot be negative", encounter.ID)
+	}
+	seen := map[CardInstanceID]bool{}
+	for _, participant := range encounter.Participants {
+		if _, ok := instances[participant.InstanceID]; !ok {
+			return fmt.Errorf("initial encounter %q references unknown participant %q", encounter.ID, participant.InstanceID)
+		}
+		if seen[participant.InstanceID] {
+			return fmt.Errorf("initial encounter %q repeats participant %q", encounter.ID, participant.InstanceID)
+		}
+		if !validEncounterRole(participant.Role) {
+			return fmt.Errorf("initial encounter %q has unsupported role %q", encounter.ID, participant.Role)
+		}
+		seen[participant.InstanceID] = true
+	}
+	return nil
 }
 
 func validateDeckCards(registry *cardcomponent.Registry, definition DeckDefinition) (map[CardDefinitionID]CardDefinition, error) {

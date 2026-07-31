@@ -1,8 +1,55 @@
 {
   "id": "seeded_world",
   "name": "Seeded World",
-  "initialActiveCardId": "rusted-cell-door",
-  "initialMessage": "Cycle through the cards. Some are useful; some only remember the room.",
+  "initialActiveInstanceId": "rusted-cell-door",
+  "initialInstances": [
+    {
+      "id": "rusted-cell-door",
+      "definitionId": "rusted-cell-door",
+      "zone": "scene",
+      "actor": {
+        "integrity": { "current": 4, "max": 4 },
+        "charge": { "current": 0, "max": 0 },
+        "tracks": {
+          "alert": { "current": 1, "max": 4 }
+        },
+        "disposition": "hostile",
+        "statuses": ["locked"]
+      }
+    },
+    { "id": "inventory-label", "definitionId": "inventory-label", "zone": "scene" },
+    { "id": "bent-iron-key", "definitionId": "bent-iron-key", "zone": "scene" },
+    { "id": "faded-photograph", "definitionId": "faded-photograph", "zone": "scene" },
+    {
+      "id": "sleeping-switch",
+      "definitionId": "sleeping-switch",
+      "zone": "scene",
+      "actor": {
+        "integrity": { "current": 2, "max": 2 },
+        "charge": { "current": 0, "max": 3 },
+        "tracks": {
+          "stability": { "current": 1, "max": 3 }
+        },
+        "disposition": "neutral",
+        "statuses": ["sleeping"]
+      }
+    }
+  ],
+  "initialEncounter": {
+    "id": "cell-lockdown",
+    "phase": "active",
+    "participants": [
+      { "instanceId": "rusted-cell-door", "role": "hostile" },
+      { "instanceId": "sleeping-switch", "role": "environmental" },
+      { "instanceId": "inventory-label", "role": "protected" },
+      { "instanceId": "bent-iron-key", "role": "player" },
+      { "instanceId": "faded-photograph", "role": "player" }
+    ],
+    "pressure": 0,
+    "maxPressure": 4,
+    "reactionPressure": 1
+  },
+  "initialMessage": "The cell responds to you. Inspect the field, collect what helps, and find a way through.",
   "initialSolvedFlags": {
     "doorUnlocked": false
   },
@@ -370,13 +417,13 @@
       "name": "Faded Photograph",
       "kind": "world",
       "tags": [
-        "decoy",
+        "memory",
         "worldbuilding",
         "image"
       ],
-      "collectible": false,
+      "collectible": true,
       "state": {
-        "useful": false
+        "useful": true
       },
       "initialDocument": "default",
       "documents": {
@@ -684,12 +731,92 @@
           "message": "The iron key catches. The door card unlocks."
         },
         {
+          "kind": "resolveEncounter",
+          "outcome": "escaped"
+        },
+        {
           "kind": "moveCard",
           "card": "source",
           "to": "discard"
         }
       ],
       "elseEffects": [
+        {
+          "kind": "moveCard",
+          "card": "source",
+          "to": "discard"
+        }
+      ]
+    },
+    {
+      "id": "photograph-calms-rusted-cell-door",
+      "trigger": {
+        "kind": "cardPlayed",
+        "source": {
+          "id": "faded-photograph"
+        },
+        "target": {
+          "id": "rusted-cell-door"
+        }
+      },
+      "conditions": [
+        {
+          "kind": "flagEquals",
+          "flag": "doorUnlocked",
+          "value": false
+        }
+      ],
+      "effects": [
+        {
+          "kind": "setFlag",
+          "flag": "doorUnlocked",
+          "value": true
+        },
+        {
+          "kind": "setCardState",
+          "card": "target",
+          "key": "locked",
+          "value": false
+        },
+        {
+          "kind": "removeCardTags",
+          "card": "target",
+          "tags": [
+            "locked"
+          ]
+        },
+        {
+          "kind": "setDocumentVariant",
+          "card": "target",
+          "variant": "open"
+        },
+        {
+          "kind": "setActorDisposition",
+          "card": "target",
+          "disposition": "friendly"
+        },
+        {
+          "kind": "removeActorStatus",
+          "card": "target",
+          "status": "locked"
+        },
+        {
+          "kind": "addActorStatus",
+          "card": "target",
+          "status": "remembered"
+        },
+        {
+          "kind": "loadDeck",
+          "deckId": "fuse_room"
+        },
+        {
+          "kind": "setMessage",
+          "message": "The door recognizes the room in the photograph and releases its lock."
+        },
+        {
+          "kind": "resolveEncounter",
+          "outcome": "persuaded"
+        },
         {
           "kind": "moveCard",
           "card": "source",

@@ -29,14 +29,21 @@ const (
 type RuleEffectKind string
 
 const (
-	EffectSetFlag            RuleEffectKind = "setFlag"
-	EffectSetCardState       RuleEffectKind = "setCardState"
-	EffectRemoveCardTags     RuleEffectKind = "removeCardTags"
-	EffectSetDocumentVariant RuleEffectKind = "setDocumentVariant"
-	EffectSetMessage         RuleEffectKind = "setMessage"
-	EffectLoadDeck           RuleEffectKind = "loadDeck"
-	EffectCopyComponent      RuleEffectKind = "copyComponent"
-	EffectMoveCard           RuleEffectKind = "moveCard"
+	EffectSetFlag             RuleEffectKind = "setFlag"
+	EffectSetCardState        RuleEffectKind = "setCardState"
+	EffectRemoveCardTags      RuleEffectKind = "removeCardTags"
+	EffectSetDocumentVariant  RuleEffectKind = "setDocumentVariant"
+	EffectSetMessage          RuleEffectKind = "setMessage"
+	EffectLoadDeck            RuleEffectKind = "loadDeck"
+	EffectCopyComponent       RuleEffectKind = "copyComponent"
+	EffectMoveCard            RuleEffectKind = "moveCard"
+	EffectStartEncounter      RuleEffectKind = "startEncounter"
+	EffectChangePressure      RuleEffectKind = "changePressure"
+	EffectChangeActorTrack    RuleEffectKind = "changeActorTrack"
+	EffectSetActorDisposition RuleEffectKind = "setActorDisposition"
+	EffectAddActorStatus      RuleEffectKind = "addActorStatus"
+	EffectRemoveActorStatus   RuleEffectKind = "removeActorStatus"
+	EffectResolveEncounter    RuleEffectKind = "resolveEncounter"
 )
 
 const (
@@ -393,16 +400,60 @@ type MoveCardEffectDefinition struct {
 	To Zone `json:"to"`
 }
 
+type StartEncounterEffectDefinition struct {
+	Kind             RuleEffectKind         `json:"kind"`
+	ID               EncounterID            `json:"id"`
+	Participants     []EncounterParticipant `json:"participants"`
+	Pressure         int                    `json:"pressure,omitempty"`
+	MaxPressure      int                    `json:"maxPressure,omitempty"`
+	ReactionPressure int                    `json:"reactionPressure,omitempty"`
+}
+
+type ChangePressureEffectDefinition struct {
+	Kind  RuleEffectKind `json:"kind"`
+	Delta int            `json:"delta"`
+}
+
+type ChangeActorTrackEffectDefinition struct {
+	Kind RuleEffectKind `json:"kind"`
+	RuleInstanceReference
+	Track string `json:"track"`
+	Delta int    `json:"delta"`
+}
+
+type SetActorDispositionEffectDefinition struct {
+	Kind RuleEffectKind `json:"kind"`
+	RuleInstanceReference
+	Disposition ActorDisposition `json:"disposition"`
+}
+
+type ActorStatusEffectDefinition struct {
+	Kind RuleEffectKind `json:"kind"`
+	RuleInstanceReference
+	Status string `json:"status"`
+}
+
+type ResolveEncounterEffectDefinition struct {
+	Kind    RuleEffectKind `json:"kind"`
+	Outcome string         `json:"outcome"`
+}
+
 type RuleEffect struct {
-	kind               RuleEffectKind
-	setFlag            *SetFlagEffectDefinition
-	setCardState       *SetCardStateEffectDefinition
-	removeCardTags     *RemoveCardTagsEffectDefinition
-	setDocumentVariant *SetDocumentVariantEffectDefinition
-	setMessage         *SetMessageEffectDefinition
-	loadDeck           *LoadDeckEffectDefinition
-	copyComponent      *CopyComponentEffectDefinition
-	moveCard           *MoveCardEffectDefinition
+	kind                RuleEffectKind
+	setFlag             *SetFlagEffectDefinition
+	setCardState        *SetCardStateEffectDefinition
+	removeCardTags      *RemoveCardTagsEffectDefinition
+	setDocumentVariant  *SetDocumentVariantEffectDefinition
+	setMessage          *SetMessageEffectDefinition
+	loadDeck            *LoadDeckEffectDefinition
+	copyComponent       *CopyComponentEffectDefinition
+	moveCard            *MoveCardEffectDefinition
+	startEncounter      *StartEncounterEffectDefinition
+	changePressure      *ChangePressureEffectDefinition
+	changeActorTrack    *ChangeActorTrackEffectDefinition
+	setActorDisposition *SetActorDispositionEffectDefinition
+	actorStatus         *ActorStatusEffectDefinition
+	resolveEncounter    *ResolveEncounterEffectDefinition
 }
 
 func (e RuleEffect) Kind() RuleEffectKind { return e.kind }
@@ -466,6 +517,39 @@ func MoveCardEffect(reference RuleInstanceReference, to Zone) RuleEffect {
 	return RuleEffect{kind: definition.Kind, moveCard: &definition}
 }
 
+func StartEncounterEffect(encounter EncounterState) RuleEffect {
+	definition := StartEncounterEffectDefinition{
+		Kind: EffectStartEncounter, ID: encounter.ID, Participants: cloneValue(encounter.Participants),
+		Pressure: encounter.Pressure, MaxPressure: encounter.MaxPressure, ReactionPressure: encounter.ReactionPressure,
+	}
+	return RuleEffect{kind: definition.Kind, startEncounter: &definition}
+}
+
+func ChangePressureEffect(delta int) RuleEffect {
+	definition := ChangePressureEffectDefinition{Kind: EffectChangePressure, Delta: delta}
+	return RuleEffect{kind: definition.Kind, changePressure: &definition}
+}
+
+func ChangeActorTrackEffect(reference RuleInstanceReference, track string, delta int) RuleEffect {
+	definition := ChangeActorTrackEffectDefinition{Kind: EffectChangeActorTrack, RuleInstanceReference: reference, Track: track, Delta: delta}
+	return RuleEffect{kind: definition.Kind, changeActorTrack: &definition}
+}
+
+func SetActorDispositionEffect(reference RuleInstanceReference, disposition ActorDisposition) RuleEffect {
+	definition := SetActorDispositionEffectDefinition{Kind: EffectSetActorDisposition, RuleInstanceReference: reference, Disposition: disposition}
+	return RuleEffect{kind: definition.Kind, setActorDisposition: &definition}
+}
+
+func ActorStatusEffect(kind RuleEffectKind, reference RuleInstanceReference, status string) RuleEffect {
+	definition := ActorStatusEffectDefinition{Kind: kind, RuleInstanceReference: reference, Status: status}
+	return RuleEffect{kind: definition.Kind, actorStatus: &definition}
+}
+
+func ResolveEncounterEffect(outcome string) RuleEffect {
+	definition := ResolveEncounterEffectDefinition{Kind: EffectResolveEncounter, Outcome: outcome}
+	return RuleEffect{kind: definition.Kind, resolveEncounter: &definition}
+}
+
 func (e RuleEffect) MarshalJSON() ([]byte, error) {
 	switch e.kind {
 	case EffectSetFlag:
@@ -484,6 +568,18 @@ func (e RuleEffect) MarshalJSON() ([]byte, error) {
 		return json.Marshal(e.copyComponent)
 	case EffectMoveCard:
 		return json.Marshal(e.moveCard)
+	case EffectStartEncounter:
+		return json.Marshal(e.startEncounter)
+	case EffectChangePressure:
+		return json.Marshal(e.changePressure)
+	case EffectChangeActorTrack:
+		return json.Marshal(e.changeActorTrack)
+	case EffectSetActorDisposition:
+		return json.Marshal(e.setActorDisposition)
+	case EffectAddActorStatus, EffectRemoveActorStatus:
+		return json.Marshal(e.actorStatus)
+	case EffectResolveEncounter:
+		return json.Marshal(e.resolveEncounter)
 	default:
 		return nil, fmt.Errorf("unsupported effect kind %q", e.kind)
 	}
@@ -551,6 +647,45 @@ func (e *RuleEffect) UnmarshalJSON(raw []byte) error {
 			return err
 		}
 		*e = MoveCardEffect(value.RuleInstanceReference, value.To)
+	case EffectStartEncounter:
+		var value StartEncounterEffectDefinition
+		if err := decodeStrictJSON(raw, &value); err != nil {
+			return err
+		}
+		*e = StartEncounterEffect(EncounterState{
+			ID: value.ID, Phase: EncounterPhaseActive, Participants: value.Participants,
+			Pressure: value.Pressure, MaxPressure: value.MaxPressure, ReactionPressure: value.ReactionPressure,
+		})
+	case EffectChangePressure:
+		var value ChangePressureEffectDefinition
+		if err := decodeStrictJSON(raw, &value); err != nil {
+			return err
+		}
+		*e = ChangePressureEffect(value.Delta)
+	case EffectChangeActorTrack:
+		var value ChangeActorTrackEffectDefinition
+		if err := decodeStrictJSON(raw, &value); err != nil {
+			return err
+		}
+		*e = ChangeActorTrackEffect(value.RuleInstanceReference, value.Track, value.Delta)
+	case EffectSetActorDisposition:
+		var value SetActorDispositionEffectDefinition
+		if err := decodeStrictJSON(raw, &value); err != nil {
+			return err
+		}
+		*e = SetActorDispositionEffect(value.RuleInstanceReference, value.Disposition)
+	case EffectAddActorStatus, EffectRemoveActorStatus:
+		var value ActorStatusEffectDefinition
+		if err := decodeStrictJSON(raw, &value); err != nil {
+			return err
+		}
+		*e = ActorStatusEffect(value.Kind, value.RuleInstanceReference, value.Status)
+	case EffectResolveEncounter:
+		var value ResolveEncounterEffectDefinition
+		if err := decodeStrictJSON(raw, &value); err != nil {
+			return err
+		}
+		*e = ResolveEncounterEffect(value.Outcome)
 	default:
 		return fmt.Errorf("unsupported effect kind %q", tag.Kind)
 	}

@@ -18,7 +18,18 @@ import {
 import { byID } from "../dom";
 import { componentKinds } from "../generated/component-catalog.generated";
 import { closeComponentOverlay, openComponentOverlay } from "../stage/componentControls";
-import type { ComponentKind, ComponentOverlay, ControlDescriptor, GameEvent, GameResult, GameSessionSnapshot, RenderedGameCard } from "../types";
+import type {
+  ComponentKind,
+  ComponentOverlay,
+  ControlDescriptor,
+  EncounterParticipant,
+  EncounterSnapshot,
+  GameEvent,
+  GameResult,
+  GameSessionSnapshot,
+  RenderedGameCard,
+  ResourceState,
+} from "../types";
 
 let latestSession: GameSessionSnapshot | null = null;
 let latestRevision = -1;
@@ -27,6 +38,8 @@ let busy = false;
 let controlBusy = false;
 let activePressState: ActivePressState | null = null;
 let editPressState: ActivePressState | null = null;
+let focusedFieldCardId = "";
+let expandedCardId = "";
 
 const longPressDelayMS = 560;
 const dragThresholdPX = 6;
@@ -75,6 +88,10 @@ function bindControls(): void {
     if (!active) return;
     void collect(active.id);
   });
+  byID<HTMLButtonElement>("game-encounter-collect")?.addEventListener("click", () => {
+    const card = encounterParticipantCard(focusedFieldCardId);
+    if (card?.collectible) void collect(card.id);
+  });
   byID<HTMLButtonElement>("reset-draft-btn")?.addEventListener("click", () => {
     void reset();
   });
@@ -117,6 +134,28 @@ function bindControls(): void {
   });
   bindSliderInputEvents(worldTarget, "world");
 
+  const detailCard = byID<HTMLElement>("game-card-detail-card");
+  detailCard?.addEventListener("pointerdown", onActivePointerDown);
+  detailCard?.addEventListener("pointermove", onActivePointerMove);
+  detailCard?.addEventListener("pointerup", onActivePointerUp);
+  detailCard?.addEventListener("pointercancel", onActivePointerCancel);
+  detailCard?.addEventListener("contextmenu", (event) => {
+    if (activeComponentHit(event)) event.preventDefault();
+  });
+  detailCard?.addEventListener("submit", (event) => {
+    const form = cardFormFromEvent(event);
+    if (!form) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void submitActiveForm(form);
+  });
+  bindSliderInputEvents(detailCard, "world");
+  byID<HTMLButtonElement>("game-card-detail-close")?.addEventListener("click", closeCardDetail);
+  byID<HTMLElement>("game-card-detail")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest("[data-card-detail-close]")) closeCardDetail();
+  });
+
   const editCanvas = byID<HTMLElement>("game-edit-canvas");
   editCanvas?.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -153,6 +192,7 @@ function bindControls(): void {
 
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      closeCardDetail();
       closeComponentOverlay(overlayRoot());
     }
   });
@@ -250,7 +290,7 @@ async function commitSliderInputValue(scope: SliderInputScope, input: HTMLInputE
       applyGameResult(await applyGameLibraryComponentControl(cardId, componentId, "slider", "value", value));
       return;
     }
-    const cardId = latestSession?.activeWorldCardId || activeCardPreview()?.dataset.cardId || "";
+    const cardId = activeCardPreview()?.dataset.cardId || latestSession?.activeWorldCardId || "";
     if (!cardId) return;
     applyGameResult(await applyGameCardComponentControl(cardId, componentId, "slider", "value", value));
   } catch (error) {
@@ -517,6 +557,11 @@ function activeComponentHit(event: MouseEvent | PointerEvent): ActiveComponentHi
 }
 
 function activeCardPreview(): HTMLElement | null {
+  const detail = byID<HTMLElement>("game-card-detail");
+  if (detail && !detail.hidden) {
+    const expanded = byID<HTMLElement>("game-card-detail-card")?.firstElementChild;
+    if (expanded instanceof HTMLElement) return expanded;
+  }
   const root = byID<HTMLElement>("game-world-card");
   const preview = root?.firstElementChild;
   return preview instanceof HTMLElement ? preview : null;
@@ -695,7 +740,8 @@ async function play(sourceCardId: string, targetCardId: string): Promise<void> {
 
 async function submitActiveForm(form: HTMLFormElement): Promise<void> {
   if (busy) return;
-  const cardId = latestSession?.activeWorldCardId || activeCardPreview()?.dataset.cardId || "";
+  const cardId = form.closest<HTMLElement>("[data-card-id]")?.dataset.cardId ||
+    activeCardPreview()?.dataset.cardId || latestSession?.activeWorldCardId || "";
   const formId = form.dataset.formId || "";
   if (!cardId || !formId) return;
 
@@ -705,7 +751,7 @@ async function submitActiveForm(form: HTMLFormElement): Promise<void> {
   });
 
   busy = true;
-  const submitButtons = Array.from(byID<HTMLElement>("game-world-card")?.querySelectorAll<HTMLButtonElement>("button[data-card-form-control]") || []);
+  const submitButtons = Array.from(form.querySelectorAll<HTMLButtonElement>("button[data-card-form-control]"));
   submitButtons.forEach((button) => {
     button.disabled = true;
   });
@@ -832,9 +878,10 @@ async function cancelEdit(): Promise<void> {
 function renderSession(session: GameSessionSnapshot, options: RenderOptions = {}): void {
   latestSession = session;
   renderActiveCard(session.activeWorldCard);
+  renderEncounter(session.encounter);
   renderLibrary(session.library);
   renderEditMode(session);
-  renderAction(session.activeWorldCard);
+  renderAction(encounterParticipantCard(focusedFieldCardId) || session.activeWorldCard);
   setStatus(session.message || "");
 
   const progress = byID<HTMLElement>("game-progress");
@@ -884,6 +931,236 @@ function renderActiveCard(card: RenderedGameCard): void {
   root.innerHTML = card.preview_html;
   root.dataset.activeCardId = card.id;
   root.dataset.cardKind = card.kind;
+}
+
+function renderEncounter(encounter?: EncounterSnapshot): void {
+  const shell = byID<HTMLElement>("card-workspace");
+  const root = byID<HTMLElement>("game-encounter");
+  const opposition = byID<HTMLElement>("game-field-opposition");
+  const player = byID<HTMLElement>("game-field-player");
+  if (!shell || !root || !opposition || !player) return;
+
+  const visible = Boolean(encounter);
+  shell.dataset.encounter = visible ? "true" : "false";
+  root.hidden = !visible;
+  opposition.innerHTML = "";
+  player.innerHTML = "";
+  if (!encounter) {
+    focusedFieldCardId = "";
+    closeCardDetail();
+    return;
+  }
+
+  const participantIds = new Set(encounter.participants.map((participant) => participant.card.id));
+  if (!participantIds.has(focusedFieldCardId)) {
+    focusedFieldCardId = participantIds.has(latestSession?.activeWorldCardId || "")
+      ? latestSession!.activeWorldCardId
+      : encounter.participants[0]?.card.id || "";
+  }
+
+  const title = byID<HTMLElement>("game-encounter-title");
+  const phase = byID<HTMLElement>("game-encounter-phase");
+  if (title) title.textContent = humanize(encounter.id);
+  if (phase) phase.textContent = encounter.phase === "resolved" && encounter.outcome
+    ? `Resolved · ${humanize(encounter.outcome)}`
+    : humanize(encounter.phase);
+  renderPressure(encounter);
+
+  encounter.participants.forEach((participant) => {
+    const lane = participant.role === "hostile" || participant.role === "environmental"
+      ? opposition
+      : player;
+    lane.appendChild(renderFieldCard(participant));
+  });
+
+  const expanded = encounter.participants.find((participant) => participant.card.id === expandedCardId);
+  if (expanded) {
+    openCardDetail(expanded, false);
+  } else if (expandedCardId) {
+    closeCardDetail();
+  }
+  renderEncounterAction();
+}
+
+function renderPressure(encounter: EncounterSnapshot): void {
+  const value = byID<HTMLElement>("game-pressure-value");
+  const fill = byID<HTMLElement>("game-pressure-fill");
+  const max = encounter.maxPressure || Math.max(encounter.pressure, 1);
+  if (value) value.textContent = encounter.maxPressure ? `${encounter.pressure}/${encounter.maxPressure}` : String(encounter.pressure);
+  if (fill) fill.style.width = `${Math.max(0, Math.min(100, (encounter.pressure / max) * 100))}%`;
+}
+
+function renderFieldCard(participant: EncounterParticipant): HTMLButtonElement {
+  const tile = document.createElement("button");
+  tile.type = "button";
+  tile.className = "game-field-card";
+  tile.dataset.cardId = participant.card.id;
+  tile.dataset.role = participant.role;
+  tile.dataset.focused = participant.card.id === focusedFieldCardId ? "true" : "false";
+  tile.setAttribute("aria-label", `${participant.card.name}, ${humanize(participant.role)}. Hold to inspect.`);
+
+  const preview = document.createElement("div");
+  preview.className = "game-field-preview";
+  preview.innerHTML = participant.card.preview_html;
+  const shade = document.createElement("div");
+  shade.className = "game-field-shade";
+  const meta = document.createElement("div");
+  meta.className = "game-field-meta";
+
+  const name = document.createElement("div");
+  name.className = "game-field-name";
+  name.textContent = participant.card.name;
+  meta.appendChild(name);
+
+  const badges = document.createElement("div");
+  badges.className = "game-field-badges";
+  [participant.role, participant.card.actor?.disposition, ...(participant.card.actor?.statuses || []).slice(0, 2)]
+    .filter((value): value is string => Boolean(value))
+    .forEach((value) => {
+      const badge = document.createElement("span");
+      badge.className = "game-field-badge";
+      badge.textContent = humanize(value);
+      badges.appendChild(badge);
+    });
+  meta.appendChild(badges);
+
+  const tracks = actorTracks(participant.card);
+  if (tracks.length) {
+    const trackRoot = document.createElement("div");
+    trackRoot.className = "game-actor-tracks";
+    tracks.slice(0, 3).forEach(([label, resource]) => trackRoot.appendChild(renderActorTrack(label, resource)));
+    meta.appendChild(trackRoot);
+  }
+
+  tile.append(preview, shade, meta);
+  bindFieldCardInteractions(tile, participant);
+  tile.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    tile.dataset.dropActive = "true";
+    event.dataTransfer!.dropEffect = "move";
+  });
+  tile.addEventListener("dragleave", () => delete tile.dataset.dropActive);
+  tile.addEventListener("drop", (event) => {
+    event.preventDefault();
+    delete tile.dataset.dropActive;
+    const sourceCardId = event.dataTransfer?.getData("text/plain") || "";
+    if (sourceCardId) void play(sourceCardId, participant.card.id);
+  });
+  return tile;
+}
+
+function bindFieldCardInteractions(tile: HTMLButtonElement, participant: EncounterParticipant): void {
+  let pointerId = -1;
+  let startX = 0;
+  let startY = 0;
+  let timer = 0;
+  let longPressFired = false;
+
+  const clear = (): void => {
+    window.clearTimeout(timer);
+    timer = 0;
+  };
+  tile.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    pointerId = event.pointerId;
+    startX = event.clientX;
+    startY = event.clientY;
+    longPressFired = false;
+    timer = window.setTimeout(() => {
+      longPressFired = true;
+      openCardDetail(participant);
+    }, longPressDelayMS);
+  });
+  tile.addEventListener("pointermove", (event) => {
+    if (event.pointerId !== pointerId) return;
+    if (Math.hypot(event.clientX - startX, event.clientY - startY) > dragThresholdPX) clear();
+  });
+  tile.addEventListener("pointerup", (event) => {
+    if (event.pointerId !== pointerId) return;
+    clear();
+    if (!longPressFired) focusFieldCard(participant.card.id);
+    pointerId = -1;
+  });
+  tile.addEventListener("pointercancel", clear);
+  tile.addEventListener("contextmenu", (event) => event.preventDefault());
+  tile.addEventListener("click", (event) => {
+    if (event.detail === 0) openCardDetail(participant);
+  });
+}
+
+function focusFieldCard(cardId: string): void {
+  focusedFieldCardId = cardId;
+  document.querySelectorAll<HTMLElement>(".game-field-card").forEach((tile) => {
+    tile.dataset.focused = tile.dataset.cardId === cardId ? "true" : "false";
+  });
+  renderEncounterAction();
+}
+
+function renderEncounterAction(): void {
+  const card = encounterParticipantCard(focusedFieldCardId);
+  const collect = byID<HTMLButtonElement>("game-encounter-collect");
+  if (collect) {
+    collect.hidden = !card?.collectible || Boolean(card.collected);
+    collect.disabled = !card?.collectible || Boolean(card.collected);
+  }
+}
+
+function encounterParticipantCard(cardId: string): RenderedGameCard | undefined {
+  return latestSession?.encounter?.participants.find((participant) => participant.card.id === cardId)?.card;
+}
+
+function actorTracks(card: RenderedGameCard): Array<[string, ResourceState]> {
+  if (!card.actor) return [];
+  const tracks: Array<[string, ResourceState]> = [];
+  if (card.actor.integrity.max > 0) tracks.push(["integrity", card.actor.integrity]);
+  if (card.actor.charge.max > 0) tracks.push(["charge", card.actor.charge]);
+  Object.entries(card.actor.tracks || {}).forEach(([name, resource]) => tracks.push([name, resource]));
+  return tracks;
+}
+
+function renderActorTrack(label: string, resource: ResourceState): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "game-actor-track-row";
+  const name = document.createElement("span");
+  name.textContent = humanize(label);
+  const track = document.createElement("span");
+  track.className = "game-actor-track";
+  const fill = document.createElement("span");
+  fill.className = "game-actor-track-fill";
+  fill.style.width = `${resource.max > 0 ? Math.max(0, Math.min(100, (resource.current / resource.max) * 100)) : 0}%`;
+  track.appendChild(fill);
+  const value = document.createElement("span");
+  value.textContent = `${resource.current}/${resource.max}`;
+  row.append(name, track, value);
+  return row;
+}
+
+function openCardDetail(participant: EncounterParticipant, focus = true): void {
+  const root = byID<HTMLElement>("game-card-detail");
+  const cardRoot = byID<HTMLElement>("game-card-detail-card");
+  const title = byID<HTMLElement>("game-card-detail-title");
+  const role = byID<HTMLElement>("game-card-detail-role");
+  if (!root || !cardRoot) return;
+  expandedCardId = participant.card.id;
+  if (focus) focusFieldCard(participant.card.id);
+  cardRoot.innerHTML = participant.card.preview_html;
+  if (title) title.textContent = participant.card.name;
+  if (role) role.textContent = humanize(participant.role);
+  root.hidden = false;
+  if (focus) byID<HTMLButtonElement>("game-card-detail-close")?.focus({ preventScroll: true });
+}
+
+function closeCardDetail(): void {
+  const root = byID<HTMLElement>("game-card-detail");
+  expandedCardId = "";
+  if (!root) return;
+  root.hidden = true;
+  const cardRoot = byID<HTMLElement>("game-card-detail-card");
+  if (cardRoot) cardRoot.innerHTML = "";
+}
+
+function humanize(value: string): string {
+  return value.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function renderEditMode(session: GameSessionSnapshot): void {
@@ -1136,9 +1413,12 @@ function overlayRoot(): HTMLElement | null {
 
 function setStatus(message: string, isError = false): void {
   const status = byID<HTMLElement>("game-status");
-  if (!status) return;
-  status.textContent = message;
-  status.dataset.tone = isError ? "error" : "info";
+  const encounterStatus = byID<HTMLElement>("game-encounter-status");
+  [status, encounterStatus].forEach((target) => {
+    if (!target) return;
+    target.textContent = message;
+    target.dataset.tone = isError ? "error" : "info";
+  });
 }
 
 function setEditStatus(message: string, isError = false): void {

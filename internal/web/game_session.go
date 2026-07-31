@@ -23,20 +23,36 @@ type RenderedGameCard struct {
 	Collected   bool                   `json:"collected,omitempty"`
 	State       map[string]any         `json:"state,omitempty"`
 	Document    cardcomponent.Document `json:"document"`
+	Actor       *game.ActorState       `json:"actor,omitempty"`
 	PreviewHTML string                 `json:"preview_html"`
 }
 
+type RenderedEncounterParticipant struct {
+	Role string           `json:"role"`
+	Card RenderedGameCard `json:"card"`
+}
+
+type RenderedEncounterSnapshot struct {
+	ID           string                         `json:"id"`
+	Phase        string                         `json:"phase"`
+	Participants []RenderedEncounterParticipant `json:"participants"`
+	Pressure     int                            `json:"pressure"`
+	MaxPressure  int                            `json:"maxPressure,omitempty"`
+	Outcome      string                         `json:"outcome,omitempty"`
+}
+
 type GameSessionSnapshot struct {
-	WorldDeck                []RenderedGameCard       `json:"worldDeck"`
-	ActiveWorldCard          RenderedGameCard         `json:"activeWorldCard"`
-	ActiveWorldCardID        string                   `json:"activeWorldCardId"`
-	ActiveIndex              int                      `json:"activeIndex"`
-	ActiveEditingComponentID string                   `json:"activeEditingComponentId,omitempty"`
-	ActiveEditingOverlay     *ComponentOverlay        `json:"activeEditingOverlay,omitempty"`
-	Library                  []RenderedGameCard       `json:"library"`
-	EditSession              *RenderedGameEditSession `json:"editSession,omitempty"`
-	SolvedFlags              map[string]bool          `json:"solvedFlags"`
-	Message                  string                   `json:"message,omitempty"`
+	WorldDeck                []RenderedGameCard         `json:"worldDeck"`
+	ActiveWorldCard          RenderedGameCard           `json:"activeWorldCard"`
+	ActiveWorldCardID        string                     `json:"activeWorldCardId"`
+	ActiveIndex              int                        `json:"activeIndex"`
+	ActiveEditingComponentID string                     `json:"activeEditingComponentId,omitempty"`
+	ActiveEditingOverlay     *ComponentOverlay          `json:"activeEditingOverlay,omitempty"`
+	Library                  []RenderedGameCard         `json:"library"`
+	EditSession              *RenderedGameEditSession   `json:"editSession,omitempty"`
+	Encounter                *RenderedEncounterSnapshot `json:"encounter,omitempty"`
+	SolvedFlags              map[string]bool            `json:"solvedFlags"`
+	Message                  string                     `json:"message,omitempty"`
 }
 
 type RenderedGameEditSession struct {
@@ -362,6 +378,25 @@ func renderGameSessionSnapshot(registry *cardcomponent.Registry, snapshot game.S
 			EditingOverlay:              gameEditingOverlay(registry, snapshot.EditSession.DraftCard, snapshot.EditSession.SelectedComponentID),
 		}
 	}
+	var encounter *RenderedEncounterSnapshot
+	if snapshot.Encounter != nil {
+		participants := make([]RenderedEncounterParticipant, 0, len(snapshot.Encounter.Participants))
+		for index, participant := range snapshot.Encounter.Participants {
+			prefix := fmt.Sprintf("game-encounter-%d-%s", index, safeDOMID(string(participant.Card.ID)))
+			rendered, err := renderGameCard(registry, participant.Card, prefix)
+			if err != nil {
+				return GameSessionSnapshot{}, err
+			}
+			participants = append(participants, RenderedEncounterParticipant{
+				Role: string(participant.Role), Card: rendered,
+			})
+		}
+		encounter = &RenderedEncounterSnapshot{
+			ID: string(snapshot.Encounter.ID), Phase: string(snapshot.Encounter.Phase),
+			Participants: participants, Pressure: snapshot.Encounter.Pressure,
+			MaxPressure: snapshot.Encounter.MaxPressure, Outcome: snapshot.Encounter.Outcome,
+		}
+	}
 	return GameSessionSnapshot{
 		WorldDeck:                worldDeck,
 		ActiveWorldCard:          activeWorldCard,
@@ -371,6 +406,7 @@ func renderGameSessionSnapshot(registry *cardcomponent.Registry, snapshot game.S
 		ActiveEditingOverlay:     gameActiveEditingOverlay(registry, snapshot.ActiveWorldCard, snapshot.ActiveEditingComponentID, snapshot.Library),
 		Library:                  library,
 		EditSession:              editSession,
+		Encounter:                encounter,
 		SolvedFlags:              cloneValue(snapshot.SolvedFlags),
 		Message:                  snapshot.Message,
 	}, nil
@@ -418,6 +454,7 @@ func renderGameCard(registry *cardcomponent.Registry, card game.CardSnapshot, do
 		Collected:   card.Collected,
 		State:       cloneValue(card.State),
 		Document:    cloneValue(card.Document),
+		Actor:       cloneValue(card.Actor),
 		PreviewHTML: preview.Render(),
 	}, nil
 }

@@ -200,7 +200,38 @@ export interface RenderedGameCard {
     component_template?: ComponentTemplate;
   };
   document: CardDocument;
+  actor?: ActorState;
   preview_html: string;
+}
+
+export interface ResourceState {
+  current: number;
+  max: number;
+}
+
+export interface ActorState {
+  integrity: ResourceState;
+  charge: ResourceState;
+  tracks?: Record<string, ResourceState>;
+  disposition: "neutral" | "friendly" | "hostile";
+  statuses?: string[];
+}
+
+export type EncounterRole = "player" | "ally" | "hostile" | "protected" | "environmental";
+export type EncounterPhase = "setup" | "active" | "resolution" | "resolved";
+
+export interface EncounterParticipant {
+  role: EncounterRole;
+  card: RenderedGameCard;
+}
+
+export interface EncounterSnapshot {
+  id: string;
+  phase: EncounterPhase;
+  participants: EncounterParticipant[];
+  pressure: number;
+  maxPressure?: number;
+  outcome?: string;
 }
 
 export interface GameEditSession {
@@ -220,6 +251,7 @@ export interface GameSessionSnapshot {
   activeEditingOverlay?: ComponentOverlay;
   library: RenderedGameCard[];
   editSession?: GameEditSession;
+  encounter?: EncounterSnapshot;
   solvedFlags: Record<string, boolean>;
   message?: string;
 }
@@ -250,7 +282,10 @@ export type GameEvent =
   | { sequence: number; type: "encounterStarted"; payload: { encounterId: string; phase: string } }
   | { sequence: number; type: "encounterPhaseChanged"; payload: { encounterId: string; previousPhase: string; phase: string } }
   | { sequence: number; type: "encounterResolved"; payload: { encounterId: string; outcome: string } }
-  | { sequence: number; type: "actorResourceChanged"; payload: { instanceId: string; resource: "integrity" | "charge"; previous: number; current: number } }
+  | { sequence: number; type: "encounterPressureChanged"; payload: { encounterId: string; previous: number; current: number } }
+  | { sequence: number; type: "actorResourceChanged"; payload: { instanceId: string; resource: string; previous: number; current: number } }
+  | { sequence: number; type: "actorDispositionChanged"; payload: { instanceId: string; previous: string; current: string } }
+  | { sequence: number; type: "actorStatusChanged"; payload: { instanceId: string; status: string; added: boolean } }
   | { sequence: number; type: "message"; message: string };
 
 export type GameCardZone = "scene" | "library" | "discard";

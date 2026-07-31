@@ -43,10 +43,11 @@ const (
 )
 
 type ActorState struct {
-	Integrity   ResourceState    `json:"integrity"`
-	Charge      ResourceState    `json:"charge"`
-	Disposition ActorDisposition `json:"disposition"`
-	Statuses    []string         `json:"statuses,omitempty"`
+	Integrity   ResourceState            `json:"integrity"`
+	Charge      ResourceState            `json:"charge"`
+	Tracks      map[string]ResourceState `json:"tracks,omitempty"`
+	Disposition ActorDisposition         `json:"disposition"`
+	Statuses    []string                 `json:"statuses,omitempty"`
 }
 
 type EncounterRole string
@@ -74,11 +75,13 @@ type EncounterParticipant struct {
 }
 
 type EncounterState struct {
-	ID           EncounterID            `json:"id"`
-	Phase        EncounterPhase         `json:"phase"`
-	Participants []EncounterParticipant `json:"participants"`
-	Pressure     int                    `json:"pressure"`
-	Outcome      string                 `json:"outcome,omitempty"`
+	ID               EncounterID            `json:"id"`
+	Phase            EncounterPhase         `json:"phase"`
+	Participants     []EncounterParticipant `json:"participants"`
+	Pressure         int                    `json:"pressure"`
+	MaxPressure      int                    `json:"maxPressure,omitempty"`
+	ReactionPressure int                    `json:"reactionPressure,omitempty"`
+	Outcome          string                 `json:"outcome,omitempty"`
 }
 
 type CardSnapshot struct {
@@ -90,6 +93,21 @@ type CardSnapshot struct {
 	Collected   bool                   `json:"collected,omitempty"`
 	State       map[string]any         `json:"state,omitempty"`
 	Document    cardcomponent.Document `json:"document"`
+	Actor       *ActorState            `json:"actor,omitempty"`
+}
+
+type EncounterParticipantSnapshot struct {
+	Role EncounterRole `json:"role"`
+	Card CardSnapshot  `json:"card"`
+}
+
+type EncounterSnapshot struct {
+	ID           EncounterID                    `json:"id"`
+	Phase        EncounterPhase                 `json:"phase"`
+	Participants []EncounterParticipantSnapshot `json:"participants"`
+	Pressure     int                            `json:"pressure"`
+	MaxPressure  int                            `json:"maxPressure,omitempty"`
+	Outcome      string                         `json:"outcome,omitempty"`
 }
 
 type CardMove struct {
@@ -208,6 +226,14 @@ func validateActor(actor ActorState) error {
 	}
 	if !validDisposition(actor.Disposition) {
 		return fmt.Errorf("unsupported actor disposition %q", actor.Disposition)
+	}
+	for track, resource := range actor.Tracks {
+		if strings.TrimSpace(track) == "" {
+			return fmt.Errorf("actor track name cannot be empty")
+		}
+		if err := validateResource("track "+track, resource); err != nil {
+			return err
+		}
 	}
 	for _, status := range actor.Statuses {
 		if strings.TrimSpace(status) == "" {
