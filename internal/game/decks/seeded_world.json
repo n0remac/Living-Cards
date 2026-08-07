@@ -659,20 +659,17 @@
         },
         {
           "kind": "setCardState",
-          "card": "target",
           "key": "locked",
           "value": false
         },
         {
           "kind": "removeCardTags",
-          "card": "target",
           "tags": [
             "locked"
           ]
         },
         {
           "kind": "setDocumentVariant",
-          "card": "target",
           "variant": "open"
         },
         {
@@ -682,18 +679,6 @@
         {
           "kind": "setMessage",
           "message": "The iron key catches. The door card unlocks."
-        },
-        {
-          "kind": "moveCard",
-          "card": "source",
-          "to": "discard"
-        }
-      ],
-      "elseEffects": [
-        {
-          "kind": "moveCard",
-          "card": "source",
-          "to": "discard"
         }
       ]
     }

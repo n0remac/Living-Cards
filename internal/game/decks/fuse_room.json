@@ -411,26 +411,26 @@
         },
         {
           "kind": "setCardState",
-          "card": "target",
+          "cardId": "sleeping-switch",
           "key": "powered",
           "value": true
         },
         {
           "kind": "setCardState",
-          "card": "target",
+          "cardId": "sleeping-switch",
           "key": "useful",
           "value": true
         },
         {
           "kind": "removeCardTags",
-          "card": "target",
+          "cardId": "sleeping-switch",
           "tags": [
             "decoy"
           ]
         },
         {
           "kind": "setDocumentVariant",
-          "card": "target",
+          "cardId": "sleeping-switch",
           "variant": "powered"
         },
         {
@@ -440,18 +440,6 @@
         {
           "kind": "setMessage",
           "message": "The glass fuse seats with a green snap. The sleeping switch flips awake."
-        },
-        {
-          "kind": "moveCard",
-          "card": "source",
-          "to": "discard"
-        }
-      ],
-      "elseEffects": [
-        {
-          "kind": "moveCard",
-          "card": "source",
-          "to": "discard"
         }
       ]
     }

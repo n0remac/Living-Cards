@@ -17,30 +17,34 @@ const (
 	KindClue  = "clue"
 )
 
+type Card struct {
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Kind        string                 `json:"kind"`
+	Tags        []string               `json:"tags,omitempty"`
+	Collectible bool                   `json:"collectible"`
+	Collected   bool                   `json:"collected,omitempty"`
+	State       map[string]any         `json:"state,omitempty"`
+	Document    cardcomponent.Document `json:"document"`
+}
+
 type Snapshot struct {
-	WorldDeck                []CardSnapshot  `json:"worldDeck"`
-	ActiveWorldCard          CardSnapshot    `json:"activeWorldCard"`
-	ActiveWorldCardID        CardInstanceID  `json:"activeWorldCardId"`
+	WorldDeck                []Card          `json:"worldDeck"`
+	ActiveWorldCard          Card            `json:"activeWorldCard"`
+	ActiveWorldCardID        string          `json:"activeWorldCardId"`
 	ActiveIndex              int             `json:"activeIndex"`
 	ActiveEditingComponentID string          `json:"activeEditingComponentId,omitempty"`
-	Library                  []CardSnapshot  `json:"library"`
+	Library                  []Card          `json:"library"`
 	EditSession              *EditSession    `json:"editSession,omitempty"`
 	SolvedFlags              map[string]bool `json:"solvedFlags"`
 	Message                  string          `json:"message,omitempty"`
 }
 
 type EditSession struct {
-	TargetCardID                CardInstanceID   `json:"targetCardId"`
-	DraftCard                   CardSnapshot     `json:"draftCard"`
-	PendingConsumedComponentIDs []CardInstanceID `json:"pendingConsumedComponentIds,omitempty"`
-	SelectedComponentID         string           `json:"selectedComponentId,omitempty"`
-}
-
-type editSessionState struct {
-	TargetInstanceID           CardInstanceID
-	DraftInstance              CardInstance
-	PendingConsumedInstanceIDs []CardInstanceID
-	SelectedComponentID        string
+	TargetCardID                string   `json:"targetCardId"`
+	DraftCard                   Card     `json:"draftCard"`
+	PendingConsumedComponentIDs []string `json:"pendingConsumedComponentIds,omitempty"`
+	SelectedComponentID         string   `json:"selectedComponentId,omitempty"`
 }
 
 type Session struct {
@@ -48,15 +52,15 @@ type Session struct {
 	revision                 uint64
 	registry                 *cardcomponent.Registry
 	deckDefinition           DeckDefinition
-	cardDefinitions          map[CardDefinitionID]CardDefinition
+	cardDefinitions          map[string]CardDefinition
+	documentVariants         map[string]map[string]cardcomponent.Document
 	loadedDecks              map[string]bool
 	rules                    []RuleDefinition
-	instances                map[CardInstanceID]CardInstance
-	zones                    ZoneState
-	activeSceneCardID        CardInstanceID
+	worldDeck                []Card
+	activeIndex              int
 	activeEditingComponentID string
-	editSession              *editSessionState
-	encounter                *EncounterState
+	library                  []Card
+	editSession              *EditSession
 	solvedFlags              map[string]bool
 	lastMessage              string
 }
@@ -85,26 +89,23 @@ func NewSessionFromDeck(registry *cardcomponent.Registry, definition DeckDefinit
 		return nil, err
 	}
 	definition = cloneValue(definition)
-	materialized, err := materializeDeck(definition)
+	worldDeck, documentVariants, cardDefinitions, activeIndex, err := materializeDeck(definition)
 	if err != nil {
 		return nil, err
 	}
-	session := &Session{
-		registry:          registry,
-		deckDefinition:    definition,
-		cardDefinitions:   materialized.definitions,
-		loadedDecks:       map[string]bool{definition.ID: true},
-		rules:             cloneValue(definition.Rules),
-		instances:         materialized.instances,
-		zones:             materialized.zones,
-		activeSceneCardID: materialized.activeID,
-		solvedFlags:       cloneValue(definition.InitialSolvedFlags),
-		lastMessage:       definition.InitialMessage,
-	}
-	if err := session.validateZoneState(); err != nil {
-		return nil, err
-	}
-	return session, nil
+	return &Session{
+		registry:         registry,
+		deckDefinition:   definition,
+		cardDefinitions:  cardDefinitions,
+		documentVariants: documentVariants,
+		loadedDecks:      map[string]bool{definition.ID: true},
+		rules:            cloneValue(definition.Rules),
+		worldDeck:        worldDeck,
+		activeIndex:      activeIndex,
+		library:          nil,
+		solvedFlags:      cloneValue(definition.InitialSolvedFlags),
+		lastMessage:      definition.InitialMessage,
+	}, nil
 }
 
 func (s *Session) resetLocked(events *eventCollector) (Snapshot, error) {
@@ -113,14 +114,14 @@ func (s *Session) resetLocked(events *eventCollector) (Snapshot, error) {
 		return Snapshot{}, failExecution(err)
 	}
 	s.cardDefinitions = next.cardDefinitions
+	s.documentVariants = next.documentVariants
 	s.loadedDecks = next.loadedDecks
 	s.rules = next.rules
-	s.instances = next.instances
-	s.zones = next.zones
-	s.activeSceneCardID = next.activeSceneCardID
+	s.worldDeck = next.worldDeck
+	s.activeIndex = next.activeIndex
 	s.activeEditingComponentID = next.activeEditingComponentID
+	s.library = next.library
 	s.editSession = next.editSession
-	s.encounter = next.encounter
 	s.solvedFlags = next.solvedFlags
 	s.lastMessage = next.lastMessage
 	events.emit(EventSessionReset, SessionResetPayload{})
@@ -129,37 +130,31 @@ func (s *Session) resetLocked(events *eventCollector) (Snapshot, error) {
 }
 
 func (s *Session) cycleLocked(direction string, events *eventCollector) (Snapshot, error) {
-	scene := s.zones[ZoneScene]
-	if len(scene) == 0 {
+	if len(s.worldDeck) == 0 {
 		return Snapshot{}, fmt.Errorf("world deck is empty")
 	}
-	activeIndex := s.zoneIndex(ZoneScene, s.activeSceneCardID)
-	if activeIndex < 0 {
-		return Snapshot{}, failExecution(fmt.Errorf("active scene card %q is not in the scene", s.activeSceneCardID))
-	}
-	previousCardID := s.activeSceneCardID
+	previousCardID := s.worldDeck[s.activeIndex].ID
 	normalizedDirection := strings.TrimSpace(direction)
 	switch normalizedDirection {
 	case "previous", "prev", "back":
-		activeIndex--
+		s.activeIndex--
 	case "", "next":
-		activeIndex++
+		s.activeIndex++
 		normalizedDirection = "next"
 	default:
 		return Snapshot{}, fmt.Errorf("direction must be next or previous")
 	}
-	if activeIndex < 0 {
-		activeIndex = len(scene) - 1
+	if s.activeIndex < 0 {
+		s.activeIndex = len(s.worldDeck) - 1
 	}
-	if activeIndex >= len(scene) {
-		activeIndex = 0
+	if s.activeIndex >= len(s.worldDeck) {
+		s.activeIndex = 0
 	}
-	s.activeSceneCardID = scene[activeIndex]
 	s.activeEditingComponentID = ""
 	events.emit(EventCardCycled, CardCycledPayload{
 		Direction:      normalizedDirection,
-		PreviousCardID: string(previousCardID),
-		ActiveCardID:   string(s.activeSceneCardID),
+		PreviousCardID: previousCardID,
+		ActiveCardID:   s.worldDeck[s.activeIndex].ID,
 	})
 	s.setMessageLocked("The next card slides into view.", events)
 	return s.commandSnapshotLocked()
@@ -167,77 +162,82 @@ func (s *Session) cycleLocked(direction string, events *eventCollector) (Snapsho
 
 func (s *Session) collectLocked(cardID string, events *eventCollector) (Snapshot, error) {
 	cardID = strings.TrimSpace(cardID)
-	if cardID == "" {
-		cardID = string(s.activeSceneCardID)
+	if cardID == "" && len(s.worldDeck) > 0 {
+		cardID = s.worldDeck[s.activeIndex].ID
 	}
-	instanceID := CardInstanceID(cardID)
-	index := s.zoneIndex(ZoneScene, instanceID)
+	index := s.worldCardIndex(cardID)
 	if index < 0 {
 		return Snapshot{}, fmt.Errorf("card %q is not in the world deck", cardID)
 	}
-	instance, _ := s.instance(instanceID)
-	definition, ok := s.cardDefinitions[instance.DefinitionID]
-	if !ok {
-		return Snapshot{}, failExecution(fmt.Errorf("card instance %q references missing definition %q", instanceID, instance.DefinitionID))
+	card := s.worldDeck[index]
+	if !card.Collectible {
+		return Snapshot{}, fmt.Errorf("%s cannot be collected", card.Name)
 	}
-	if !definition.Collectible {
-		return Snapshot{}, fmt.Errorf("%s cannot be collected", definition.Name)
+	libraryCard := cloneValue(card)
+	libraryCard.Collectible = false
+	libraryCard.Collected = true
+	s.library = append(s.library, libraryCard)
+	s.worldDeck = append(s.worldDeck[:index], s.worldDeck[index+1:]...)
+	switch {
+	case index < s.activeIndex:
+		s.activeIndex--
+	case s.activeIndex >= len(s.worldDeck):
+		s.activeIndex = 0
 	}
-	move, err := s.moveCard(instanceID, ZoneScene, ZoneLibrary)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	events.emit(EventCardMoved, CardMovedPayloadFromMove(move))
 	s.activeEditingComponentID = ""
 	events.emit(EventCardCollected, CardCollectedPayload{
-		CardID:             cardID,
+		CardID:             card.ID,
 		PreviousWorldIndex: index,
-		ActiveCardID:       string(s.activeSceneCardID),
+		ActiveCardID:       s.worldDeck[s.activeIndex].ID,
 	})
-	s.setMessageLocked(definition.Name+" moved into your library.", events)
+	s.setMessageLocked(card.Name+" moved into your library.", events)
 	return s.commandSnapshotLocked()
 }
 
 func (s *Session) playCardLocked(sourceCardID, targetCardID string, events *eventCollector) (Snapshot, error) {
 	sourceCardID = strings.TrimSpace(sourceCardID)
 	targetCardID = strings.TrimSpace(targetCardID)
-	sourceInstanceID := CardInstanceID(sourceCardID)
-	if s.zoneIndex(ZoneLibrary, sourceInstanceID) < 0 {
+	sourceIndex := s.libraryCardIndex(sourceCardID)
+	if sourceIndex < 0 {
 		return Snapshot{}, fmt.Errorf("card %q is not in your library", sourceCardID)
 	}
-	source, _ := s.instance(sourceInstanceID)
-	sourceDefinition := s.cardDefinitions[source.DefinitionID]
-	if targetCardID == "" {
-		targetCardID = string(s.activeSceneCardID)
+	source := cloneValue(s.library[sourceIndex])
+	if targetCardID == "" && len(s.worldDeck) > 0 {
+		targetCardID = s.worldDeck[s.activeIndex].ID
 	}
-	targetInstanceID := CardInstanceID(targetCardID)
-	if s.zoneIndex(ZoneScene, targetInstanceID) < 0 {
+	targetIndex := s.worldCardIndex(targetCardID)
+	if targetIndex < 0 {
 		return Snapshot{}, fmt.Errorf("target card %q is not in the world deck", targetCardID)
 	}
-	played := &CardPlayedPayload{SourceCardID: sourceCardID, TargetCardID: targetCardID}
+	target := s.worldDeck[targetIndex]
+	played := &CardPlayedPayload{SourceCardID: source.ID, TargetCardID: target.ID}
 	events.emit(EventCardPlayed, played)
-	resolution, err := s.runRules(CardPlayedSignal{SourceInstanceID: sourceInstanceID, TargetInstanceID: targetInstanceID}, events)
+	resolution, err := s.runRules(CardPlayedSignal{SourceCardID: source.ID, TargetCardID: target.ID}, events)
 	if err != nil {
 		return Snapshot{}, failExecution(err)
 	}
 	switch resolution.Outcome {
 	case RuleOutcomeSuccess:
 		played.Outcome = "resolved"
+		s.removeLibraryCard(source.ID)
+		events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
 		s.activeEditingComponentID = ""
 		s.ensureMessageEventLocked(events)
 		return s.commandSnapshotLocked()
 	case RuleOutcomeConditionsFailed:
 		played.Outcome = "conditionsFailed"
 		events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
+		s.removeLibraryCard(source.ID)
+		events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
 		s.activeEditingComponentID = ""
 		if !events.hasMessage() {
-			s.setMessageLocked(sourceDefinition.Name+" was played, but its conditions were not met.", events)
+			s.setMessageLocked(source.Name+" was played, but its conditions were not met.", events)
 		}
 		return s.commandSnapshotLocked()
 	case RuleOutcomeNoMatch:
 		played.Outcome = "noMatchingRule"
 		events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
-		s.setMessageLocked("Nothing on this card responds to "+sourceDefinition.Name+".", events)
+		s.setMessageLocked("Nothing on this card responds to "+source.Name+".", events)
 		return s.commandSnapshotLocked()
 	default:
 		return Snapshot{}, failExecution(fmt.Errorf("unsupported rule outcome %q", resolution.Outcome))
@@ -261,29 +261,28 @@ func (s *Session) submitFormLocked(cardID, formID string, fields map[string]stri
 			return Snapshot{}, fmt.Errorf("form field %q must be at most 128 characters", name)
 		}
 	}
-	instanceID := CardInstanceID(cardID)
-	targetIndex := s.zoneIndex(ZoneScene, instanceID)
+	targetIndex := s.worldCardIndex(cardID)
 	if targetIndex < 0 {
 		return Snapshot{}, fmt.Errorf("card %q is not in the world deck", cardID)
 	}
-	target, _ := s.instance(instanceID)
-	targetDefinition := s.cardDefinitions[target.DefinitionID]
+	target := s.worldDeck[targetIndex]
 	requiredFields, acceptsForm := s.formRuleFieldNames(target, formID)
 	if !acceptsForm {
-		return Snapshot{}, fmt.Errorf("form %q does not accept submissions for %s", formID, targetDefinition.Name)
+		return Snapshot{}, fmt.Errorf("form %q does not accept submissions for %s", formID, target.Name)
 	}
 	if !documentHasSubmitButton(s.registry, target.Document, formID) ||
 		!documentHasNamedFormFields(s.registry, target.Document, formID, requiredFields) {
-		return Snapshot{}, fmt.Errorf("form %q is not mounted on %s", formID, targetDefinition.Name)
+		return Snapshot{}, fmt.Errorf("form %q is not mounted on %s", formID, target.Name)
 	}
 	events.emit(EventFormSubmitted, FormSubmittedPayload{CardID: cardID, FormID: formID})
-	s.activeSceneCardID = instanceID
-	resolution, err := s.runRules(FormSubmittedSignal{InstanceID: instanceID, FormID: formID, Fields: cloneValue(fields)}, events)
+	resolution, err := s.runRules(FormSubmittedSignal{CardID: cardID, FormID: formID, Fields: cloneValue(fields)}, events)
 	if err != nil {
 		return Snapshot{}, failExecution(err)
 	}
+	s.activeIndex = targetIndex
 	switch resolution.Outcome {
 	case RuleOutcomeSuccess:
+		s.activeIndex = targetIndex
 		s.activeEditingComponentID = ""
 		s.ensureMessageEventLocked(events)
 		return s.commandSnapshotLocked()
@@ -292,24 +291,24 @@ func (s *Session) submitFormLocked(cardID, formID string, fields map[string]stri
 		s.ensureMessageEventLocked(events)
 		return s.commandSnapshotLocked()
 	case RuleOutcomeNoMatch:
-		return Snapshot{}, failExecution(fmt.Errorf("form %q stopped accepting submissions for %s", formID, targetDefinition.Name))
+		return Snapshot{}, failExecution(fmt.Errorf("form %q stopped accepting submissions for %s", formID, target.Name))
 	default:
 		return Snapshot{}, failExecution(fmt.Errorf("unsupported rule outcome %q", resolution.Outcome))
 	}
 }
 
 func (s *Session) selectWorldComponentLocked(cardID, componentID, componentKind string, events *eventCollector) (Snapshot, error) {
-	instance, node, err := s.worldComponentNode(cardID, componentID, componentKind)
+	index, node, err := s.worldComponentNode(cardID, componentID, componentKind)
 	if err != nil {
 		return Snapshot{}, err
 	}
 	if err := s.requireWorldComponentEditable(node.ComponentKind); err != nil {
 		return Snapshot{}, err
 	}
-	s.activeSceneCardID = instance.InstanceID
+	s.activeIndex = index
 	s.activeEditingComponentID = node.ID
 	events.emit(EventComponentSelected, ComponentPayload{
-		CardID:        string(instance.InstanceID),
+		CardID:        s.worldDeck[index].ID,
 		ComponentID:   node.ID,
 		ComponentKind: node.ComponentKind,
 		Scope:         "world",
@@ -319,7 +318,7 @@ func (s *Session) selectWorldComponentLocked(cardID, componentID, componentKind 
 }
 
 func (s *Session) changeWorldComponentLocked(cardID, componentID, componentKind, control string, value json.RawMessage, events *eventCollector) (Snapshot, error) {
-	instance, node, err := s.worldComponentNode(cardID, componentID, componentKind)
+	index, node, err := s.worldComponentNode(cardID, componentID, componentKind)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -330,18 +329,17 @@ func (s *Session) changeWorldComponentLocked(cardID, componentID, componentKind,
 	if err := applyGameComponentControl(s.registry, node, control, value); err != nil {
 		return Snapshot{}, err
 	}
-	s.instances[instance.InstanceID] = instance
-	s.activeSceneCardID = instance.InstanceID
+	s.activeIndex = index
 	s.activeEditingComponentID = node.ID
 	events.emit(EventComponentChanged, ComponentPayload{
-		CardID:        string(instance.InstanceID),
+		CardID:        s.worldDeck[index].ID,
 		ComponentID:   node.ID,
 		ComponentKind: node.ComponentKind,
 		Control:       control,
 		Scope:         "world",
 	})
 	_, err = s.runRules(ComponentUpdatedSignal{
-		InstanceID: instance.InstanceID, ComponentID: node.ID,
+		CardID: s.worldDeck[index].ID, ComponentID: node.ID,
 		ComponentKind: node.ComponentKind, Component: cloneValue(*node),
 	}, events)
 	if err != nil {
@@ -355,20 +353,19 @@ func (s *Session) changeWorldComponentLocked(cardID, componentID, componentKind,
 
 func (s *Session) startEditingLocked(cardID string, events *eventCollector) (Snapshot, error) {
 	cardID = strings.TrimSpace(cardID)
-	instanceID := CardInstanceID(cardID)
-	if s.zoneIndex(ZoneLibrary, instanceID) < 0 {
+	index := s.libraryCardIndex(cardID)
+	if index < 0 {
 		return Snapshot{}, fmt.Errorf("card %q is not in your library", cardID)
 	}
-	instance, _ := s.instance(instanceID)
-	definition := s.cardDefinitions[instance.DefinitionID]
-	_, isComponentCard := instance.State[componentTemplateStateKey]
-	if !stateBool(instance.State, "editable") && !isComponentCard {
-		return Snapshot{}, fmt.Errorf("%s cannot be edited", definition.Name)
+	card := s.library[index]
+	_, isComponentCard := card.State[componentTemplateStateKey]
+	if !stateBool(card.State, "editable") && !isComponentCard {
+		return Snapshot{}, fmt.Errorf("%s cannot be edited", card.Name)
 	}
-	draft := cloneValue(instance)
+	draft := cloneValue(card)
 	selectedComponentID := ""
 	if isComponentCard {
-		template, err := componentTemplateFromCard(s.registry, instance)
+		template, err := componentTemplateFromCard(s.registry, card)
 		if err != nil {
 			return Snapshot{}, err
 		}
@@ -379,14 +376,14 @@ func (s *Session) startEditingLocked(cardID string, events *eventCollector) (Sna
 		draft.Document = document
 		selectedComponentID = node.ID
 	}
-	s.editSession = &editSessionState{
-		TargetInstanceID:    instanceID,
-		DraftInstance:       draft,
+	s.editSession = &EditSession{
+		TargetCardID:        card.ID,
+		DraftCard:           draft,
 		SelectedComponentID: selectedComponentID,
 	}
 	s.activeEditingComponentID = ""
-	events.emit(EventEditStarted, EditPayload{CardID: cardID})
-	s.setMessageLocked("Editing "+definition.Name+".", events)
+	events.emit(EventEditStarted, EditPayload{CardID: card.ID})
+	s.setMessageLocked("Editing "+card.Name+".", events)
 	return s.commandSnapshotLocked()
 }
 
@@ -395,38 +392,37 @@ func (s *Session) installEditComponentLocked(componentCardID string, events *eve
 		return Snapshot{}, fmt.Errorf("start editing a card first")
 	}
 	componentCardID = strings.TrimSpace(componentCardID)
-	componentInstanceID := CardInstanceID(componentCardID)
-	if s.zoneIndex(ZoneLibrary, componentInstanceID) < 0 {
+	componentIndex := s.libraryCardIndex(componentCardID)
+	if componentIndex < 0 {
 		return Snapshot{}, fmt.Errorf("component card %q is not in your library", componentCardID)
 	}
-	if componentInstanceID == s.editSession.TargetInstanceID {
+	if componentCardID == s.editSession.TargetCardID {
 		return Snapshot{}, fmt.Errorf("a card cannot install itself")
 	}
-	if instanceIDInSlice(s.editSession.PendingConsumedInstanceIDs, componentInstanceID) {
-		component, _ := s.instance(componentInstanceID)
-		return Snapshot{}, fmt.Errorf("%s is already pending for this edit", s.cardDefinitions[component.DefinitionID].Name)
+	if stringInSlice(s.editSession.PendingConsumedComponentIDs, componentCardID) {
+		return Snapshot{}, fmt.Errorf("%s is already pending for this edit", s.library[componentIndex].Name)
 	}
 
-	component, _ := s.instance(componentInstanceID)
+	component := s.library[componentIndex]
 	template, err := componentTemplateFromCard(s.registry, component)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	document, node, err := s.registry.InstallTemplate(s.editSession.DraftInstance.Document, template)
+	document, node, err := s.registry.InstallTemplate(s.editSession.DraftCard.Document, template)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	s.editSession.DraftInstance.Document = document
+	s.editSession.DraftCard.Document = document
 	s.editSession.SelectedComponentID = node.ID
 
-	s.editSession.PendingConsumedInstanceIDs = append(s.editSession.PendingConsumedInstanceIDs, componentInstanceID)
+	s.editSession.PendingConsumedComponentIDs = append(s.editSession.PendingConsumedComponentIDs, componentCardID)
 	events.emit(EventEditComponentInstalled, EditComponentInstalledPayload{
-		CardID:          string(s.editSession.TargetInstanceID),
+		CardID:          s.editSession.TargetCardID,
 		ComponentCardID: componentCardID,
 		ComponentID:     node.ID,
 		ComponentKind:   node.ComponentKind,
 	})
-	s.setMessageLocked(s.cardDefinitions[component.DefinitionID].Name+" added to the draft.", events)
+	s.setMessageLocked(component.Name+" added to the draft.", events)
 	return s.commandSnapshotLocked()
 }
 
@@ -437,7 +433,7 @@ func (s *Session) selectEditComponentLocked(componentID, componentKind string, e
 	}
 	s.editSession.SelectedComponentID = node.ID
 	events.emit(EventComponentSelected, ComponentPayload{
-		CardID:        string(s.editSession.TargetInstanceID),
+		CardID:        s.editSession.TargetCardID,
 		ComponentID:   node.ID,
 		ComponentKind: node.ComponentKind,
 		Scope:         "edit",
@@ -457,27 +453,24 @@ func (s *Session) changeEditComponentLocked(componentID, control string, value j
 	}
 	s.editSession.SelectedComponentID = node.ID
 	events.emit(EventComponentChanged, ComponentPayload{
-		CardID:        string(s.editSession.TargetInstanceID),
+		CardID:        s.editSession.TargetCardID,
 		ComponentID:   node.ID,
 		ComponentKind: node.ComponentKind,
 		Control:       control,
 		Scope:         "edit",
 	})
-	definition := s.cardDefinitions[s.editSession.DraftInstance.DefinitionID]
-	s.setMessageLocked(fmt.Sprintf("%s %s updated.", definition.Name, control), events)
+	s.setMessageLocked(fmt.Sprintf("%s %s updated.", s.editSession.DraftCard.Name, control), events)
 	return s.commandSnapshotLocked()
 }
 
 func (s *Session) changeLibraryComponentLocked(cardID, componentID, componentKind, control string, value json.RawMessage, events *eventCollector) (Snapshot, error) {
 	cardID = strings.TrimSpace(cardID)
-	instanceID := CardInstanceID(cardID)
-	if s.zoneIndex(ZoneLibrary, instanceID) < 0 {
+	index := s.libraryCardIndex(cardID)
+	if index < 0 {
 		return Snapshot{}, fmt.Errorf("card %q is not in your library", cardID)
 	}
-	instance, _ := s.instance(instanceID)
-	definition := s.cardDefinitions[instance.DefinitionID]
-	root := &instance.Document.Root
-	node, err := componentNode(root, componentID, componentKind, definition.Name)
+	root := &s.library[index].Document.Root
+	node, err := componentNode(root, componentID, componentKind, s.library[index].Name)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -485,15 +478,14 @@ func (s *Session) changeLibraryComponentLocked(cardID, componentID, componentKin
 	if err := applyGameComponentControl(s.registry, node, control, value); err != nil {
 		return Snapshot{}, err
 	}
-	s.instances[instanceID] = instance
 	events.emit(EventComponentChanged, ComponentPayload{
-		CardID:        cardID,
+		CardID:        s.library[index].ID,
 		ComponentID:   node.ID,
 		ComponentKind: node.ComponentKind,
 		Control:       control,
 		Scope:         "library",
 	})
-	s.setMessageLocked(componentEditLabel(s.registry, node.ComponentKind)+" updated in "+definition.Name+".", events)
+	s.setMessageLocked(componentEditLabel(s.registry, node.ComponentKind)+" updated in "+s.library[index].Name+".", events)
 	return s.commandSnapshotLocked()
 }
 
@@ -501,35 +493,37 @@ func (s *Session) saveEditLocked(events *eventCollector) (Snapshot, error) {
 	if s.editSession == nil {
 		return Snapshot{}, fmt.Errorf("start editing a card first")
 	}
-	targetID := s.editSession.TargetInstanceID
-	if s.zoneIndex(ZoneLibrary, targetID) < 0 {
-		return Snapshot{}, fmt.Errorf("target card %q is not in your library", targetID)
+	targetIndex := s.libraryCardIndex(s.editSession.TargetCardID)
+	if targetIndex < 0 {
+		return Snapshot{}, fmt.Errorf("target card %q is not in your library", s.editSession.TargetCardID)
 	}
 
-	instance := cloneValue(s.editSession.DraftInstance)
-	instance.InstanceID = targetID
-	instance.Document.CardID = string(targetID)
-	if instance.State == nil {
-		instance.State = map[string]any{}
+	card := cloneValue(s.editSession.DraftCard)
+	card.ID = s.editSession.TargetCardID
+	card.Collectible = false
+	card.Collected = true
+	card.Document.CardID = card.ID
+	if card.State == nil {
+		card.State = map[string]any{}
 	}
-	instance.State["editable"] = true
+	card.State["editable"] = true
 
 	installedKinds := map[string]bool{}
-	for _, value := range appendStateStringOnce(instance.State["installedComponents"], "") {
+	for _, value := range appendStateStringOnce(card.State["installedComponents"], "") {
 		installedKinds[value] = true
 	}
-	if _, isComponentCard := instance.State[componentTemplateStateKey]; isComponentCard {
-		template, err := componentTemplateFromCard(s.registry, instance)
+	if _, isComponentCard := card.State[componentTemplateStateKey]; isComponentCard {
+		template, err := componentTemplateFromCard(s.registry, card)
 		if err != nil {
 			return Snapshot{}, err
 		}
 		installedKinds[template.ComponentKind] = true
-		delete(instance.State, componentTemplateStateKey)
-		instance.Tags = removeComponentCardTags(instance.Tags)
+		delete(card.State, componentTemplateStateKey)
+		card.Tags = removeComponentCardTags(card.Tags)
 	}
-	for _, componentID := range s.editSession.PendingConsumedInstanceIDs {
-		if component, ok := s.instance(componentID); ok {
-			if template, err := componentTemplateFromCard(s.registry, component); err == nil {
+	for _, componentCardID := range s.editSession.PendingConsumedComponentIDs {
+		if componentCard := s.libraryCard(componentCardID); componentCard != nil {
+			if template, err := componentTemplateFromCard(s.registry, *componentCard); err == nil {
 				installedKinds[template.ComponentKind] = true
 			}
 		}
@@ -540,28 +534,32 @@ func (s *Session) saveEditLocked(events *eventCollector) (Snapshot, error) {
 	}
 	sort.Strings(kinds)
 	for _, kind := range kinds {
-		instance.State["installedComponents"] = appendStateStringOnce(instance.State["installedComponents"], kind)
-		instance.Tags = appendStringOnce(instance.Tags, kind+"-controller")
+		card.State["installedComponents"] = appendStateStringOnce(card.State["installedComponents"], kind)
+		card.Tags = appendStringOnce(card.Tags, kind+"-controller")
 	}
 	if len(installedKinds) > 0 {
-		instance.Tags = appendStringOnce(instance.Tags, "controller")
-		instance.State["built"] = true
+		card.Tags = appendStringOnce(card.Tags, "controller")
+		card.State["built"] = true
 	}
 
-	s.instances[targetID] = instance
-	events.emit(EventEditSaved, EditPayload{CardID: string(targetID)})
-	for _, componentID := range s.editSession.PendingConsumedInstanceIDs {
-		if componentID == targetID {
-			continue
-		}
-		move, err := s.moveCard(componentID, ZoneLibrary, ZoneDiscard)
-		if err != nil {
-			return Snapshot{}, err
-		}
-		events.emit(EventCardMoved, CardMovedPayloadFromMove(move))
-		events.emit(EventCardConsumed, CardConsumedPayload{CardID: string(componentID)})
+	s.library[targetIndex] = card
+	events.emit(EventEditSaved, EditPayload{CardID: card.ID})
+	pending := map[string]bool{}
+	for _, cardID := range s.editSession.PendingConsumedComponentIDs {
+		pending[cardID] = true
 	}
-	s.setMessageLocked(s.cardDefinitions[instance.DefinitionID].Name+" saved to your library.", events)
+	if len(pending) > 0 {
+		next := make([]Card, 0, len(s.library))
+		for _, candidate := range s.library {
+			if pending[candidate.ID] && candidate.ID != card.ID {
+				events.emit(EventCardConsumed, CardConsumedPayload{CardID: candidate.ID})
+				continue
+			}
+			next = append(next, candidate)
+		}
+		s.library = next
+	}
+	s.setMessageLocked(card.Name+" saved to your library.", events)
 	s.editSession = nil
 	return s.commandSnapshotLocked()
 }
@@ -570,10 +568,10 @@ func (s *Session) cancelEditLocked(events *eventCollector) (Snapshot, error) {
 	if s.editSession == nil {
 		return Snapshot{}, fmt.Errorf("start editing a card first")
 	}
-	cardID := s.editSession.TargetInstanceID
-	cardName := s.cardDefinitions[s.editSession.DraftInstance.DefinitionID].Name
+	cardID := s.editSession.TargetCardID
+	cardName := s.editSession.DraftCard.Name
 	s.editSession = nil
-	events.emit(EventEditCanceled, EditPayload{CardID: string(cardID)})
+	events.emit(EventEditCanceled, EditPayload{CardID: cardID})
 	s.setMessageLocked("Canceled editing "+cardName+".", events)
 	return s.commandSnapshotLocked()
 }
@@ -598,38 +596,24 @@ func (s *Session) commandSnapshotLocked() (Snapshot, error) {
 }
 
 func (s *Session) snapshotLocked() (Snapshot, error) {
-	if err := s.validateZoneState(); err != nil {
-		return Snapshot{}, err
+	if len(s.worldDeck) == 0 {
+		return Snapshot{}, fmt.Errorf("world deck is empty")
 	}
-	worldDeck, err := s.zoneSnapshots(ZoneScene)
-	if err != nil {
-		return Snapshot{}, err
+	if s.activeIndex < 0 || s.activeIndex >= len(s.worldDeck) {
+		s.activeIndex = 0
 	}
-	library, err := s.zoneSnapshots(ZoneLibrary)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	activeIndex := s.zoneIndex(ZoneScene, s.activeSceneCardID)
-	activeCard, err := s.cardSnapshot(s.activeSceneCardID, ZoneScene)
-	if err != nil {
-		return Snapshot{}, err
-	}
+	worldDeck := cloneCards(s.worldDeck)
+	library := cloneCards(s.library)
 	var editSession *EditSession
 	if s.editSession != nil {
-		draft := s.editSession.DraftInstance
-		definition := s.cardDefinitions[draft.DefinitionID]
-		editSession = &EditSession{
-			TargetCardID:                s.editSession.TargetInstanceID,
-			DraftCard:                   CardSnapshot{ID: draft.InstanceID, Name: definition.Name, Kind: definition.Kind, Tags: cloneValue(draft.Tags), Collected: true, State: cloneValue(draft.State), Document: cloneValue(draft.Document)},
-			PendingConsumedComponentIDs: cloneValue(s.editSession.PendingConsumedInstanceIDs),
-			SelectedComponentID:         s.editSession.SelectedComponentID,
-		}
+		edit := cloneValue(*s.editSession)
+		editSession = &edit
 	}
 	return Snapshot{
 		WorldDeck:                worldDeck,
-		ActiveWorldCard:          activeCard,
-		ActiveWorldCardID:        s.activeSceneCardID,
-		ActiveIndex:              activeIndex,
+		ActiveWorldCard:          cloneValue(s.worldDeck[s.activeIndex]),
+		ActiveWorldCardID:        s.worldDeck[s.activeIndex].ID,
+		ActiveIndex:              s.activeIndex,
 		ActiveEditingComponentID: s.activeEditingComponentID,
 		Library:                  library,
 		EditSession:              editSession,
@@ -647,8 +631,7 @@ func (s *Session) editComponentNode(componentID, componentKind string) (*cardcom
 	if componentID == "" && componentKind == "" {
 		componentID = strings.TrimSpace(s.editSession.SelectedComponentID)
 	}
-	definition := s.cardDefinitions[s.editSession.DraftInstance.DefinitionID]
-	node, err := componentNode(&s.editSession.DraftInstance.Document.Root, componentID, componentKind, definition.Name)
+	node, err := componentNode(&s.editSession.DraftCard.Document.Root, componentID, componentKind, s.editSession.DraftCard.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -660,24 +643,25 @@ func (s *Session) editComponentNode(componentID, componentKind string) (*cardcom
 	return nil, fmt.Errorf("component kind %q does not support edit controls", node.ComponentKind)
 }
 
-func (s *Session) worldComponentNode(cardID, componentID, componentKind string) (CardInstance, *cardcomponent.Node, error) {
+func (s *Session) worldComponentNode(cardID, componentID, componentKind string) (int, *cardcomponent.Node, error) {
 	cardID = strings.TrimSpace(cardID)
 	componentID = strings.TrimSpace(componentID)
 	componentKind = strings.TrimSpace(componentKind)
 	if cardID == "" {
-		cardID = string(s.activeSceneCardID)
+		if len(s.worldDeck) == 0 {
+			return -1, nil, fmt.Errorf("world deck is empty")
+		}
+		cardID = s.worldDeck[s.activeIndex].ID
 	}
-	instanceID := CardInstanceID(cardID)
-	if s.zoneIndex(ZoneScene, instanceID) < 0 {
-		return CardInstance{}, nil, fmt.Errorf("card %q is not in the world deck", cardID)
+	index := s.worldCardIndex(cardID)
+	if index < 0 {
+		return -1, nil, fmt.Errorf("card %q is not in the world deck", cardID)
 	}
-	instance, _ := s.instance(instanceID)
-	definition := s.cardDefinitions[instance.DefinitionID]
-	node, err := componentNode(&instance.Document.Root, componentID, componentKind, definition.Name)
+	node, err := componentNode(&s.worldDeck[index].Document.Root, componentID, componentKind, s.worldDeck[index].Name)
 	if err != nil {
-		return CardInstance{}, nil, err
+		return -1, nil, err
 	}
-	return instance, node, nil
+	return index, node, nil
 }
 
 func componentNode(root *cardcomponent.Node, componentID, componentKind, cardName string) (*cardcomponent.Node, error) {
@@ -709,7 +693,74 @@ func (s *Session) requireWorldComponentEditable(componentKind string) error {
 	return nil
 }
 
-func (s *Session) formRuleFieldNames(target CardInstance, formID string) ([]string, bool) {
+func (s *Session) worldCardIndex(cardID string) int {
+	for index, card := range s.worldDeck {
+		if card.ID == cardID {
+			return index
+		}
+	}
+	return -1
+}
+
+func (s *Session) libraryCard(cardID string) *Card {
+	for index := range s.library {
+		if s.library[index].ID == cardID {
+			return &s.library[index]
+		}
+	}
+	return nil
+}
+
+func (s *Session) libraryCardIndex(cardID string) int {
+	for index := range s.library {
+		if s.library[index].ID == cardID {
+			return index
+		}
+	}
+	return -1
+}
+
+func (s *Session) removeLibraryCard(cardID string) bool {
+	index := s.libraryCardIndex(cardID)
+	if index < 0 {
+		return false
+	}
+	s.library = append(s.library[:index], s.library[index+1:]...)
+	return true
+}
+
+func materializeDeck(definition DeckDefinition) ([]Card, map[string]map[string]cardcomponent.Document, map[string]CardDefinition, int, error) {
+	worldDeck := make([]Card, 0, len(definition.Cards))
+	documentVariants := make(map[string]map[string]cardcomponent.Document, len(definition.Cards))
+	cardDefinitions := make(map[string]CardDefinition, len(definition.Cards))
+	activeIndex := -1
+	for index, card := range definition.Cards {
+		document, ok := card.Documents[card.InitialDocument]
+		if !ok {
+			return nil, nil, nil, 0, fmt.Errorf("card %q initial document variant %q does not exist", card.ID, card.InitialDocument)
+		}
+		cardDefinitions[card.ID] = cloneValue(card)
+		documentVariants[card.ID] = cloneValue(card.Documents)
+		worldDeck = append(worldDeck, Card{
+			ID:          card.ID,
+			Name:        card.Name,
+			Kind:        card.Kind,
+			Tags:        append([]string(nil), card.Tags...),
+			Collectible: card.Collectible,
+			State:       cloneValue(card.State),
+			Document:    cloneValue(document),
+		})
+		if card.ID == definition.InitialActiveCardID {
+			activeIndex = index
+		}
+	}
+	if activeIndex < 0 {
+		return nil, nil, nil, 0, fmt.Errorf("initial active card %q does not exist", definition.InitialActiveCardID)
+	}
+	return worldDeck, documentVariants, cardDefinitions, activeIndex, nil
+}
+
+func (s *Session) formRuleFieldNames(target Card, formID string) ([]string, bool) {
 	seen := map[string]bool{}
 	var names []string
 	accepts := false
@@ -781,8 +832,8 @@ func visitNodes(node cardcomponent.Node, visit func(cardcomponent.Node)) {
 	}
 }
 
-func cardMatches(card CardInstance, matcher CardMatcherDefinition) bool {
-	if strings.TrimSpace(matcher.ID) != "" && card.DefinitionID != CardDefinitionID(matcher.ID) {
+func cardMatches(card Card, matcher CardMatcherDefinition) bool {
+	if strings.TrimSpace(matcher.ID) != "" && card.ID != matcher.ID {
 		return false
 	}
 	for _, tag := range matcher.Tags {
@@ -793,7 +844,7 @@ func cardMatches(card CardInstance, matcher CardMatcherDefinition) bool {
 	return true
 }
 
-func (s *Session) loadDeck(deckID string, events *eventCollector) (bool, error) {
+func (s *Session) loadDeck(deckID string) (bool, error) {
 	deckID = strings.TrimSpace(deckID)
 	if s.loadedDecks[deckID] {
 		return false, nil
@@ -806,14 +857,10 @@ func (s *Session) loadDeck(deckID string, events *eventCollector) (bool, error) 
 	for _, rule := range s.rules {
 		existingRuleIDs[rule.ID] = true
 	}
-	existingInstances := make(map[CardInstanceID]CardDefinitionID, len(s.instances))
-	for instanceID, instance := range s.instances {
-		existingInstances[instanceID] = instance.DefinitionID
-	}
-	if err := ValidateDeckPackDefinition(s.registry, definition, s.cardDefinitions, existingInstances, existingRuleIDs); err != nil {
+	if err := ValidateDeckPackDefinition(s.registry, definition, s.cardDefinitions, existingRuleIDs); err != nil {
 		return false, err
 	}
-	materialized, err := materializeDeck(definition)
+	worldDeck, documentVariants, cardDefinitions, activeIndex, err := materializeDeck(definition)
 	if err != nil {
 		return false, err
 	}
@@ -825,35 +872,31 @@ func (s *Session) loadDeck(deckID string, events *eventCollector) (bool, error) 
 			s.solvedFlags[flag] = value
 		}
 	}
+	startIndex := len(s.worldDeck)
+	s.worldDeck = append(s.worldDeck, worldDeck...)
+	if s.documentVariants == nil {
+		s.documentVariants = map[string]map[string]cardcomponent.Document{}
+	}
+	for cardID, documents := range documentVariants {
+		s.documentVariants[cardID] = documents
+	}
 	if s.cardDefinitions == nil {
-		s.cardDefinitions = map[CardDefinitionID]CardDefinition{}
+		s.cardDefinitions = map[string]CardDefinition{}
 	}
-	for cardID, card := range materialized.definitions {
+	for cardID, card := range cardDefinitions {
 		s.cardDefinitions[cardID] = card
-	}
-	for _, spec := range initialInstanceSpecs(definition) {
-		instance := materialized.instances[spec.InstanceID]
-		s.instances[spec.InstanceID] = instance
-		zone := spec.Zone
-		if zone == "" {
-			zone = ZoneScene
-		}
-		s.zones[zone] = append(s.zones[zone], spec.InstanceID)
-		events.emit(EventCardInstantiated, CardInstantiatedPayload{
-			InstanceID: string(spec.InstanceID), DefinitionID: string(spec.DefinitionID), Zone: string(zone),
-		})
 	}
 	s.rules = append(s.rules, cloneValue(definition.Rules)...)
 	if s.loadedDecks == nil {
 		s.loadedDecks = map[string]bool{}
 	}
 	s.loadedDecks[definition.ID] = true
-	s.activeSceneCardID = materialized.activeID
+	s.activeIndex = startIndex + activeIndex
 	s.activeEditingComponentID = ""
 	return true, nil
 }
 
-func hasTag(card CardInstance, tag string) bool {
+func hasTag(card Card, tag string) bool {
 	for _, candidate := range card.Tags {
 		if candidate == tag {
 			return true
@@ -879,6 +922,17 @@ func removeComponentCardTags(values []string) []string {
 			continue
 		}
 		out = append(out, candidate)
+	}
+	return out
+}
+
+func cloneCards(cards []Card) []Card {
+	if len(cards) == 0 {
+		return nil
+	}
+	out := make([]Card, len(cards))
+	for index, card := range cards {
+		out[index] = cloneValue(card)
 	}
 	return out
 }

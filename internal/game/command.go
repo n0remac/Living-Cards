@@ -39,22 +39,22 @@ func (CycleCardCommand) Kind() CommandKind { return CommandCycleCard }
 func (CycleCardCommand) isCommand()        {}
 
 type CollectCardCommand struct {
-	CardID CardInstanceID
+	CardID string
 }
 
 func (CollectCardCommand) Kind() CommandKind { return CommandCollectCard }
 func (CollectCardCommand) isCommand()        {}
 
 type PlayCardCommand struct {
-	SourceCardID CardInstanceID
-	TargetCardID CardInstanceID
+	SourceCardID string
+	TargetCardID string
 }
 
 func (PlayCardCommand) Kind() CommandKind { return CommandPlayCard }
 func (PlayCardCommand) isCommand()        {}
 
 type SubmitFormCommand struct {
-	CardID CardInstanceID
+	CardID string
 	FormID string
 	Fields map[string]string
 }
@@ -63,7 +63,7 @@ func (SubmitFormCommand) Kind() CommandKind { return CommandSubmitForm }
 func (SubmitFormCommand) isCommand()        {}
 
 type SelectWorldComponentCommand struct {
-	CardID        CardInstanceID
+	CardID        string
 	ComponentID   string
 	ComponentKind string
 }
@@ -72,7 +72,7 @@ func (SelectWorldComponentCommand) Kind() CommandKind { return CommandSelectWorl
 func (SelectWorldComponentCommand) isCommand()        {}
 
 type ChangeWorldComponentCommand struct {
-	CardID        CardInstanceID
+	CardID        string
 	ComponentID   string
 	ComponentKind string
 	Control       string
@@ -83,14 +83,14 @@ func (ChangeWorldComponentCommand) Kind() CommandKind { return CommandChangeWorl
 func (ChangeWorldComponentCommand) isCommand()        {}
 
 type StartEditingCommand struct {
-	CardID CardInstanceID
+	CardID string
 }
 
 func (StartEditingCommand) Kind() CommandKind { return CommandStartEditing }
 func (StartEditingCommand) isCommand()        {}
 
 type InstallEditComponentCommand struct {
-	ComponentCardID CardInstanceID
+	ComponentCardID string
 }
 
 func (InstallEditComponentCommand) Kind() CommandKind { return CommandInstallEditComponent }
@@ -114,7 +114,7 @@ func (ChangeEditComponentCommand) Kind() CommandKind { return CommandChangeEditC
 func (ChangeEditComponentCommand) isCommand()        {}
 
 type ChangeLibraryComponentCommand struct {
-	CardID        CardInstanceID
+	CardID        string
 	ComponentID   string
 	ComponentKind string
 	Control       string

@@ -7,7 +7,7 @@ import (
 	"github.com/n0remac/Living-Card/internal/game"
 )
 
-func gameEditingOverlay(registry *cardcomponent.Registry, card game.CardSnapshot, selectedComponentID string) *ComponentOverlay {
+func gameEditingOverlay(registry *cardcomponent.Registry, card game.Card, selectedComponentID string) *ComponentOverlay {
 	selectedComponentID = strings.TrimSpace(selectedComponentID)
 	if selectedComponentID == "" {
 		return nil
@@ -18,7 +18,7 @@ func gameEditingOverlay(registry *cardcomponent.Registry, card game.CardSnapshot
 	return nil
 }
 
-func gameActiveEditingOverlay(registry *cardcomponent.Registry, card game.CardSnapshot, selectedComponentID string, _ []game.CardSnapshot) *ComponentOverlay {
+func gameActiveEditingOverlay(registry *cardcomponent.Registry, card game.Card, selectedComponentID string, _ []game.Card) *ComponentOverlay {
 	return gameEditingOverlay(registry, card, selectedComponentID)
 }
 

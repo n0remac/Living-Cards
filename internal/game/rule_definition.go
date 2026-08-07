@@ -36,7 +36,6 @@ const (
 	EffectSetMessage         RuleEffectKind = "setMessage"
 	EffectLoadDeck           RuleEffectKind = "loadDeck"
 	EffectCopyComponent      RuleEffectKind = "copyComponent"
-	EffectMoveCard           RuleEffectKind = "moveCard"
 )
 
 const (
@@ -44,21 +43,6 @@ const (
 	RuleCardTarget       = "target"
 	RuleComponentTrigger = "trigger"
 )
-
-type RuleCardReference string
-
-type RuleInstanceReference struct {
-	Card       RuleCardReference `json:"card,omitempty"`
-	InstanceID CardInstanceID    `json:"instanceId,omitempty"`
-}
-
-func SignaledInstance(reference string) RuleInstanceReference {
-	return RuleInstanceReference{Card: RuleCardReference(reference)}
-}
-
-func ExplicitInstance(instanceID string) RuleInstanceReference {
-	return RuleInstanceReference{InstanceID: CardInstanceID(instanceID)}
-}
 
 type RuleDefinition struct {
 	ID          string          `json:"id"`
@@ -350,22 +334,22 @@ type SetFlagEffectDefinition struct {
 }
 
 type SetCardStateEffectDefinition struct {
-	Kind RuleEffectKind `json:"kind"`
-	RuleInstanceReference
-	Key   string `json:"key"`
-	Value any    `json:"value"`
+	Kind   RuleEffectKind `json:"kind"`
+	CardID string         `json:"cardId,omitempty"`
+	Key    string         `json:"key"`
+	Value  any            `json:"value"`
 }
 
 type RemoveCardTagsEffectDefinition struct {
-	Kind RuleEffectKind `json:"kind"`
-	RuleInstanceReference
-	Tags []string `json:"tags"`
+	Kind   RuleEffectKind `json:"kind"`
+	CardID string         `json:"cardId,omitempty"`
+	Tags   []string       `json:"tags"`
 }
 
 type SetDocumentVariantEffectDefinition struct {
-	Kind RuleEffectKind `json:"kind"`
-	RuleInstanceReference
-	Variant string `json:"variant"`
+	Kind    RuleEffectKind `json:"kind"`
+	CardID  string         `json:"cardId,omitempty"`
+	Variant string         `json:"variant"`
 }
 
 type SetMessageEffectDefinition struct {
@@ -379,18 +363,12 @@ type LoadDeckEffectDefinition struct {
 }
 
 type CopyComponentEffectDefinition struct {
-	Kind              RuleEffectKind        `json:"kind"`
-	Source            string                `json:"source"`
-	Target            RuleInstanceReference `json:"target"`
-	ComponentKind     string                `json:"componentKind"`
-	SourceComponentID string                `json:"sourceComponentId,omitempty"`
-	ComponentID       string                `json:"componentId,omitempty"`
-}
-
-type MoveCardEffectDefinition struct {
-	Kind RuleEffectKind `json:"kind"`
-	RuleInstanceReference
-	To Zone `json:"to"`
+	Kind              RuleEffectKind `json:"kind"`
+	Source            string         `json:"source"`
+	CardID            string         `json:"cardId,omitempty"`
+	ComponentKind     string         `json:"componentKind"`
+	SourceComponentID string         `json:"sourceComponentId,omitempty"`
+	ComponentID       string         `json:"componentId,omitempty"`
 }
 
 type RuleEffect struct {
@@ -402,7 +380,6 @@ type RuleEffect struct {
 	setMessage         *SetMessageEffectDefinition
 	loadDeck           *LoadDeckEffectDefinition
 	copyComponent      *CopyComponentEffectDefinition
-	moveCard           *MoveCardEffectDefinition
 }
 
 func (e RuleEffect) Kind() RuleEffectKind { return e.kind }
@@ -412,30 +389,18 @@ func SetFlagEffect(flag string, value bool) RuleEffect {
 	return RuleEffect{kind: definition.Kind, setFlag: &definition}
 }
 
-func SetCardStateEffect(instanceID, key string, value any) RuleEffect {
-	return SetCardStateFor(ExplicitInstance(instanceID), key, value)
-}
-
-func SetCardStateFor(reference RuleInstanceReference, key string, value any) RuleEffect {
-	definition := SetCardStateEffectDefinition{Kind: EffectSetCardState, RuleInstanceReference: reference, Key: key, Value: value}
+func SetCardStateEffect(cardID, key string, value any) RuleEffect {
+	definition := SetCardStateEffectDefinition{Kind: EffectSetCardState, CardID: cardID, Key: key, Value: value}
 	return RuleEffect{kind: definition.Kind, setCardState: &definition}
 }
 
-func RemoveCardTagsEffect(instanceID string, tags []string) RuleEffect {
-	return RemoveCardTagsFrom(ExplicitInstance(instanceID), tags)
-}
-
-func RemoveCardTagsFrom(reference RuleInstanceReference, tags []string) RuleEffect {
-	definition := RemoveCardTagsEffectDefinition{Kind: EffectRemoveCardTags, RuleInstanceReference: reference, Tags: append([]string(nil), tags...)}
+func RemoveCardTagsEffect(cardID string, tags []string) RuleEffect {
+	definition := RemoveCardTagsEffectDefinition{Kind: EffectRemoveCardTags, CardID: cardID, Tags: append([]string(nil), tags...)}
 	return RuleEffect{kind: definition.Kind, removeCardTags: &definition}
 }
 
-func SetDocumentVariantEffect(instanceID, variant string) RuleEffect {
-	return SetDocumentVariantFor(ExplicitInstance(instanceID), variant)
-}
-
-func SetDocumentVariantFor(reference RuleInstanceReference, variant string) RuleEffect {
-	definition := SetDocumentVariantEffectDefinition{Kind: EffectSetDocumentVariant, RuleInstanceReference: reference, Variant: variant}
+func SetDocumentVariantEffect(cardID, variant string) RuleEffect {
+	definition := SetDocumentVariantEffectDefinition{Kind: EffectSetDocumentVariant, CardID: cardID, Variant: variant}
 	return RuleEffect{kind: definition.Kind, setDocumentVariant: &definition}
 }
 
@@ -449,21 +414,12 @@ func LoadDeckEffect(deckID string) RuleEffect {
 	return RuleEffect{kind: definition.Kind, loadDeck: &definition}
 }
 
-func CopyComponentEffect(source, instanceID, componentKind, sourceComponentID, componentID string) RuleEffect {
-	return CopyComponentTo(source, ExplicitInstance(instanceID), componentKind, sourceComponentID, componentID)
-}
-
-func CopyComponentTo(source string, target RuleInstanceReference, componentKind, sourceComponentID, componentID string) RuleEffect {
+func CopyComponentEffect(source, cardID, componentKind, sourceComponentID, componentID string) RuleEffect {
 	definition := CopyComponentEffectDefinition{
-		Kind: EffectCopyComponent, Source: source, Target: target, ComponentKind: componentKind,
+		Kind: EffectCopyComponent, Source: source, CardID: cardID, ComponentKind: componentKind,
 		SourceComponentID: sourceComponentID, ComponentID: componentID,
 	}
 	return RuleEffect{kind: definition.Kind, copyComponent: &definition}
-}
-
-func MoveCardEffect(reference RuleInstanceReference, to Zone) RuleEffect {
-	definition := MoveCardEffectDefinition{Kind: EffectMoveCard, RuleInstanceReference: reference, To: to}
-	return RuleEffect{kind: definition.Kind, moveCard: &definition}
 }
 
 func (e RuleEffect) MarshalJSON() ([]byte, error) {
@@ -482,8 +438,6 @@ func (e RuleEffect) MarshalJSON() ([]byte, error) {
 		return json.Marshal(e.loadDeck)
 	case EffectCopyComponent:
 		return json.Marshal(e.copyComponent)
-	case EffectMoveCard:
-		return json.Marshal(e.moveCard)
 	default:
 		return nil, fmt.Errorf("unsupported effect kind %q", e.kind)
 	}
@@ -514,19 +468,19 @@ func (e *RuleEffect) UnmarshalJSON(raw []byte) error {
 		if err := requireJSONField(raw, "value"); err != nil {
 			return err
 		}
-		*e = SetCardStateFor(value.RuleInstanceReference, value.Key, value.Value)
+		*e = SetCardStateEffect(value.CardID, value.Key, value.Value)
 	case EffectRemoveCardTags:
 		var value RemoveCardTagsEffectDefinition
 		if err := decodeStrictJSON(raw, &value); err != nil {
 			return err
 		}
-		*e = RemoveCardTagsFrom(value.RuleInstanceReference, value.Tags)
+		*e = RemoveCardTagsEffect(value.CardID, value.Tags)
 	case EffectSetDocumentVariant:
 		var value SetDocumentVariantEffectDefinition
 		if err := decodeStrictJSON(raw, &value); err != nil {
 			return err
 		}
-		*e = SetDocumentVariantFor(value.RuleInstanceReference, value.Variant)
+		*e = SetDocumentVariantEffect(value.CardID, value.Variant)
 	case EffectSetMessage:
 		var value SetMessageEffectDefinition
 		if err := decodeStrictJSON(raw, &value); err != nil {
@@ -544,13 +498,7 @@ func (e *RuleEffect) UnmarshalJSON(raw []byte) error {
 		if err := decodeStrictJSON(raw, &value); err != nil {
 			return err
 		}
-		*e = CopyComponentTo(value.Source, value.Target, value.ComponentKind, value.SourceComponentID, value.ComponentID)
-	case EffectMoveCard:
-		var value MoveCardEffectDefinition
-		if err := decodeStrictJSON(raw, &value); err != nil {
-			return err
-		}
-		*e = MoveCardEffect(value.RuleInstanceReference, value.To)
+		*e = CopyComponentEffect(value.Source, value.CardID, value.ComponentKind, value.SourceComponentID, value.ComponentID)
 	default:
 		return fmt.Errorf("unsupported effect kind %q", tag.Kind)
 	}
@@ -569,18 +517,18 @@ func requireJSONField(raw []byte, name string) error {
 }
 
 type CardPlayedSignal struct {
-	SourceInstanceID CardInstanceID
-	TargetInstanceID CardInstanceID
+	SourceCardID string
+	TargetCardID string
 }
 
 type FormSubmittedSignal struct {
-	InstanceID CardInstanceID
-	FormID     string
-	Fields     map[string]string
+	CardID string
+	FormID string
+	Fields map[string]string
 }
 
 type ComponentUpdatedSignal struct {
-	InstanceID    CardInstanceID
+	CardID        string
 	ComponentID   string
 	ComponentKind string
 	Component     cardcomponent.Node

@@ -48,12 +48,10 @@ func TestSessionRevisionLifecycle(t *testing.T) {
 func TestExecuteRollsBackMutationEventsAndRevisionOnFailure(t *testing.T) {
 	session := newCommandTestSession(t, nil)
 	mustExecuteResult(t, session, CollectCardCommand{CardID: "source"})
-	target := session.instances["target"]
-	if target.State == nil {
-		target.State = map[string]any{}
+	if session.worldDeck[session.worldCardIndex("target")].State == nil {
+		session.worldDeck[session.worldCardIndex("target")].State = map[string]any{}
 	}
-	target.State["integer"] = 7
-	session.instances["target"] = target
+	session.worldDeck[session.worldCardIndex("target")].State["integer"] = 7
 	session.rules = []RuleDefinition{{
 		ID:      "forced-failure",
 		Trigger: CardPlayedTrigger(CardMatcherDefinition{ID: "source"}, CardMatcherDefinition{ID: "target"}),
@@ -75,8 +73,8 @@ func TestExecuteRollsBackMutationEventsAndRevisionOnFailure(t *testing.T) {
 	if after.Revision != before.Revision || !reflect.DeepEqual(after.Snapshot, before.Snapshot) {
 		t.Fatalf("rollback mismatch:\nbefore=%#v\nafter=%#v", before, after)
 	}
-	if value, ok := session.instances["target"].State["integer"].(int); !ok || value != 7 {
-		t.Fatalf("rollback changed concrete state value: %#v", session.instances["target"].State["integer"])
+	if value, ok := session.worldDeck[session.worldCardIndex("target")].State["integer"].(int); !ok || value != 7 {
+		t.Fatalf("rollback changed concrete state value: %#v", session.worldDeck[session.worldCardIndex("target")].State["integer"])
 	}
 }
 
@@ -90,7 +88,7 @@ func TestCollectAndPlayEventsAreOrderedAndSemantic(t *testing.T) {
 	})
 
 	collected := mustExecuteResult(t, session, CollectCardCommand{CardID: "source"})
-	assertEventTypes(t, collected.Events, EventCardMoved, EventCardCollected, EventMessage)
+	assertEventTypes(t, collected.Events, EventCardCollected, EventMessage)
 
 	played := mustExecuteResult(t, session, PlayCardCommand{SourceCardID: "source", TargetCardID: "target"})
 	assertEventTypes(t, played.Events,
@@ -100,9 +98,8 @@ func TestCollectAndPlayEventsAreOrderedAndSemantic(t *testing.T) {
 		EventCardTagsRemoved,
 		EventCardVariantChanged,
 		EventMessage,
-		EventCardMoved,
-		EventCardConsumed,
 		EventRuleResolved,
+		EventCardConsumed,
 	)
 	if played.Snapshot.Message != "Opened." {
 		t.Fatalf("snapshot message = %q", played.Snapshot.Message)
@@ -215,7 +212,6 @@ func newCommandTestSession(t *testing.T, effects []RuleEffect) *Session {
 		},
 	}
 	if effects != nil {
-		effects = append(effects, MoveCardEffect(SignaledInstance(RuleCardSource), ZoneDiscard))
 		definition.Rules = []RuleDefinition{{
 			ID:      "command-rule",
 			Trigger: CardPlayedTrigger(CardMatcherDefinition{ID: "source"}, CardMatcherDefinition{ID: "target"}),
@@ -238,14 +234,8 @@ func newCommandTestSessionWithCondition(t *testing.T, required int) *Session {
 		Conditions: []RuleCondition{
 			ComponentPropertyEqualsCondition(RuleCardSource, "", card.KindSlider, "", "value", NumberRuleValue(float64(required))),
 		},
-		Effects: []RuleEffect{
-			SetMessageEffect("Matched."),
-			MoveCardEffect(SignaledInstance(RuleCardSource), ZoneDiscard),
-		},
-		ElseEffects: []RuleEffect{
-			SetMessageEffect("Wrong value."),
-			MoveCardEffect(SignaledInstance(RuleCardSource), ZoneDiscard),
-		},
+		Effects:     []RuleEffect{SetMessageEffect("Matched.")},
+		ElseEffects: []RuleEffect{SetMessageEffect("Wrong value.")},
 	}}
 	return session
 }

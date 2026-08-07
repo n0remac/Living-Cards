@@ -102,12 +102,3 @@ func stringInSlice(values []string, value string) bool {
 	}
 	return false
 }
-
-func instanceIDInSlice(values []CardInstanceID, value CardInstanceID) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
-}
