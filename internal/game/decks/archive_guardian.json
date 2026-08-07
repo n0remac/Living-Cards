@@ -1,0 +1,323 @@
+{
+  "id": "archive_guardian",
+  "name": "Archive Guardian",
+  "initialActiveCardId": "archive-guardian",
+  "initialMessage": "The archive guardian wakes. Collect Moss Stalker and Crystal Claws, install the claws, then attack twice.",
+  "initialSolvedFlags": {
+    "guardianDefeated": false
+  },
+  "cards": [
+    {
+      "id": "archive-guardian",
+      "name": "Archive Guardian",
+      "kind": "world",
+      "tags": ["archive", "guardian", "hostile"],
+      "collectible": false,
+      "state": {
+        "defeated": false,
+        "useful": true
+      },
+      "initialDocument": "active",
+      "documents": {
+        "active": {
+          "card_id": "archive-guardian",
+          "name": "Archive Guardian",
+          "root": {
+            "id": "archive-guardian-root",
+            "component_kind": "card",
+            "config": {"padding_px": 16, "shadow": "0 28px 70px rgba(127,29,29,0.45)"},
+            "children": [
+              {
+                "id": "archive-guardian-background",
+                "component_kind": "background",
+                "config": {
+                  "background_color": "#1f1014",
+                  "css": "background: radial-gradient(circle at 50% 30%, rgba(239,68,68,0.25), transparent 34%), linear-gradient(155deg, #281219 0%, #100a0d 100%);"
+                }
+              },
+              {
+                "id": "archive-guardian-title",
+                "component_kind": "text",
+                "config": {
+                  "content": "ARCHIVE GUARDIAN\nA six-point ward blocks the stacks.",
+                  "font_size_px": 22,
+                  "font_weight": 800,
+                  "color": "#fecaca",
+                  "align": "center",
+                  "position": "top-center",
+                  "x": 50,
+                  "y": 16,
+                  "background_color": "rgba(30,10,14,0.9)",
+                  "border_color": "#7f1d1d",
+                  "border_width_px": 1,
+                  "border_radius_px": 14,
+                  "padding_px": 12
+                }
+              },
+              {
+                "id": "archive-guardian-health",
+                "component_kind": "creature",
+                "config": {
+                  "health": 6,
+                  "max_health": 6,
+                  "x": 50,
+                  "y": 82,
+                  "width": 72,
+                  "health_color": "#ef4444",
+                  "background_color": "rgba(30,10,14,0.9)",
+                  "accent_color": "#fecaca"
+                }
+              }
+            ]
+          }
+        },
+        "defeated": {
+          "card_id": "archive-guardian",
+          "name": "Archive Guardian — Defeated",
+          "root": {
+            "id": "archive-guardian-defeated-root",
+            "component_kind": "card",
+            "config": {"padding_px": 16, "shadow": "0 20px 50px rgba(15,23,42,0.35)"},
+            "children": [
+              {
+                "id": "archive-guardian-defeated-background",
+                "component_kind": "background",
+                "config": {
+                  "background_color": "#111827",
+                  "css": "background: linear-gradient(155deg, #1f2937 0%, #0f172a 100%);"
+                }
+              },
+              {
+                "id": "archive-guardian-defeated-title",
+                "component_kind": "text",
+                "config": {
+                  "content": "GUARDIAN DISARMED\nThe archive stacks fall silent.",
+                  "font_size_px": 22,
+                  "font_weight": 800,
+                  "color": "#d1fae5",
+                  "align": "center",
+                  "position": "center",
+                  "x": 50,
+                  "y": 42,
+                  "background_color": "rgba(6,78,59,0.55)",
+                  "border_color": "#34d399",
+                  "border_width_px": 1,
+                  "border_radius_px": 14,
+                  "padding_px": 14
+                }
+              },
+              {
+                "id": "archive-guardian-health",
+                "component_kind": "creature",
+                "config": {
+                  "health": 0,
+                  "max_health": 6,
+                  "x": 50,
+                  "y": 82,
+                  "width": 72,
+                  "health_color": "#34d399",
+                  "background_color": "rgba(6,78,59,0.55)",
+                  "accent_color": "#d1fae5"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "moss-stalker",
+      "name": "Moss Stalker",
+      "kind": "item",
+      "tags": ["archive", "friendly-creature"],
+      "collectible": true,
+      "state": {
+        "editable": true,
+        "useful": true
+      },
+      "initialDocument": "default",
+      "documents": {
+        "default": {
+          "card_id": "moss-stalker",
+          "name": "Moss Stalker",
+          "root": {
+            "id": "moss-stalker-root",
+            "component_kind": "card",
+            "config": {"padding_px": 16, "shadow": "0 24px 60px rgba(20,83,45,0.38)"},
+            "children": [
+              {
+                "id": "moss-stalker-background",
+                "component_kind": "background",
+                "config": {
+                  "background_color": "#102219",
+                  "css": "background: radial-gradient(circle at 50% 28%, rgba(74,222,128,0.2), transparent 36%), linear-gradient(155deg, #183828 0%, #0b1711 100%);"
+                }
+              },
+              {
+                "id": "moss-stalker-title",
+                "component_kind": "text",
+                "config": {
+                  "content": "MOSS STALKER\nFriendly creature — edit to equip an attack.",
+                  "font_size_px": 20,
+                  "font_weight": 800,
+                  "color": "#dcfce7",
+                  "align": "center",
+                  "position": "top-center",
+                  "x": 50,
+                  "y": 17,
+                  "background_color": "rgba(10,40,24,0.88)",
+                  "border_color": "#22c55e",
+                  "border_width_px": 1,
+                  "border_radius_px": 14,
+                  "padding_px": 12
+                }
+              },
+              {
+                "id": "moss-stalker-health",
+                "component_kind": "creature",
+                "config": {
+                  "health": 4,
+                  "max_health": 4,
+                  "x": 50,
+                  "y": 82,
+                  "width": 72,
+                  "health_color": "#4ade80",
+                  "background_color": "rgba(10,40,24,0.88)",
+                  "accent_color": "#dcfce7"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "crystal-claws",
+      "name": "Crystal Claws",
+      "kind": "item",
+      "tags": ["archive", "component", "attack-component"],
+      "collectible": true,
+      "state": {
+        "useful": true,
+        "component_template": {
+          "component_kind": "attack",
+          "component_id": "crystal-claws-attack",
+          "config": {
+            "label": "Crystal Claws",
+            "power": 3,
+            "x": 50,
+            "y": 62,
+            "width": 64,
+            "background_color": "rgba(69,10,10,0.88)",
+            "accent_color": "#fca5a5"
+          }
+        }
+      },
+      "initialDocument": "default",
+      "documents": {
+        "default": {
+          "card_id": "crystal-claws",
+          "name": "Crystal Claws",
+          "root": {
+            "id": "crystal-claws-root",
+            "component_kind": "card",
+            "config": {"padding_px": 16, "shadow": "0 24px 60px rgba(127,29,29,0.38)"},
+            "children": [
+              {
+                "id": "crystal-claws-background",
+                "component_kind": "background",
+                "config": {
+                  "background_color": "#271316",
+                  "css": "background: radial-gradient(circle at 50% 28%, rgba(248,113,113,0.25), transparent 35%), linear-gradient(155deg, #3f171d 0%, #160b0d 100%);"
+                }
+              },
+              {
+                "id": "crystal-claws-title",
+                "component_kind": "text",
+                "config": {
+                  "content": "CRYSTAL CLAWS\nInstall this component on a creature.",
+                  "font_size_px": 20,
+                  "font_weight": 800,
+                  "color": "#fee2e2",
+                  "align": "center",
+                  "position": "top-center",
+                  "x": 50,
+                  "y": 18,
+                  "background_color": "rgba(69,10,10,0.88)",
+                  "border_color": "#ef4444",
+                  "border_width_px": 1,
+                  "border_radius_px": 14,
+                  "padding_px": 12
+                }
+              },
+              {
+                "id": "crystal-claws-preview",
+                "component_kind": "attack",
+                "config": {
+                  "label": "Crystal Claws",
+                  "power": 3,
+                  "x": 50,
+                  "y": 68,
+                  "width": 64,
+                  "background_color": "rgba(69,10,10,0.88)",
+                  "accent_color": "#fca5a5"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "rules": [
+    {
+      "id": "equipped-creature-attacks-guardian",
+      "trigger": {
+        "kind": "cardPlayed",
+        "source": {"tags": ["friendly-creature"]},
+        "target": {"id": "archive-guardian", "tags": ["hostile"]}
+      },
+      "retainSource": true,
+      "conditions": [
+        {"kind": "componentPresent", "card": "source", "componentKind": "creature"},
+        {"kind": "componentPresent", "card": "source", "componentKind": "attack"},
+        {"kind": "componentPresent", "card": "target", "componentKind": "creature"}
+      ],
+      "effects": [
+        {"kind": "attackCreature"}
+      ],
+      "elseEffects": [
+        {"kind": "setMessage", "message": "The creature needs an attack component before it can challenge the guardian."}
+      ]
+    },
+    {
+      "id": "guardian-health-resolves-combat",
+      "trigger": {
+        "kind": "componentUpdated",
+        "target": {"id": "archive-guardian"},
+        "componentKind": "creature",
+        "componentId": "archive-guardian-health"
+      },
+      "conditions": [
+        {
+          "kind": "componentPropertyEquals",
+          "component": "trigger",
+          "componentKind": "creature",
+          "componentId": "archive-guardian-health",
+          "property": "health",
+          "value": 0
+        }
+      ],
+      "effects": [
+        {"kind": "setFlag", "flag": "guardianDefeated", "value": true},
+        {"kind": "setCardState", "cardId": "archive-guardian", "key": "defeated", "value": true},
+        {"kind": "removeCardTags", "cardId": "archive-guardian", "tags": ["hostile"]},
+        {"kind": "setDocumentVariant", "cardId": "archive-guardian", "variant": "defeated"},
+        {"kind": "setMessage", "message": "The Archive Guardian shatters. The sealed stacks are yours to explore."}
+      ],
+      "elseEffects": [
+        {"kind": "setMessage", "message": "The guardian remains standing. Strike it again."}
+      ]
+    }
+  ]
+}

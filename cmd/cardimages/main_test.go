@@ -15,6 +15,9 @@ func TestLoadGameCardJobsIncludesEveryCurrentCard(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantIDs := []string{
+		"archive-guardian",
+		"crystal-claws",
+		"moss-stalker",
 		"archive-operator-log",
 		"archive-password-input-component",
 		"archive-submit-button-component",

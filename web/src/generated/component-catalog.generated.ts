@@ -2032,7 +2032,8 @@ export const componentCatalog = [
     "properties": [
       {
         "id": "value",
-        "kind": "number"
+        "kind": "number",
+        "writable": false
       }
     ],
     "install": {
@@ -2320,11 +2321,13 @@ export const componentCatalog = [
     "properties": [
       {
         "id": "form_id",
-        "kind": "string"
+        "kind": "string",
+        "writable": false
       },
       {
         "id": "name",
-        "kind": "string"
+        "kind": "string",
+        "writable": false
       }
     ],
     "roles": [
@@ -2527,7 +2530,8 @@ export const componentCatalog = [
     "properties": [
       {
         "id": "form_id",
-        "kind": "string"
+        "kind": "string",
+        "writable": false
       }
     ],
     "roles": [
@@ -2544,9 +2548,416 @@ export const componentCatalog = [
       "random_generation": false,
       "ai_generation": false
     }
+  },
+  {
+    "kind": "creature",
+    "label": "Creature",
+    "structure": "leaf",
+    "config": {
+      "kind": "object",
+      "fields": [
+        {
+          "json_name": "health",
+          "schema": {
+            "kind": "integer",
+            "minimum": 0,
+            "maximum": 999,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "max_health",
+          "schema": {
+            "kind": "integer",
+            "minimum": 1,
+            "maximum": 999,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "x",
+          "schema": {
+            "kind": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "y",
+          "schema": {
+            "kind": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "width",
+          "schema": {
+            "kind": "integer",
+            "minimum": 12,
+            "maximum": 100,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "health_color",
+          "schema": {
+            "kind": "string",
+            "format": "css_color",
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "background_color",
+          "schema": {
+            "kind": "string",
+            "format": "css_color",
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "accent_color",
+          "schema": {
+            "kind": "string",
+            "format": "css_color",
+            "nullable": false
+          },
+          "required": true
+        }
+      ],
+      "nullable": false
+    },
+    "default": {
+      "health": 4,
+      "max_health": 4,
+      "x": 50,
+      "y": 82,
+      "width": 72,
+      "health_color": "#4ade80",
+      "background_color": "rgba(15,23,42,0.86)",
+      "accent_color": "#bbf7d0"
+    },
+    "controls": [
+      {
+        "id": "x",
+        "config_path": "x",
+        "trait": "layout",
+        "kind": "range",
+        "label": "X position",
+        "property": "left",
+        "value_schema": {
+          "kind": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "nullable": false
+        },
+        "default": 50,
+        "step": 1
+      },
+      {
+        "id": "y",
+        "config_path": "y",
+        "trait": "layout",
+        "kind": "range",
+        "label": "Y position",
+        "property": "top",
+        "value_schema": {
+          "kind": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "nullable": false
+        },
+        "default": 82,
+        "step": 1
+      },
+      {
+        "id": "width",
+        "config_path": "width",
+        "trait": "layout",
+        "kind": "range",
+        "label": "Width",
+        "property": "width",
+        "value_schema": {
+          "kind": "integer",
+          "minimum": 12,
+          "maximum": 100,
+          "nullable": false
+        },
+        "default": 72,
+        "step": 1
+      },
+      {
+        "id": "health_color",
+        "config_path": "health_color",
+        "trait": "style",
+        "kind": "color",
+        "label": "Health color",
+        "property": "color",
+        "value_schema": {
+          "kind": "string",
+          "format": "css_color",
+          "nullable": false
+        },
+        "default": "#4ade80"
+      },
+      {
+        "id": "background_color",
+        "config_path": "background_color",
+        "trait": "style",
+        "kind": "color",
+        "label": "Background color",
+        "property": "background",
+        "value_schema": {
+          "kind": "string",
+          "format": "css_color",
+          "nullable": false
+        },
+        "default": "rgba(15,23,42,0.86)"
+      },
+      {
+        "id": "accent_color",
+        "config_path": "accent_color",
+        "trait": "style",
+        "kind": "color",
+        "label": "Accent color",
+        "property": "border-color",
+        "value_schema": {
+          "kind": "string",
+          "format": "css_color",
+          "nullable": false
+        },
+        "default": "#bbf7d0"
+      }
+    ],
+    "properties": [
+      {
+        "id": "health",
+        "kind": "number",
+        "writable": true
+      },
+      {
+        "id": "max_health",
+        "kind": "number",
+        "writable": false
+      }
+    ],
+    "capabilities": {
+      "editable": true,
+      "installable": false,
+      "has_properties": true,
+      "has_presets": false,
+      "random_generation": false,
+      "ai_generation": false
+    }
+  },
+  {
+    "kind": "attack",
+    "label": "Attack",
+    "structure": "leaf",
+    "config": {
+      "kind": "object",
+      "fields": [
+        {
+          "json_name": "label",
+          "schema": {
+            "kind": "string",
+            "min_length": 1,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "power",
+          "schema": {
+            "kind": "integer",
+            "minimum": 1,
+            "maximum": 999,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "x",
+          "schema": {
+            "kind": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "y",
+          "schema": {
+            "kind": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "width",
+          "schema": {
+            "kind": "integer",
+            "minimum": 12,
+            "maximum": 100,
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "background_color",
+          "schema": {
+            "kind": "string",
+            "format": "css_color",
+            "nullable": false
+          },
+          "required": true
+        },
+        {
+          "json_name": "accent_color",
+          "schema": {
+            "kind": "string",
+            "format": "css_color",
+            "nullable": false
+          },
+          "required": true
+        }
+      ],
+      "nullable": false
+    },
+    "default": {
+      "label": "Attack",
+      "power": 1,
+      "x": 50,
+      "y": 64,
+      "width": 64,
+      "background_color": "rgba(69,10,10,0.86)",
+      "accent_color": "#fca5a5"
+    },
+    "controls": [
+      {
+        "id": "label",
+        "config_path": "label",
+        "trait": "content",
+        "kind": "text",
+        "label": "Label",
+        "property": "label",
+        "value_schema": {
+          "kind": "string",
+          "min_length": 1,
+          "nullable": false
+        },
+        "default": "Attack"
+      },
+      {
+        "id": "x",
+        "config_path": "x",
+        "trait": "layout",
+        "kind": "range",
+        "label": "X position",
+        "property": "left",
+        "value_schema": {
+          "kind": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "nullable": false
+        },
+        "default": 50,
+        "step": 1
+      },
+      {
+        "id": "y",
+        "config_path": "y",
+        "trait": "layout",
+        "kind": "range",
+        "label": "Y position",
+        "property": "top",
+        "value_schema": {
+          "kind": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "nullable": false
+        },
+        "default": 64,
+        "step": 1
+      },
+      {
+        "id": "width",
+        "config_path": "width",
+        "trait": "layout",
+        "kind": "range",
+        "label": "Width",
+        "property": "width",
+        "value_schema": {
+          "kind": "integer",
+          "minimum": 12,
+          "maximum": 100,
+          "nullable": false
+        },
+        "default": 64,
+        "step": 1
+      },
+      {
+        "id": "background_color",
+        "config_path": "background_color",
+        "trait": "style",
+        "kind": "color",
+        "label": "Background color",
+        "property": "background",
+        "value_schema": {
+          "kind": "string",
+          "format": "css_color",
+          "nullable": false
+        },
+        "default": "rgba(69,10,10,0.86)"
+      },
+      {
+        "id": "accent_color",
+        "config_path": "accent_color",
+        "trait": "style",
+        "kind": "color",
+        "label": "Accent color",
+        "property": "border-color",
+        "value_schema": {
+          "kind": "string",
+          "format": "css_color",
+          "nullable": false
+        },
+        "default": "#fca5a5"
+      }
+    ],
+    "properties": [
+      {
+        "id": "power",
+        "kind": "number",
+        "writable": false
+      }
+    ],
+    "install": {
+      "policy": "append"
+    },
+    "capabilities": {
+      "editable": true,
+      "installable": true,
+      "has_properties": true,
+      "has_presets": false,
+      "random_generation": false,
+      "ai_generation": false
+    }
   }
 ] as const;
 
-export const componentKinds = ["card", "background", "border", "text", "shape", "image", "slider", "text_input", "button"] as const satisfies readonly ComponentKind[];
+export const componentKinds = ["card", "background", "border", "text", "shape", "image", "slider", "text_input", "button", "creature", "attack"] as const satisfies readonly ComponentKind[];
 export const generatedComponentKinds = ["card", "background", "border", "text", "shape", "image"] as const satisfies readonly GeneratedComponentKind[];
 export type ComponentCatalogMetadata = typeof componentCatalog;

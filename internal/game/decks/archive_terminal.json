@@ -724,8 +724,12 @@
           "variant": "unlocked"
         },
         {
+          "kind": "loadDeck",
+          "deckId": "archive_guardian"
+        },
+        {
           "kind": "setMessage",
-          "message": "NIGHTJAR accepted. The archive opens."
+          "message": "NIGHTJAR accepted. The archive opens—and its guardian awakens. Collect a creature and equip it to fight."
         }
       ],
       "elseEffects": [

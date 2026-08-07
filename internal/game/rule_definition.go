@@ -36,6 +36,7 @@ const (
 	EffectSetMessage         RuleEffectKind = "setMessage"
 	EffectLoadDeck           RuleEffectKind = "loadDeck"
 	EffectCopyComponent      RuleEffectKind = "copyComponent"
+	EffectAttackCreature     RuleEffectKind = "attackCreature"
 )
 
 const (
@@ -45,11 +46,12 @@ const (
 )
 
 type RuleDefinition struct {
-	ID          string          `json:"id"`
-	Trigger     RuleTrigger     `json:"trigger"`
-	Conditions  []RuleCondition `json:"conditions,omitempty"`
-	Effects     []RuleEffect    `json:"effects"`
-	ElseEffects []RuleEffect    `json:"elseEffects,omitempty"`
+	ID           string          `json:"id"`
+	Trigger      RuleTrigger     `json:"trigger"`
+	RetainSource bool            `json:"retainSource,omitempty"`
+	Conditions   []RuleCondition `json:"conditions,omitempty"`
+	Effects      []RuleEffect    `json:"effects"`
+	ElseEffects  []RuleEffect    `json:"elseEffects,omitempty"`
 }
 
 type CardMatcherDefinition struct {
@@ -371,6 +373,10 @@ type CopyComponentEffectDefinition struct {
 	ComponentID       string         `json:"componentId,omitempty"`
 }
 
+type AttackCreatureEffectDefinition struct {
+	Kind RuleEffectKind `json:"kind"`
+}
+
 type RuleEffect struct {
 	kind               RuleEffectKind
 	setFlag            *SetFlagEffectDefinition
@@ -380,6 +386,7 @@ type RuleEffect struct {
 	setMessage         *SetMessageEffectDefinition
 	loadDeck           *LoadDeckEffectDefinition
 	copyComponent      *CopyComponentEffectDefinition
+	attackCreature     *AttackCreatureEffectDefinition
 }
 
 func (e RuleEffect) Kind() RuleEffectKind { return e.kind }
@@ -422,6 +429,11 @@ func CopyComponentEffect(source, cardID, componentKind, sourceComponentID, compo
 	return RuleEffect{kind: definition.Kind, copyComponent: &definition}
 }
 
+func AttackCreatureEffect() RuleEffect {
+	definition := AttackCreatureEffectDefinition{Kind: EffectAttackCreature}
+	return RuleEffect{kind: definition.Kind, attackCreature: &definition}
+}
+
 func (e RuleEffect) MarshalJSON() ([]byte, error) {
 	switch e.kind {
 	case EffectSetFlag:
@@ -438,6 +450,8 @@ func (e RuleEffect) MarshalJSON() ([]byte, error) {
 		return json.Marshal(e.loadDeck)
 	case EffectCopyComponent:
 		return json.Marshal(e.copyComponent)
+	case EffectAttackCreature:
+		return json.Marshal(e.attackCreature)
 	default:
 		return nil, fmt.Errorf("unsupported effect kind %q", e.kind)
 	}
@@ -499,6 +513,12 @@ func (e *RuleEffect) UnmarshalJSON(raw []byte) error {
 			return err
 		}
 		*e = CopyComponentEffect(value.Source, value.CardID, value.ComponentKind, value.SourceComponentID, value.ComponentID)
+	case EffectAttackCreature:
+		var value AttackCreatureEffectDefinition
+		if err := decodeStrictJSON(raw, &value); err != nil {
+			return err
+		}
+		*e = AttackCreatureEffect()
 	default:
 		return fmt.Errorf("unsupported effect kind %q", tag.Kind)
 	}
@@ -551,7 +571,8 @@ const (
 )
 
 type RuleResolution struct {
-	RuleID      string
-	TriggerKind RuleTriggerKind
-	Outcome     RuleOutcome
+	RuleID       string
+	TriggerKind  RuleTriggerKind
+	Outcome      RuleOutcome
+	RetainSource bool
 }

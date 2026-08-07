@@ -44,6 +44,9 @@ func validateRuleDefinition(registry *cardcomponent.Registry, rule RuleDefinitio
 	if len(rule.Effects) == 0 {
 		return fmt.Errorf("effects are required")
 	}
+	if rule.RetainSource && rule.Trigger.kind != TriggerCardPlayed {
+		return fmt.Errorf("retainSource is only valid for %s rules", TriggerCardPlayed)
+	}
 	for _, condition := range rule.Conditions {
 		if err := validateRuleCondition(registry, rule.Trigger, condition); err != nil {
 			return err
@@ -310,6 +313,13 @@ func validateRuleEffect(
 		}
 		if _, _, err := ruleEffectCard(value.CardID, target, cardsByID, effect.kind); err != nil {
 			return err
+		}
+	case EffectAttackCreature:
+		if effect.attackCreature == nil {
+			return fmt.Errorf("%s effect payload is missing", effect.kind)
+		}
+		if trigger.kind != TriggerCardPlayed {
+			return fmt.Errorf("%s effect is only valid for %s", effect.kind, TriggerCardPlayed)
 		}
 	default:
 		return fmt.Errorf("unsupported effect kind %q", effect.kind)

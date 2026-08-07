@@ -258,6 +258,8 @@ func loadGameCardJobs(root string, seed int64) ([]plannedAsset, error) {
 
 func deckSetting(deckID string) string {
 	switch deckID {
+	case "archive_guardian":
+		return "the awakened archive stacks"
 	case "archive_terminal":
 		return "the overgrown archive terminal chamber"
 	case "fuse_room":

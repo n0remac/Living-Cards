@@ -10,6 +10,7 @@ import (
 
 	"github.com/n0remac/Living-Card/internal/components/card"
 	"github.com/n0remac/Living-Card/internal/components/catalog"
+	"github.com/n0remac/Living-Card/internal/game"
 	"github.com/n0remac/Living-Card/internal/ollama"
 )
 
@@ -269,6 +270,44 @@ func TestUnknownRoutesAndMethods(t *testing.T) {
 	}
 	if recorder := request(t, mux, http.MethodPost, "/api/draft-card", `{}`); recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("method status = %d", recorder.Code)
+	}
+}
+
+func TestCreatureAttackEventSerializesThroughGameHandler(t *testing.T) {
+	registry := catalog.MustNew()
+	definition, err := game.LoadEmbeddedDeck(registry, game.ArchiveGuardianDeckDefinition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := game.NewSessionFromDeck(registry, definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []game.Command{
+		game.CollectCardCommand{CardID: "moss-stalker"},
+		game.CollectCardCommand{CardID: "crystal-claws"},
+		game.StartEditingCommand{CardID: "moss-stalker"},
+		game.InstallEditComponentCommand{ComponentCardID: "crystal-claws"},
+		game.SaveEditCommand{},
+	} {
+		if _, err := session.Execute(command); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/game/", gameResourceHandler(registry, session))
+	recorder := request(t, mux, http.MethodPost, "/api/game/play-card", `{"sourceCardId":"moss-stalker","targetCardId":"archive-guardian"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	body := recorder.Body.String()
+	for _, field := range []string{
+		`"type":"creatureAttacked"`, `"sourceCardId":"moss-stalker"`, `"targetCardId":"archive-guardian"`,
+		`"attack":3`, `"previousHealth":6`, `"health":3`,
+	} {
+		if !strings.Contains(body, field) {
+			t.Fatalf("attack response missing %s: %s", field, body)
+		}
 	}
 }
 

@@ -19,7 +19,7 @@ import (
 
 func TestDefaultCatalogOrderAndCanonicalVocabulary(t *testing.T) {
 	registry := catalog.MustNew()
-	want := []string{card.Kind, card.KindBackground, card.KindBorder, card.KindText, card.KindShape, card.KindImage, card.KindSlider, card.KindTextInput, card.KindButton}
+	want := []string{card.Kind, card.KindBackground, card.KindBorder, card.KindText, card.KindShape, card.KindImage, card.KindSlider, card.KindTextInput, card.KindButton, card.KindCreature, card.KindAttack}
 	definitions := registry.Definitions()
 	if len(definitions) != len(want) {
 		t.Fatalf("definitions = %d, want %d", len(definitions), len(want))

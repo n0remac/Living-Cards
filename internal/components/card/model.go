@@ -22,6 +22,8 @@ const (
 	KindSlider          = "slider"
 	KindTextInput       = "text_input"
 	KindButton          = "button"
+	KindCreature        = "creature"
+	KindAttack          = "attack"
 	DefaultCardID       = "draft-card"
 	DefaultRootID       = "card-root"
 	DefaultBackgroundID = "background-primary"

@@ -272,7 +272,7 @@ function replacePreviewHTML(previewHTML) {
 }
 
 // web/src/generated/component-catalog.generated.ts
-var componentKinds = ["card", "background", "border", "text", "shape", "image", "slider", "text_input", "button"];
+var componentKinds = ["card", "background", "border", "text", "shape", "image", "slider", "text_input", "button", "creature", "attack"];
 var generatedComponentKinds = ["card", "background", "border", "text", "shape", "image"];
 
 // web/src/designer/configs.ts

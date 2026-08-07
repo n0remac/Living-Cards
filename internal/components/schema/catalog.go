@@ -82,8 +82,9 @@ type ControlSchema struct {
 }
 
 type PropertySchema struct {
-	ID   string       `json:"id"`
-	Kind PropertyKind `json:"kind"`
+	ID       string       `json:"id"`
+	Kind     PropertyKind `json:"kind"`
+	Writable bool         `json:"writable"`
 }
 
 type InstallSchema struct {

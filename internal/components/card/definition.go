@@ -91,9 +91,10 @@ type Control[T any] struct {
 }
 
 type Property[T any] struct {
-	ID   string
-	Kind schema.PropertyKind
-	Read func(T) (schema.PropertyValue, bool)
+	ID    string
+	Kind  schema.PropertyKind
+	Read  func(T) (schema.PropertyValue, bool)
+	Write func(*T, schema.PropertyValue) error
 }
 
 type TypedPreset[T any] struct {
@@ -155,6 +156,7 @@ type Definition struct {
 	describeControls   func(json.RawMessage) ([]ControlDescriptor, []schema.Issue)
 	applyControl       func(json.RawMessage, string, json.RawMessage) (json.RawMessage, []schema.Issue)
 	readProperty       func(json.RawMessage, string) (schema.PropertyValue, bool, []schema.Issue)
+	writeProperty      func(json.RawMessage, string, schema.PropertyValue) (json.RawMessage, bool, []schema.Issue)
 	controlIDs         []string
 	propertyIDs        []string
 	install            *InstallSpec
@@ -195,6 +197,9 @@ func (d Definition) ApplyControl(raw json.RawMessage, control string, value json
 }
 func (d Definition) ReadProperty(raw json.RawMessage, property string) (schema.PropertyValue, bool, []schema.Issue) {
 	return d.readProperty(raw, property)
+}
+func (d Definition) WriteProperty(raw json.RawMessage, property string, value schema.PropertyValue) (json.RawMessage, bool, []schema.Issue) {
+	return d.writeProperty(raw, property, value)
 }
 func (d Definition) Install() (InstallSpec, bool) {
 	if d.install == nil {
@@ -406,6 +411,24 @@ func Define[T any](typed TypedDefinition[T]) (Definition, error) {
 		}
 		return result, present, nil
 	}
+	d.writeProperty = func(raw json.RawMessage, id string, input schema.PropertyValue) (json.RawMessage, bool, []schema.Issue) {
+		value, issues := decodeCanonical(raw)
+		if len(issues) > 0 {
+			return nil, false, issues
+		}
+		property, ok := properties[strings.TrimSpace(id)]
+		if !ok || property.Write == nil {
+			return nil, false, nil
+		}
+		if input.Kind != property.Kind {
+			return nil, true, []schema.Issue{{Path: "property." + id, Code: "invalid_kind", Message: fmt.Sprintf("property requires %s, got %s", property.Kind, input.Kind)}}
+		}
+		if err := property.Write(&value, input); err != nil {
+			return nil, true, []schema.Issue{{Path: "property." + id, Code: "invalid_value", Message: err.Error()}}
+		}
+		encoded, issues := validateAndEncode(value)
+		return encoded, true, issues
+	}
 	if typed.Install != nil {
 		copy := *typed.Install
 		d.install = &copy
@@ -481,7 +504,7 @@ func Define[T any](typed TypedDefinition[T]) (Definition, error) {
 	}
 	componentProperties := make([]schema.PropertySchema, 0, len(propertyIDs))
 	for _, propertyID := range propertyIDs {
-		componentProperties = append(componentProperties, schema.PropertySchema{ID: propertyID, Kind: properties[propertyID].Kind})
+		componentProperties = append(componentProperties, schema.PropertySchema{ID: propertyID, Kind: properties[propertyID].Kind, Writable: properties[propertyID].Write != nil})
 	}
 	componentPresets := make([]schema.PresetSchema, 0, len(d.presets))
 	for _, preset := range d.presets {

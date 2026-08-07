@@ -219,16 +219,20 @@ func (s *Session) playCardLocked(sourceCardID, targetCardID string, events *even
 	switch resolution.Outcome {
 	case RuleOutcomeSuccess:
 		played.Outcome = "resolved"
-		s.removeLibraryCard(source.ID)
-		events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
+		if !resolution.RetainSource {
+			s.removeLibraryCard(source.ID)
+			events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
+		}
 		s.activeEditingComponentID = ""
 		s.ensureMessageEventLocked(events)
 		return s.commandSnapshotLocked()
 	case RuleOutcomeConditionsFailed:
 		played.Outcome = "conditionsFailed"
 		events.emit(EventActionRejected, ActionRejectedPayload{Action: "playCard", Outcome: played.Outcome})
-		s.removeLibraryCard(source.ID)
-		events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
+		if !resolution.RetainSource {
+			s.removeLibraryCard(source.ID)
+			events.emit(EventCardConsumed, CardConsumedPayload{CardID: source.ID})
+		}
 		s.activeEditingComponentID = ""
 		if !events.hasMessage() {
 			s.setMessageLocked(source.Name+" was played, but its conditions were not met.", events)
@@ -275,14 +279,16 @@ func (s *Session) submitFormLocked(cardID, formID string, fields map[string]stri
 		return Snapshot{}, fmt.Errorf("form %q is not mounted on %s", formID, target.Name)
 	}
 	events.emit(EventFormSubmitted, FormSubmittedPayload{CardID: cardID, FormID: formID})
+	worldCardCount := len(s.worldDeck)
 	resolution, err := s.runRules(FormSubmittedSignal{CardID: cardID, FormID: formID, Fields: cloneValue(fields)}, events)
 	if err != nil {
 		return Snapshot{}, failExecution(err)
 	}
-	s.activeIndex = targetIndex
+	if len(s.worldDeck) == worldCardCount {
+		s.activeIndex = targetIndex
+	}
 	switch resolution.Outcome {
 	case RuleOutcomeSuccess:
-		s.activeIndex = targetIndex
 		s.activeEditingComponentID = ""
 		s.ensureMessageEventLocked(events)
 		return s.commandSnapshotLocked()

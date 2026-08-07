@@ -65,7 +65,7 @@ func (s *Session) resolveRuleSignal(signal ruleSignal, events *eventCollector) (
 		if err != nil {
 			return RuleResolution{}, nil, err
 		}
-		resolution := RuleResolution{RuleID: selected.ID, TriggerKind: signal.triggerKind(), Outcome: RuleOutcomeSuccess}
+		resolution := RuleResolution{RuleID: selected.ID, TriggerKind: signal.triggerKind(), Outcome: RuleOutcomeSuccess, RetainSource: selected.RetainSource}
 		events.emit(EventRuleResolved, RuleResolvedPayload{
 			RuleID: selected.ID, TriggerKind: string(signal.triggerKind()), Outcome: string(resolution.Outcome),
 		})
@@ -84,7 +84,7 @@ func (s *Session) resolveRuleSignal(signal ruleSignal, events *eventCollector) (
 			return RuleResolution{}, nil, err
 		}
 	}
-	resolution := RuleResolution{RuleID: resolved.ID, TriggerKind: signal.triggerKind(), Outcome: RuleOutcomeConditionsFailed}
+	resolution := RuleResolution{RuleID: resolved.ID, TriggerKind: signal.triggerKind(), Outcome: RuleOutcomeConditionsFailed, RetainSource: resolved.RetainSource}
 	events.emit(EventRuleResolved, RuleResolvedPayload{
 		RuleID: resolved.ID, TriggerKind: string(signal.triggerKind()), Outcome: string(resolution.Outcome),
 	})
@@ -369,6 +369,16 @@ func (s *Session) applyRuleEffects(effects []RuleEffect, signal ruleSignal, even
 				return nil, err
 			}
 			events.emit(EventComponentMounted, mounted)
+			followUps = append(followUps, updated)
+		case EffectAttackCreature:
+			if effect.attackCreature == nil {
+				return nil, fmt.Errorf("%s effect payload is missing", effect.kind)
+			}
+			attacked, updated, err := s.attackCreature(signal)
+			if err != nil {
+				return nil, err
+			}
+			events.emit(EventCreatureAttacked, attacked)
 			followUps = append(followUps, updated)
 		default:
 			return nil, fmt.Errorf("unsupported effect kind %q", effect.kind)

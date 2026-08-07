@@ -195,10 +195,52 @@ export interface ButtonConfigInput {
   "width"?: number;
 }
 
-export type ComponentKind = "card" | "background" | "border" | "text" | "shape" | "image" | "slider" | "text_input" | "button";
+export interface CreatureConfig {
+  "health": number;
+  "max_health": number;
+  "x": number;
+  "y": number;
+  "width": number;
+  "health_color": string;
+  "background_color": string;
+  "accent_color": string;
+}
+
+export interface CreatureConfigInput {
+  "health"?: number;
+  "max_health"?: number;
+  "x"?: number;
+  "y"?: number;
+  "width"?: number;
+  "health_color"?: string;
+  "background_color"?: string;
+  "accent_color"?: string;
+}
+
+export interface AttackConfig {
+  "label": string;
+  "power": number;
+  "x": number;
+  "y": number;
+  "width": number;
+  "background_color": string;
+  "accent_color": string;
+}
+
+export interface AttackConfigInput {
+  "label"?: string;
+  "power"?: number;
+  "x"?: number;
+  "y"?: number;
+  "width"?: number;
+  "background_color"?: string;
+  "accent_color"?: string;
+}
+
+export type ComponentKind = "card" | "background" | "border" | "text" | "shape" | "image" | "slider" | "text_input" | "button" | "creature" | "attack";
 export type RootComponentKind = "card";
-export type LeafComponentKind = "background" | "border" | "text" | "shape" | "image" | "slider" | "text_input" | "button";
-export type InstallableComponentKind = "background" | "border" | "text" | "shape" | "image" | "slider" | "text_input" | "button";
+export type LeafComponentKind = "background" | "border" | "text" | "shape" | "image" | "slider" | "text_input" | "button" | "creature" | "attack";
+export type InstallableComponentKind = "background" | "border" | "text" | "shape" | "image" | "slider" | "text_input" | "button" | "attack";
 export type PresetComponentKind = "background" | "border" | "text";
 export type GeneratedComponentKind = "card" | "background" | "border" | "text" | "shape" | "image";
 export type AIGeneratableComponentKind = "background" | "border" | "text" | "image";
@@ -212,6 +254,8 @@ export interface ComponentConfigMap {
   "slider": SliderConfig;
   "text_input": TextInputConfig;
   "button": ButtonConfig;
+  "creature": CreatureConfig;
+  "attack": AttackConfig;
 }
 
 export interface ComponentConfigInputMap {
@@ -224,6 +268,8 @@ export interface ComponentConfigInputMap {
   "slider": SliderConfigInput;
   "text_input": TextInputConfigInput;
   "button": ButtonConfigInput;
+  "creature": CreatureConfigInput;
+  "attack": AttackConfigInput;
 }
 
 export type ComponentConfig<K extends ComponentKind = ComponentKind> = ComponentConfigMap[K];

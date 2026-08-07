@@ -16,10 +16,11 @@ import (
 var deckFiles embed.FS
 
 const (
-	SeededWorldDeckDefinition = "seeded_world"
-	FuseRoomDeckDefinition    = "fuse_room"
-	GeneratorDeckDefinition   = "generator_room"
-	ArchiveTerminalDefinition = "archive_terminal"
+	SeededWorldDeckDefinition     = "seeded_world"
+	FuseRoomDeckDefinition        = "fuse_room"
+	GeneratorDeckDefinition       = "generator_room"
+	ArchiveTerminalDefinition     = "archive_terminal"
+	ArchiveGuardianDeckDefinition = "archive_guardian"
 )
 
 type DeckDefinition struct {

@@ -20,6 +20,7 @@ const (
 	EventCardTagsRemoved        EventType = "cardTagsRemoved"
 	EventCardVariantChanged     EventType = "cardVariantChanged"
 	EventComponentMounted       EventType = "componentMounted"
+	EventCreatureAttacked       EventType = "creatureAttacked"
 	EventDeckLoaded             EventType = "deckLoaded"
 	EventRuleResolved           EventType = "ruleResolved"
 	EventActionRejected         EventType = "actionRejected"
@@ -107,6 +108,14 @@ type ComponentMountedPayload struct {
 	TargetCardID  string `json:"targetCardId"`
 	ComponentID   string `json:"componentId"`
 	ComponentKind string `json:"componentKind"`
+}
+
+type CreatureAttackedPayload struct {
+	SourceCardID   string `json:"sourceCardId"`
+	TargetCardID   string `json:"targetCardId"`
+	Attack         int    `json:"attack"`
+	PreviousHealth int    `json:"previousHealth"`
+	Health         int    `json:"health"`
 }
 
 type DeckLoadedPayload struct {

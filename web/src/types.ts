@@ -242,6 +242,7 @@ export type GameEvent =
   | { sequence: number; type: "cardTagsRemoved"; payload: { cardId: string; tags: string[] } }
   | { sequence: number; type: "cardVariantChanged"; payload: { cardId: string; variant: string } }
   | { sequence: number; type: "componentMounted"; payload: { sourceCardId: string; targetCardId: string; componentId: string; componentKind: ComponentKind } }
+  | { sequence: number; type: "creatureAttacked"; payload: { sourceCardId: string; targetCardId: string; attack: number; previousHealth: number; health: number } }
   | { sequence: number; type: "deckLoaded"; payload: { deckId: string } }
   | { sequence: number; type: "ruleResolved"; payload: { ruleId: string; triggerKind: "cardPlayed" | "formSubmitted" | "componentUpdated"; outcome: "success" | "conditionsFailed" } }
   | { sequence: number; type: "actionRejected"; payload: { action: string; outcome: string } }

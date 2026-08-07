@@ -16,7 +16,7 @@ import (
 
 func TestEmbeddedDecksDecodeAgainstCatalog(t *testing.T) {
 	registry := catalog.MustNew()
-	ids := []string{SeededWorldDeckDefinition, FuseRoomDeckDefinition, GeneratorDeckDefinition, ArchiveTerminalDefinition}
+	ids := []string{SeededWorldDeckDefinition, FuseRoomDeckDefinition, GeneratorDeckDefinition, ArchiveTerminalDefinition, ArchiveGuardianDeckDefinition}
 	definitions := make([]DeckDefinition, 0, len(ids))
 	known := map[string]CardDefinition{}
 	knownRules := map[string]bool{}
@@ -500,7 +500,7 @@ func TestEmbeddedPuzzleUsesComponentCardsAsControllerBases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !unlocked.SolvedFlags["archiveUnlocked"] || unlocked.Message != "NIGHTJAR accepted. The archive opens." {
+	if !unlocked.SolvedFlags["archiveUnlocked"] || unlocked.Message != "NIGHTJAR accepted. The archive opens—and its guardian awakens. Collect a creature and equip it to fight." || unlocked.ActiveWorldCardID != "archive-guardian" {
 		t.Fatalf("archive unlock = flags %v message %q", unlocked.SolvedFlags, unlocked.Message)
 	}
 }

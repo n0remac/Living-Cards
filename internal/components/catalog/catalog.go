@@ -5,10 +5,12 @@
 package catalog
 
 import (
+	"github.com/n0remac/Living-Card/internal/components/attack"
 	"github.com/n0remac/Living-Card/internal/components/background"
 	"github.com/n0remac/Living-Card/internal/components/border"
 	"github.com/n0remac/Living-Card/internal/components/button"
 	"github.com/n0remac/Living-Card/internal/components/card"
+	"github.com/n0remac/Living-Card/internal/components/creature"
 	imagecomponent "github.com/n0remac/Living-Card/internal/components/image"
 	"github.com/n0remac/Living-Card/internal/components/shape"
 	"github.com/n0remac/Living-Card/internal/components/slider"
@@ -27,6 +29,8 @@ func New() (*card.Registry, error) {
 		slider.Definition(),
 		textinput.Definition(),
 		button.Definition(),
+		creature.Definition(),
+		attack.Definition(),
 	)
 }
 
